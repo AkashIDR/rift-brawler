@@ -95,7 +95,7 @@ export default class Gunner extends BossBase {
         glowG.destroy();
         if (!this.alive) return;
         const angle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
-        this._spawnProjectile(angle, 420, 0xffcc00, 10, this.damage, false, 560);
+        this._spawnProjectile(angle, 480, 0xffcc00, 10, this.damage, false, 560);
         this._endAttack();
       }
     });

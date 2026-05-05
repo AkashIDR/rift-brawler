@@ -562,6 +562,9 @@ export default class Player {
     if (!this.alive) return;
     const dt = delta / 1000;
 
+    // Passive stamina regen
+    this.stamina = Math.min(this.staminaMax, this.stamina + PLAYER.STAMINA_REGEN_RATE * dt);
+
     // Movement — skip while dash tween owns the container
     if (this.moving && !this.isDodging) {
       const dist = Phaser.Math.Distance.Between(this.x, this.y, this.targetX, this.targetY);

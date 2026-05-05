@@ -101,7 +101,7 @@ export default class Charger extends BossBase {
     if (!this.alive) return;
     const angle = Phaser.Math.Angle.Between(this.x, this.y, tx, ty);
     const dist = Phaser.Math.Distance.Between(this.x, this.y, tx, ty);
-    const speed = 560 + this.level * 8;
+    const speed = 5600 + this.level * 80;
     const duration = (dist / speed) * 1000 + 200;
 
     this._charging = true;

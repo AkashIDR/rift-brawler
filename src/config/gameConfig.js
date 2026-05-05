@@ -34,17 +34,18 @@ export const OBSTACLES = {
 
 // Player base stats
 export const PLAYER = {
-  BASE_HP: 100,
+  BASE_HP: 1000,
   BASE_SPEED: 280,
-  BASE_DAMAGE: 12,
+  BASE_DAMAGE: 120,
   BASIC_ATTACK_COOLDOWN: 350,    // ms
   BASIC_ATTACK_SPEED: 600,       // px/s
-  DODGE_STAMINA_COST: 8,
+  DODGE_STAMINA_COST: 10,
   DODGE_COOLDOWN: 900,           // ms
   DODGE_IFRAME_DURATION: 350,    // ms
   DODGE_SPEED: 700,
   DODGE_DISTANCE: 160,
   STAMINA_MAX: 100,
+  STAMINA_REGEN_RATE: 8,         // stamina per second (passive)
   STAMINA_REGEN_PER_HIT: 12,
   // Floating HP bar above player
   HP_BAR_WIDTH: 48,
@@ -58,7 +59,7 @@ export const SKILLS = {
     name: 'Power Strike',
     staminaCost: 25,
     cooldown: 1200,
-    damage: 40,
+    damage: 400,
     projectileSpeed: 800,
     color: 0xffdd44
   },
@@ -66,7 +67,7 @@ export const SKILLS = {
     name: 'Shield Dash',
     staminaCost: 35,
     cooldown: 2000,
-    damage: 30,
+    damage: 300,
     dashSpeed: 900,
     dashDistance: 240,
     iframeDuration: 450,
@@ -76,7 +77,7 @@ export const SKILLS = {
     name: 'Ground Slam',
     staminaCost: 40,
     cooldown: 2500,
-    damage: 55,
+    damage: 550,
     radius: 140,
     color: 0xff6600
   }
@@ -84,10 +85,10 @@ export const SKILLS = {
 
 // Progression scaling per level
 export const SCALING = {
-  HP_PER_LEVEL: 10,
+  HP_PER_LEVEL: 100,
   DAMAGE_MULTIPLIER_PER_LEVEL: 0.06,  // +6% per level
-  BOSS_HP_PER_LEVEL: 25,
-  BOSS_DAMAGE_PER_LEVEL: 3,
+  BOSS_HP_PER_LEVEL: 250,
+  BOSS_DAMAGE_PER_LEVEL: 30,
   BOSS_SPEED_PER_LEVEL: 4,
 };
 

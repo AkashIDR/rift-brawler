@@ -105,7 +105,7 @@ export default class Stomper extends BossBase {
     if (!p || !p.alive) { this._endAttack(); return; }
 
     const angle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
-    const lineLen = 420;
+    const lineLen = 4200;
     const ex = this.x + Math.cos(angle) * lineLen;
     const ey = this.y + Math.sin(angle) * lineLen;
 
@@ -204,7 +204,7 @@ export default class Stomper extends BossBase {
           });
           if (p.alive && !p.invincible) {
             if (Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y) < 120)
-              p.takeDamage(this.damage * 1.4);
+              p.takeDamage(this.damage * 1.2);
           }
           this._endAttack();
         }

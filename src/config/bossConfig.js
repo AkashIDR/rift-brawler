@@ -2,9 +2,9 @@
 export const BOSS_CONFIGS = {
   charger: {
     name: 'The Charger',
-    baseHp: 200,
-    baseDamage: 15,
-    baseSpeed: 160,
+    baseHp: 2300,
+    baseDamage: 150,
+    baseSpeed: 140,
     size: 38,
     color: 0xff4500,
     accentColor: 0xff8800,
@@ -14,8 +14,8 @@ export const BOSS_CONFIGS = {
   },
   gunner: {
     name: 'The Gunner',
-    baseHp: 180,
-    baseDamage: 12,
+    baseHp: 1600,
+    baseDamage: 150,
     baseSpeed: 100,
     size: 34,
     color: 0x9b59b6,
@@ -26,8 +26,8 @@ export const BOSS_CONFIGS = {
   },
   stomper: {
     name: 'The Stomper',
-    baseHp: 260,
-    baseDamage: 20,
+    baseHp: 3000,
+    baseDamage: 200,
     baseSpeed: 80,
     size: 48,
     color: 0x27ae60,
