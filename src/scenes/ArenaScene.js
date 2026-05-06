@@ -95,96 +95,52 @@ export default class ArenaScene extends Phaser.Scene {
   // ── Arena visuals ──────────────────────────────────────────────────────────
 
   _buildArena() {
-    const { worldW, worldH, shape, padding: P } = this.arena;
+    const { worldW, worldH, shape } = this.arena;
     const t = this.theme;
     const bounds = shape.bounds;
+    const perimeter = shape.getPerimeterPolygon();
 
-    // ── Void background (entire world, darker than floor) ──
+    // ── Void background (entire world, slightly darker than floor) ──
     const void_ = this.add.graphics();
     void_.fillStyle(Phaser.Display.Color.ValueToColor(t.bg).darken(20).color, 1);
     void_.fillRect(0, 0, worldW, worldH);
     void_.setDepth(0);
 
+    // ── Floor — single polygon fill ──
     const g = this.add.graphics();
     g.setDepth(1);
+    g.fillStyle(t.floor, 1);
+    g.fillPoints(perimeter, true);
 
-    // ── Floor fill — shape determines how this is drawn ──
-    const perimeter = shape.getPerimeterPolygon();
-
-    // For composite shapes, draw each sub-shape's floor separately
-    if (shape.shapes) {
-      shape.shapes.forEach(sub => {
-        const subPts = sub.getPerimeterPolygon();
-        if (subPts.length >= 3) {
-          g.fillStyle(t.floor, 1);
-          g.fillPoints(subPts, true);
-        }
-      });
-    } else if (perimeter.length >= 3) {
-      g.fillStyle(t.floor, 1);
-      g.fillPoints(perimeter, true);
-    }
-
-    // ── Tile grid (drawn across bounding box, invisible on void due to low alpha) ──
-    g.lineStyle(1, t.accent, 0.07);
+    // ── Tile grid + cross-hatch, clipped to the polygon via a GeometryMask ──
+    // (so grid lines never bleed into void areas regardless of arena shape)
+    const gridG = this.add.graphics();
+    gridG.setDepth(1);
+    gridG.lineStyle(1, t.accent, 0.07);
     for (let x = bounds.x; x < bounds.x + bounds.w; x += 48) {
-      g.lineBetween(x, bounds.y, x, bounds.y + bounds.h);
+      gridG.lineBetween(x, bounds.y, x, bounds.y + bounds.h);
     }
     for (let y = bounds.y; y < bounds.y + bounds.h; y += 48) {
-      g.lineBetween(bounds.x, y, bounds.x + bounds.w, y);
+      gridG.lineBetween(bounds.x, y, bounds.x + bounds.w, y);
     }
-
-    // ── Diagonal cross-hatch (very faint) ──
-    g.lineStyle(1, t.accent, 0.04);
+    gridG.lineStyle(1, t.accent, 0.04);
     for (let d = -bounds.h; d < bounds.w; d += 72) {
-      g.lineBetween(bounds.x + d, bounds.y, bounds.x + d + bounds.h, bounds.y + bounds.h);
-      g.lineBetween(bounds.x + d + bounds.h, bounds.y, bounds.x + d, bounds.y + bounds.h);
+      gridG.lineBetween(bounds.x + d, bounds.y, bounds.x + d + bounds.h, bounds.y + bounds.h);
+      gridG.lineBetween(bounds.x + d + bounds.h, bounds.y, bounds.x + d, bounds.y + bounds.h);
     }
+    const maskG = this.make.graphics({ add: false });
+    maskG.fillStyle(0xffffff, 1);
+    maskG.fillPoints(perimeter, true);
+    gridG.setMask(maskG.createGeometryMask());
 
-    // ── Perimeter walls (skip connectors — they have no outer wall) ──
-    const wallSubShapes = shape.shapes ? shape.shapes.filter(s => !s.isConnector) : null;
-    const renderPerimeters = wallSubShapes
-      ? wallSubShapes.map(s => s.getPerimeterPolygon())
-      : [perimeter];
+    // ── Walls — thick outer stroke + accent inner ring ──
+    g.lineStyle(8, t.wall, 1);
+    g.strokePoints(perimeter, true);
+    const innerRing = _shrinkPts(perimeter, 10);
+    g.lineStyle(2, t.accent, 0.4);
+    g.strokePoints(innerRing, true);
 
-    renderPerimeters.forEach(pts => {
-      if (pts.length < 3) return;
-      // Outer wall (thick)
-      g.lineStyle(8, t.wall, 1);
-      g.strokePoints(pts, true);
-      // Accent inner ring
-      const inner = _shrinkPts(pts, 10);
-      g.lineStyle(2, t.accent, 0.4);
-      g.strokePoints(inner, true);
-    });
-
-    // Re-fill connector areas after wall drawing to erase any room-wall lines crossing them
-    if (shape.shapes) {
-      shape.shapes.filter(s => s.isConnector).forEach(s => {
-        const pts = s.getPerimeterPolygon();
-        if (pts.length >= 3) {
-          g.fillStyle(t.floor, 1);
-          g.fillPoints(pts, true);
-        }
-      });
-    }
-
-    // ── Corner L-brackets for rectangular shapes ──
-    if (!shape.shapes) {
-      const corners = _extractCorners(perimeter);
-      corners.forEach(([cx, cy, dx, dy]) => {
-        const s = 40;
-        g.lineStyle(3, t.accent, 0.85);
-        g.lineBetween(cx, cy, cx + dx * s, cy);
-        g.lineBetween(cx, cy, cx, cy + dy * s);
-        g.lineStyle(1.5, t.accent, 0.45);
-        g.lineBetween(cx + dx * 7, cy + dy * 7, cx + dx * s * 0.7, cy + dy * 7);
-        g.lineBetween(cx + dx * 7, cy + dy * 7, cx + dx * 7, cy + dy * s * 0.7);
-        g.lineStyle(3, t.accent, 0.85);
-      });
-    }
-
-    // ── Center medallion ──
+    // ── Center medallion (at altar) ──
     const { x: cx, y: cy } = this.arena.altarPoint;
     g.lineStyle(2, t.accent, 0.22);
     g.strokeCircle(cx, cy, 90);
@@ -229,13 +185,8 @@ export default class ArenaScene extends Phaser.Scene {
       const vg = this.add.graphics();
       vg.setDepth(3);
       vg.fillStyle(0x000000, alpha);
-      renderPerimeters.forEach(pts => {
-        if (pts.length < 3) return;
-        const shrunk = _shrinkPts(pts, -d); // expand outward then fill border
-        const inner = _shrinkPts(pts, d);   // shrink inward
-        // Fill the gap between inner and pts
-        _fillBetweenPolygons(vg, pts, inner);
-      });
+      const inner = _shrinkPts(perimeter, d);
+      _fillBetweenPolygons(vg, perimeter, inner);
     });
   }
 
@@ -375,20 +326,6 @@ function _shrinkPts(pts, d) {
     const len = Math.hypot(nx, ny) || 1;
     return { x: p.x + (nx / len) * d, y: p.y + (ny / len) * d };
   });
-}
-
-/** Extract 4 corner directions from a rectangular polygon perimeter */
-function _extractCorners(pts) {
-  if (pts.length < 4) return [];
-  const bbox = pts.reduce((a, p) => ({
-    minX: Math.min(a.minX, p.x), minY: Math.min(a.minY, p.y),
-    maxX: Math.max(a.maxX, p.x), maxY: Math.max(a.maxY, p.y),
-  }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
-  const { minX, minY, maxX, maxY } = bbox;
-  return [
-    [minX, minY, 1, 1], [maxX, minY, -1, 1],
-    [minX, maxY, 1, -1], [maxX, maxY, -1, -1],
-  ];
 }
 
 /**

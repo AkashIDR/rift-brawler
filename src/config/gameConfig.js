@@ -2,12 +2,14 @@ export const GAME_WIDTH = 1280;
 export const GAME_HEIGHT = 720;
 
 // ── Arena world (camera-followed large world) ────────────────────────────────
+// Worlds are procedurally-generated organic polygons (one per arena). The
+// MIN/MAX world dimensions are kept as soft references — the actual size
+// derives from each arena's polygon bounds in ArenaGenerator.
 export const ARENA = {
   MIN_WORLD_W: 2600, MAX_WORLD_W: 4400,
   MIN_WORLD_H: 2000, MAX_WORLD_H: 3400,
-  PADDING: 70,           // wall inset from world/shape edge
+  PADDING: 70,           // default wall inset, used when callers omit `r` to containsPoint
   CAMERA_LERP: 0.1,      // camera follow smoothness
-  MIN_CORRIDOR_W: 260,   // minimum corridor width (≥ 2× max boss size + buffer)
 };
 
 // ── Obstacle config ───────────────────────────────────────────────────────────
