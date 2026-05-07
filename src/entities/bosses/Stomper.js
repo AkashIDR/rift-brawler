@@ -86,6 +86,13 @@ export default class Stomper extends BossBase {
       });
       this.scene.cameras.main.shake(250, 0.0042);
 
+      // Break all obstacles inside the stomp radius
+      this.scene.obstacles?.forEach(obs => {
+        if (!obs.broken &&
+            Phaser.Math.Distance.Between(this.x, this.y, obs.x, obs.y) < radius + obs.baseRadius)
+          obs.break();
+      });
+
       const p = this.scene.player;
       if (p && p.alive && !p.invincible) {
         if (Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y) < radius + 16)
@@ -118,23 +125,28 @@ export default class Stomper extends BossBase {
       crack.setDepth(6);
       this.scene.tweens.add({ targets: crack, alpha: 0, duration: 400, onComplete: () => crack.destroy() });
 
-      // Check player hit — point-to-line-segment distance, blocked by obstacles
+      // Quake line breaks every obstacle it crosses, then hits the player
+      const dx = ex - this.x, dy = ey - this.y;
+      const lenSq = dx * dx + dy * dy;
+
+      this.scene.obstacles?.forEach(obs => {
+        if (obs.broken) return;
+        const t2 = lenSq > 0
+          ? Math.max(0, Math.min(1, ((obs.x - this.x) * dx + (obs.y - this.y) * dy) / lenSq))
+          : 0;
+        if (Phaser.Math.Distance.Between(obs.x, obs.y, this.x + t2 * dx, this.y + t2 * dy)
+            < obs.baseRadius)
+          obs.break();
+      });
+
+      // Player hit — no obstacle cover (obstacles in the path already broke)
       if (p.alive && !p.invincible) {
-        const dx = ex - this.x, dy = ey - this.y;
-        const lenSq = dx * dx + dy * dy;
-
-        // If any obstacle's base intersects the quake line, it blocks the crack
-        const blocked = this.scene.obstacles?.some(obs => {
-          const t2 = lenSq > 0 ? Math.max(0, Math.min(1, ((obs.x - this.x) * dx + (obs.y - this.y) * dy) / lenSq)) : 0;
-          return Phaser.Math.Distance.Between(obs.x, obs.y, this.x + t2 * dx, this.y + t2 * dy) < obs.baseRadius;
-        });
-
-        if (!blocked) {
-          const t = lenSq > 0 ? Math.max(0, Math.min(1, ((p.x - this.x) * dx + (p.y - this.y) * dy) / lenSq)) : 0;
-          const nearX = this.x + t * dx, nearY = this.y + t * dy;
-          if (Phaser.Math.Distance.Between(p.x, p.y, nearX, nearY) < 36)
-            p.takeDamage(this.damage * 0.9);
-        }
+        const t = lenSq > 0
+          ? Math.max(0, Math.min(1, ((p.x - this.x) * dx + (p.y - this.y) * dy) / lenSq))
+          : 0;
+        const nearX = this.x + t * dx, nearY = this.y + t * dy;
+        if (Phaser.Math.Distance.Between(p.x, p.y, nearX, nearY) < 36)
+          p.takeDamage(this.damage * 0.9);
       }
       this._endAttack();
     });
@@ -166,6 +178,13 @@ export default class Stomper extends BossBase {
       this.scene.cameras.main.shake(300, 0.0036);
       const p = this.scene.player;
       zones.forEach(z => {
+        // Break obstacles inside this tremor zone
+        this.scene.obstacles?.forEach(obs => {
+          if (!obs.broken &&
+              Phaser.Math.Distance.Between(obs.x, obs.y, z.x, z.y) < z.r + obs.baseRadius)
+            obs.break();
+        });
+
         if (p && p.alive && !p.invincible) {
           if (Phaser.Math.Distance.Between(p.x, p.y, z.x, z.y) < z.r + 16)
             p.takeDamage(this.damage * 0.7);
@@ -192,13 +211,22 @@ export default class Stomper extends BossBase {
         onUpdate: () => { this.x = this.container.x; this.y = this.container.y; },
         onComplete: () => {
           // Slam
+          const slamRadius = 120;
           this.scene.cameras.main.shake(350, 0.0054);
           this.scene.tweens.addCounter({
             from: 0, to: 20, duration: 150, yoyo: true,
             onUpdate: (tw) => this._redraw(tw.getValue())
           });
+
+          // Break obstacles inside the slam radius
+          this.scene.obstacles?.forEach(obs => {
+            if (!obs.broken &&
+                Phaser.Math.Distance.Between(this.x, this.y, obs.x, obs.y) < slamRadius + obs.baseRadius)
+              obs.break();
+          });
+
           if (p.alive && !p.invincible) {
-            if (Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y) < 120)
+            if (Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y) < slamRadius)
               p.takeDamage(this.damage * 1.2);
           }
           this._endAttack();

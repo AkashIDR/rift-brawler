@@ -1,5 +1,5 @@
-export const GAME_WIDTH = 1280;
-export const GAME_HEIGHT = 720;
+export const GAME_WIDTH = 1920;
+export const GAME_HEIGHT = 1080;
 
 // ── Arena world (camera-followed large world) ────────────────────────────────
 // Worlds are procedurally-generated organic polygons (one per arena). The
@@ -10,6 +10,7 @@ export const ARENA = {
   MIN_WORLD_H: 2000, MAX_WORLD_H: 3400,
   PADDING: 70,           // default wall inset, used when callers omit `r` to containsPoint
   CAMERA_LERP: 0.1,      // camera follow smoothness
+  CAMERA_ZOOM: 1.5,      // default zoom level (1 = no zoom, higher = closer in)
 };
 
 // ── Obstacle config ───────────────────────────────────────────────────────────
@@ -42,10 +43,10 @@ export const PLAYER = {
   BASIC_ATTACK_COOLDOWN: 100,    // ms
   BASIC_ATTACK_SPEED: 600,       // px/s
   DODGE_STAMINA_COST: 10,
-  DODGE_COOLDOWN: 900,           // ms
+  DODGE_COOLDOWN: 700,           // ms
   DODGE_IFRAME_DURATION: 350,    // ms
   DODGE_SPEED: 700,
-  DODGE_DISTANCE: 160,
+  DODGE_DISTANCE: 200,
   STAMINA_MAX: 100,
   STAMINA_REGEN_RATE: 8,         // stamina per second (passive)
   STAMINA_REGEN_PER_HIT: 12,

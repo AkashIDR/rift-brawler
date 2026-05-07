@@ -580,7 +580,18 @@ export default class Player {
       const dist = Phaser.Math.Distance.Between(this.x, this.y, this.targetX, this.targetY);
       if (dist > 4) {
         const angle = Phaser.Math.Angle.Between(this.x, this.y, this.targetX, this.targetY);
-        const step = Math.min(this.speed * dt, dist);
+        // Rubble slow — walking only; dash (isDodging) bypasses this entirely
+        let speedMult = 1;
+        if (this.scene.obstacles) {
+          for (const obs of this.scene.obstacles) {
+            if (obs.rubbleActive &&
+                Phaser.Math.Distance.Between(this.x, this.y, obs.x, obs.y) < obs.rubbleRadius) {
+              speedMult = 0.55;
+              break;
+            }
+          }
+        }
+        const step = Math.min(this.speed * speedMult * dt, dist);
         this._tryMove(this.x + Math.cos(angle) * step, this.y + Math.sin(angle) * step);
         this._pushOutObstacles();
         this.container.x = this.x;

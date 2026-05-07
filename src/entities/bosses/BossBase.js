@@ -265,10 +265,11 @@ export default class BossBase {
         _destroy(); return;
       }
 
-      // Obstacle collision
+      // Obstacle collision — projectile breaks the obstacle then disappears
       if (this.scene.obstacles) {
         for (const obs of this.scene.obstacles) {
           if (Phaser.Math.Distance.Between(proj.x, proj.y, obs.x, obs.y) < obs.baseRadius + radius) {
+            obs.break();
             _destroy(); return;
           }
         }

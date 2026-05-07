@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { OBSTACLES } from '../config/gameConfig.js';
 
 export default class Obstacle {
@@ -11,6 +12,13 @@ export default class Obstacle {
     // Collision radii
     this.baseRadius = OBSTACLES[`${type.toUpperCase()}_RADIUS`] ?? 28;
     this.canopyRadius = tall ? OBSTACLES.TREE_CANOPY_RADIUS : 0;
+
+    // Breaking / rubble state
+    this._origBaseRadius  = this.baseRadius; // preserved after break() zeroes baseRadius
+    this.broken           = false;
+    this.rubbleActive     = false;
+    this.rubbleRadius     = 0;
+    this._rubbleGraphics  = [];
 
     // Tween guard
     this._canopyAlphaTweening = false;
@@ -234,10 +242,158 @@ export default class Obstacle {
     this.shadowG = sg;
   }
 
+  // ── Breaking ──────────────────────────────────────────────────────────────
+
+  break() {
+    if (this.broken) return;
+    this.broken      = true;
+    this.baseRadius  = 0;                              // disable all collision
+    this.rubbleActive = true;
+    this.rubbleRadius = this._origBaseRadius * 1.2;
+
+    // Destroy main visuals immediately
+    [this.container, this.trunkContainer, this.canopyContainer]
+      .filter(Boolean)
+      .forEach(c => { if (c.active) c.destroy(); });
+    this.container = this.trunkContainer = this.canopyContainer = null;
+    if (this.shadowG && this.shadowG.active) { this.shadowG.destroy(); this.shadowG = null; }
+
+    this._spawnShatterParticles();
+
+    // Deactivate slow zone + fade debris after 15 s
+    this.scene.time.delayedCall(15000, () => {
+      this.rubbleActive = false;
+      this._rubbleGraphics.forEach(g => {
+        if (g.active) this.scene.tweens.add({
+          targets: g, alpha: 0, duration: 1000,
+          onComplete: () => { if (g.active) g.destroy(); }
+        });
+      });
+    });
+  }
+
+  // ── Shatter particle burst ────────────────────────────────────────────────
+
+  _spawnShatterParticles() {
+    const count   = Phaser.Math.Between(7, 11);
+    const scatter = this._origBaseRadius * 1.5;
+
+    for (let i = 0; i < count; i++) {
+      const g = this.scene.add.graphics();
+      this._drawShatterFragment(g, i);
+      g.x     = this.x;
+      g.y     = this.y;
+      g.angle = Phaser.Math.Between(0, 360);
+      g.setDepth(12); // burst above entities so it reads clearly at the moment of impact
+
+      // Scatter outward, spreading evenly with slight random offset
+      const a     = (i / count) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.4, 0.4);
+      const dist  = Phaser.Math.FloatBetween(scatter * 0.35, scatter);
+      const destX = this.x + Math.cos(a) * dist;
+      const destY = this.y + Math.sin(a) * dist;
+
+      this.scene.tweens.add({
+        targets: g,
+        x: destX,
+        y: destY,
+        angle:  g.angle + Phaser.Math.Between(-220, 220),
+        scaleY: 0.32,   // flatten as if lying on the floor
+        duration: Phaser.Math.Between(180, 320),
+        ease: 'Cubic.easeOut',
+        onComplete: () => {
+          g.setDepth(2); // settled — below entities, above floor
+        },
+      });
+
+      this._rubbleGraphics.push(g);
+      this.scene.events.once('shutdown', () => { if (g.active) g.destroy(); });
+    }
+  }
+
+  // Draw one shatter fragment, styled to match the obstacle type.
+  _drawShatterFragment(g, index) {
+    switch (this.type) {
+
+      case 'rock': {
+        // Jagged irregular stone chunk — 5-point polygon with slight random radii
+        const sz = Phaser.Math.Between(7, 15);
+        g.fillStyle(index % 2 === 0 ? 0x4a4a55 : 0x6b6b7a, 1);
+        const pts = [];
+        for (let j = 0; j < 5; j++) {
+          const a = (j / 5) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.25, 0.25);
+          const r = sz * Phaser.Math.FloatBetween(0.55, 1.0);
+          pts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+        }
+        g.fillPoints(pts, true);
+        // Highlight edge on lighter pieces
+        if (index % 2 === 0) {
+          g.lineStyle(1, 0x8888aa, 0.55);
+          g.strokePoints(pts, true);
+        }
+        break;
+      }
+
+      case 'stump': {
+        // Short wood plank with grain lines
+        const w = Phaser.Math.Between(9, 18);
+        const h = Phaser.Math.Between(4, 9);
+        g.fillStyle(index % 2 === 0 ? 0x6a3e18 : 0x8B5e28, 1);
+        g.fillRect(-w / 2, -h / 2, w, h);
+        g.lineStyle(1, 0x4a2e10, 0.5);
+        g.lineBetween(-w * 0.25, -h * 0.1, w * 0.25, h * 0.1);
+        g.lineBetween(-w * 0.1,  -h * 0.35, w * 0.15, h * 0.3);
+        break;
+      }
+
+      case 'tree': {
+        if (index % 3 === 0) {
+          // Leaf cluster — small layered circles
+          const r = Phaser.Math.Between(5, 10);
+          g.fillStyle(0x1a4010, 1);
+          g.fillCircle(0, 0, r);
+          g.fillStyle(0x38882a, 1);
+          g.fillCircle(-r * 0.2, -r * 0.25, r * 0.6);
+          g.fillStyle(0x52aa3e, 0.7);
+          g.fillCircle(r * 0.1, -r * 0.4, r * 0.35);
+        } else {
+          // Wood chip — bark-coloured plank
+          const w = Phaser.Math.Between(6, 15);
+          const h = Phaser.Math.Between(3, 7);
+          g.fillStyle(index % 2 === 0 ? 0x3e200a : 0x5a3012, 1);
+          g.fillRect(-w / 2, -h / 2, w, h);
+          g.lineStyle(1, 0x6a4018, 0.4);
+          g.lineBetween(-w * 0.3, 0, w * 0.3, 0);
+        }
+        break;
+      }
+
+      case 'pillar': {
+        // Rectangular stone block with side shading and a crack
+        const w = Phaser.Math.Between(9, 20);
+        const h = Phaser.Math.Between(7, 14);
+        g.fillStyle(index % 2 === 0 ? 0x808080 : 0x9E9E9E, 1);
+        g.fillRoundedRect(-w / 2, -h / 2, w, h, 2);
+        // Dark side shading
+        g.fillStyle(0x555555, 0.45);
+        g.fillRect(w * 0.15, -h / 2, w * 0.3, h);
+        // Crack
+        g.lineStyle(1, 0x404040, 0.7);
+        g.lineBetween(-w * 0.1, -h * 0.35, w * 0.2, h * 0.3);
+        break;
+      }
+
+      default: {
+        g.fillStyle(0x888888, 1);
+        g.fillRect(-5, -5, 10, 10);
+      }
+    }
+  }
+
   // ── Occlusion (called per frame from ArenaScene.update) ───────────────────
 
   // entities: [{x, y, alive}] — canopy fades if the player OR boss is behind this tree
   checkOcclusion(entities) {
+    if (this.broken) return;
     if (!this.tall || !this.canopyContainer) return;
     const behind = entities.some(e =>
       e?.alive && e.y < this.y - 10 && Math.abs(e.x - this.x) < this.canopyRadius * 0.8
@@ -259,6 +415,7 @@ export default class Obstacle {
   // ── Cleanup ───────────────────────────────────────────────────────────────
 
   destroy() {
+    if (this.broken) return; // already cleaned up by break()
     const fade = (obj) => {
       if (!obj || !obj.active) return;
       this.scene.tweens.add({

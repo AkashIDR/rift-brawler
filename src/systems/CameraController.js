@@ -21,6 +21,7 @@ export default class CameraController {
     this.targets = [];
 
     camera.setBounds(0, 0, worldW, worldH);
+    camera.setZoom(ARENA.CAMERA_ZOOM);
   }
 
   /**
