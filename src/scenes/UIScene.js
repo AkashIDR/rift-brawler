@@ -27,6 +27,9 @@ export default class UIScene extends Phaser.Scene {
     this._buildBossBar();
     this._buildPauseMenu();
     this._listenToArena();
+
+    // ESC lives here — UIScene stays active while ArenaScene is natively paused
+    this.input.keyboard.on('keydown-ESC', () => this.arenaScene._togglePause());
   }
 
   update() {
@@ -178,7 +181,9 @@ export default class UIScene extends Phaser.Scene {
   }
 
   _updateSkillCooldowns(player) {
-    const now = this.time.now;
+    // Use ArenaScene's clock — it freezes when the scene is natively paused,
+    // so cooldown overlays correctly stay in place during pause.
+    const now = this.arenaScene.time.now;
     const skillKeys = ['Q', 'W', 'E', 'SPACE'];
     skillKeys.forEach((k, i) => {
       const slot = this.skillSlots[i];

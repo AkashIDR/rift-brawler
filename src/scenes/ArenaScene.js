@@ -53,7 +53,7 @@ export default class ArenaScene extends Phaser.Scene {
 
     this.input.mouse.disableContextMenu();
     this.cameras.main.fadeIn(400, 0, 0, 0);
-    this.input.keyboard.on('keydown-ESC', () => this._togglePause());
+    // ESC is handled by UIScene — it stays active while ArenaScene is natively paused
   }
 
   update(time, delta) {
@@ -290,8 +290,14 @@ export default class ArenaScene extends Phaser.Scene {
   }
 
   _togglePause() {
-    this.paused = !this.paused;
-    this.events.emit('pauseToggled', this.paused);
+    // Emit first so UIScene receives the event before the scene clock freezes
+    const nowPaused = !this.scene.isPaused();
+    this.events.emit('pauseToggled', nowPaused);
+    if (nowPaused) {
+      this.scene.pause();   // freezes time.now — cooldown timestamps cannot expire
+    } else {
+      this.scene.resume();
+    }
   }
 
   playerDied() {
