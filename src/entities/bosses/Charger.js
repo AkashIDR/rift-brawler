@@ -103,6 +103,9 @@ export default class Charger extends BossBase {
     // Rotate to face charge direction
     this.container.setAngle(Phaser.Math.RadToDeg(angle));
 
+    // One hit per charge pass
+    let chargeHitLanded = false;
+
     this.scene.tweens.add({
       targets: this.container,
       x: tx, y: ty,
@@ -110,11 +113,14 @@ export default class Charger extends BossBase {
       onUpdate: () => {
         this.x = this.container.x;
         this.y = this.container.y;
-        // Damage player if contact
+        if (chargeHitLanded) return;
         const pl = this.scene.player;
         if (pl && pl.alive && !pl.invincible) {
           const d = Phaser.Math.Distance.Between(this.x, this.y, pl.x, pl.y);
-          if (d < this.size + 16) pl.takeDamage(this.damage);
+          if (d < this.size + 16) {
+            pl.takeDamage(this.damage);
+            chargeHitLanded = true;
+          }
         }
       },
       onComplete: () => {
@@ -146,6 +152,9 @@ export default class Charger extends BossBase {
       ring.setDepth(9);
       const maxR = this.size * 5.0;
 
+      // One hit as the ring passes through the player
+      let ringHitLanded = false;
+
       this.scene.tweens.addCounter({
         from: 0, to: maxR, duration: 350,
         onUpdate: (tw) => {
@@ -154,11 +163,14 @@ export default class Charger extends BossBase {
           ring.lineStyle(6, this.color, 1 - r / maxR);
           ring.strokeCircle(0, 0, r);
 
-          // Damage player if in ring's expanding zone
+          if (ringHitLanded) return;
           const p = this.scene.player;
           if (p && p.alive && !p.invincible) {
             const d = Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y);
-            if (d < r + 10 && d > r - 20) p.takeDamage(this.damage * 0.8);
+            if (d < r + 10 && d > r - 20) {
+              p.takeDamage(this.damage * 0.8);
+              ringHitLanded = true;
+            }
           }
         },
         onComplete: () => { ring.destroy(); this._endAttack(); }
