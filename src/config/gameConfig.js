@@ -38,8 +38,8 @@ export const OBSTACLES = {
 export const PLAYER = {
   BASE_HP: 1000,
   BASE_SPEED: 280,
-  BASE_DAMAGE: 120,
-  BASIC_ATTACK_COOLDOWN: 350,    // ms
+  BASE_DAMAGE: 100,
+  BASIC_ATTACK_COOLDOWN: 100,    // ms
   BASIC_ATTACK_SPEED: 600,       // px/s
   DODGE_STAMINA_COST: 10,
   DODGE_COOLDOWN: 900,           // ms
