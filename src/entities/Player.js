@@ -335,6 +335,9 @@ export default class Player {
     // Ghost trail
     this._spawnGhostTrail(trailColor);
 
+    // One-hit flag — contact damage fires at most once per dash
+    let dashHitLanded = false;
+
     this.scene.tweens.add({
       targets: this.container,
       x: targetX,
@@ -345,8 +348,10 @@ export default class Player {
         this.x = this.container.x;
         this.y = this.container.y;
         this._updateFloatingHP();
-        // Contact damage on dash through boss
-        if (contactDmg > 0) this._checkContactDamage(contactDmg);
+        // Contact damage on dash through boss — only once per dash
+        if (contactDmg > 0 && !dashHitLanded) {
+          if (this._checkContactDamage(contactDmg)) dashHitLanded = true;
+        }
       },
       onComplete: () => {
         this.isDodging = false;
@@ -395,6 +400,7 @@ export default class Player {
     }
   }
 
+  // Returns true if contact damage actually landed (boss was hit).
   _checkContactDamage(dmg) {
     const arena = this.scene;
     if (arena.altar) {
@@ -403,8 +409,12 @@ export default class Player {
     }
     if (arena.boss && arena.bossAlive) {
       const dist = Phaser.Math.Distance.Between(this.x, this.y, arena.boss.x, arena.boss.y);
-      if (dist < 55) arena.boss.takeDamage(dmg);
+      if (dist < 55) {
+        arena.boss.takeDamage(dmg);
+        return true;
+      }
     }
+    return false;
   }
 
   _groundSlam(dmg, radius) {
