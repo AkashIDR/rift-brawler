@@ -62,26 +62,58 @@ export default class Charger extends BossBase {
     }
   }
 
+  /**
+   * Calculate where the boss will actually land after overshooting through the player.
+   * Extends past the player position by a random amount, clamped to arena bounds.
+   * @param {number} playerX/Y  - player position (center of the charge path)
+   * @param {boolean} isFirst   - true for the initial charge, false for repeats
+   */
+  _calcChargeDestination(playerX, playerY, isFirst) {
+    const overshoot = isFirst
+      ? Phaser.Math.Between(250, 450)
+      : Phaser.Math.Between(150, 280);
+
+    const angle = Phaser.Math.Angle.Between(this.x, this.y, playerX, playerY);
+    const endX  = playerX + Math.cos(angle) * overshoot;
+    const endY  = playerY + Math.sin(angle) * overshoot;
+
+    // Walk along the overshoot segment and stop at the last valid arena point
+    const arena = this.scene.arena;
+    if (!arena) return { x: endX, y: endY };
+
+    const STEPS = 24;
+    let lastX = playerX, lastY = playerY;
+    for (let i = 1; i <= STEPS; i++) {
+      const t = i / STEPS;
+      const cx = playerX + (endX - playerX) * t;
+      const cy = playerY + (endY - playerY) * t;
+      if (arena.containsPoint(cx, cy, this.size * 0.5)) {
+        lastX = cx; lastY = cy;
+      } else {
+        break;
+      }
+    }
+    return { x: lastX, y: lastY };
+  }
+
   _attackDashCharge() {
     const p = this.scene.player;
     if (!p || !p.alive) { this._endAttack(); return; }
 
-    // Capture target now — telegraph and charge both aim at this fixed position
-    const tx = p.x, ty = p.y;
-
-    // Telegraph: full-width rectangle showing the exact hitbox path
-    this._drawTelegraphRect(this.x, this.y, tx, ty, this.size + 16, this._telegraphDuration, 0xff4400);
+    // Calculate full overshoot destination — telegraph shows the true travel path
+    const dest = this._calcChargeDestination(p.x, p.y, true);
+    this._drawTelegraphRect(this.x, this.y, dest.x, dest.y, this.size + 16, this._telegraphDuration, 0xff4400);
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
-      this._doCharge(tx, ty, 1);
+      this._doCharge(dest.x, dest.y, 1);
     });
   }
 
   _doCharge(tx, ty, count) {
     if (!this.alive) return;
-    const angle = Phaser.Math.Angle.Between(this.x, this.y, tx, ty);
-    const dist  = Phaser.Math.Distance.Between(this.x, this.y, tx, ty);
-    const speed = 5600 + this.level * 80;
+    const angle    = Phaser.Math.Angle.Between(this.x, this.y, tx, ty);
+    const dist     = Phaser.Math.Distance.Between(this.x, this.y, tx, ty);
+    const speed    = 5600 + this.level * 80;
     const duration = (dist / speed) * 1000 + 200;
 
     this._charging = true;
@@ -112,14 +144,14 @@ export default class Charger extends BossBase {
         if (count >= 3 || !this.alive) {
           this._endAttack();
         } else {
-          // Capture next target, telegraph it, then fire
           const pl = this.scene.player;
           if (!pl || !pl.alive) { this._endAttack(); return; }
-          const ntx = pl.x, nty = pl.y;
+          // Repeat charges overshoot less (150–280px) — telegraph then fire
           const REPEAT_TELEGRAPH_MS = 400;
-          this._drawTelegraphRect(this.x, this.y, ntx, nty, this.size + 16, REPEAT_TELEGRAPH_MS, 0xff4400);
+          const dest = this._calcChargeDestination(pl.x, pl.y, false);
+          this._drawTelegraphRect(this.x, this.y, dest.x, dest.y, this.size + 16, REPEAT_TELEGRAPH_MS, 0xff4400);
           this.scene.time.delayedCall(REPEAT_TELEGRAPH_MS, () => {
-            this._doCharge(ntx, nty, count + 1);
+            this._doCharge(dest.x, dest.y, count + 1);
           });
         }
       }
@@ -188,7 +220,9 @@ export default class Charger extends BossBase {
     });
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
-      this._doCharge(p.x, p.y, 0);
+      // First charge of the triple sequence also overshots (250–450px)
+      const dest = this._calcChargeDestination(p.x, p.y, true);
+      this._doCharge(dest.x, dest.y, 0);
     });
   }
 
