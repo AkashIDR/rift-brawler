@@ -313,6 +313,38 @@ export default class BossBase {
     return zone;
   }
 
+  // Draw a telegraph rectangle showing the exact hitbox path of a charge attack.
+  // fromX/Y = boss position, toX/Y = charge destination, halfWidth = contact radius.
+  _drawTelegraphRect(fromX, fromY, toX, toY, halfWidth, duration, color = 0xff4400) {
+    const angle = Phaser.Math.Angle.Between(fromX, fromY, toX, toY);
+    const px = Math.cos(angle + Math.PI / 2);
+    const py = Math.sin(angle + Math.PI / 2);
+
+    const corners = () => [
+      { x: fromX + px * halfWidth, y: fromY + py * halfWidth },
+      { x: fromX - px * halfWidth, y: fromY - py * halfWidth },
+      { x: toX   - px * halfWidth, y: toY   - py * halfWidth },
+      { x: toX   + px * halfWidth, y: toY   + py * halfWidth },
+    ];
+
+    const rect = this.scene.add.graphics();
+    rect.setDepth(5);
+
+    this.scene.tweens.addCounter({
+      from: 0, to: 1, duration,
+      onUpdate: (tween) => {
+        const t = tween.getValue();
+        rect.clear();
+        rect.fillStyle(color, 0.08 + t * 0.18);
+        rect.fillPoints(corners(), true);
+        rect.lineStyle(2, color, 0.45 + t * 0.55);
+        rect.strokePoints(corners(), true);
+      },
+      onComplete: () => rect.destroy(),
+    });
+    return rect;
+  }
+
   // Draw a telegraph line (laser warning)
   _drawTelegraphLine(x1, y1, x2, y2, duration, color = 0xff4400) {
     const line = this.scene.add.graphics();

@@ -66,41 +66,25 @@ export default class Charger extends BossBase {
     const p = this.scene.player;
     if (!p || !p.alive) { this._endAttack(); return; }
 
-    // Telegraph: wind-up arrow toward player
-    const angle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
-    const arrowG = this.scene.add.graphics();
-    arrowG.setDepth(6);
-    arrowG.lineStyle(4, 0xff4400, 0.9);
-    const tdur = this._telegraphDuration;
+    // Capture target now — telegraph and charge both aim at this fixed position
+    const tx = p.x, ty = p.y;
 
-    this.scene.tweens.addCounter({
-      from: 0, to: tdur, duration: tdur,
-      onUpdate: (tw) => {
-        const t = tw.getValue() / tdur;
-        arrowG.clear();
-        arrowG.lineStyle(3 + t * 2, 0xff4400, 0.5 + t * 0.5);
-        const len = 30 + t * 40;
-        arrowG.lineBetween(
-          this.x, this.y,
-          this.x + Math.cos(angle) * len, this.y + Math.sin(angle) * len
-        );
-      },
-      onComplete: () => {
-        arrowG.destroy();
-        this._doCharge(p.x, p.y, 1);
-      }
+    // Telegraph: full-width rectangle showing the exact hitbox path
+    this._drawTelegraphRect(this.x, this.y, tx, ty, this.size + 16, this._telegraphDuration, 0xff4400);
+
+    this.scene.time.delayedCall(this._telegraphDuration, () => {
+      this._doCharge(tx, ty, 1);
     });
   }
 
   _doCharge(tx, ty, count) {
     if (!this.alive) return;
     const angle = Phaser.Math.Angle.Between(this.x, this.y, tx, ty);
-    const dist = Phaser.Math.Distance.Between(this.x, this.y, tx, ty);
+    const dist  = Phaser.Math.Distance.Between(this.x, this.y, tx, ty);
     const speed = 5600 + this.level * 80;
     const duration = (dist / speed) * 1000 + 200;
 
     this._charging = true;
-    // Rotate to face charge direction
     this.container.setAngle(Phaser.Math.RadToDeg(angle));
 
     // One hit per charge pass
@@ -116,8 +100,7 @@ export default class Charger extends BossBase {
         if (chargeHitLanded) return;
         const pl = this.scene.player;
         if (pl && pl.alive && !pl.invincible) {
-          const d = Phaser.Math.Distance.Between(this.x, this.y, pl.x, pl.y);
-          if (d < this.size + 16) {
+          if (Phaser.Math.Distance.Between(this.x, this.y, pl.x, pl.y) < this.size + 16) {
             pl.takeDamage(this.damage);
             chargeHitLanded = true;
           }
@@ -129,10 +112,14 @@ export default class Charger extends BossBase {
         if (count >= 3 || !this.alive) {
           this._endAttack();
         } else {
-          this.scene.time.delayedCall(300, () => {
-            if (this.scene.player && this.scene.player.alive) {
-              this._doCharge(this.scene.player.x, this.scene.player.y, count + 1);
-            } else this._endAttack();
+          // Capture next target, telegraph it, then fire
+          const pl = this.scene.player;
+          if (!pl || !pl.alive) { this._endAttack(); return; }
+          const ntx = pl.x, nty = pl.y;
+          const REPEAT_TELEGRAPH_MS = 400;
+          this._drawTelegraphRect(this.x, this.y, ntx, nty, this.size + 16, REPEAT_TELEGRAPH_MS, 0xff4400);
+          this.scene.time.delayedCall(REPEAT_TELEGRAPH_MS, () => {
+            this._doCharge(ntx, nty, count + 1);
           });
         }
       }
@@ -140,7 +127,7 @@ export default class Charger extends BossBase {
   }
 
   _attackSpinCrash() {
-    // Telegraph: expanding ring
+    // Telegraph: expanding ring showing the shockwave radius
     this._drawTelegraphZone(this.x, this.y, this.size * 4.4, this._telegraphDuration, 0xff4400);
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
@@ -183,25 +170,25 @@ export default class Charger extends BossBase {
   _attackTripleCharge() {
     const p = this.scene.player;
     if (!p || !p.alive) { this._endAttack(); return; }
-    const angle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
-    const arrowG = this.scene.add.graphics();
-    arrowG.setDepth(6);
-    const tdur = this._telegraphDuration;
 
-    this.scene.tweens.addCounter({
-      from: 0, to: tdur, duration: tdur,
-      onUpdate: (tw) => {
-        const t = tw.getValue() / tdur;
-        arrowG.clear();
-        // Three arrow lines
-        [-0.25, 0, 0.25].forEach(offset => {
-          const a = angle + offset;
-          arrowG.lineStyle(2, 0xff8800, 0.4 + t * 0.6);
-          arrowG.lineBetween(this.x, this.y,
-            this.x + Math.cos(a) * (40 + t * 60), this.y + Math.sin(a) * (40 + t * 60));
-        });
-      },
-      onComplete: () => { arrowG.destroy(); this._doCharge(p.x, p.y, 0); }
+    const baseAngle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
+    const REACH = 600; // visual length of the fan — long enough to cover the arena
+
+    // Three rectangle telegraphs: center + two flanking at ±0.25 rad
+    [-0.25, 0, 0.25].forEach(offset => {
+      const a = baseAngle + offset;
+      this._drawTelegraphRect(
+        this.x, this.y,
+        this.x + Math.cos(a) * REACH,
+        this.y + Math.sin(a) * REACH,
+        this.size + 16,
+        this._telegraphDuration,
+        0xff8800  // orange-yellow to distinguish from single charge
+      );
+    });
+
+    this.scene.time.delayedCall(this._telegraphDuration, () => {
+      this._doCharge(p.x, p.y, 0);
     });
   }
 
