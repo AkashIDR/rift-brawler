@@ -1,15 +1,10 @@
 import Phaser from 'phaser';
 import BossBase from './BossBase.js';
+import { BOSS_CONFIGS } from '../../config/bossConfig.js';
 
 export default class Gunner extends BossBase {
   constructor(scene, x, y, level) {
-    const config = {
-      name: 'The Gunner',
-      baseHp: 180, baseDamage: 12, baseSpeed: 100,
-      size: 34, color: 0x9b59b6, accentColor: 0xf1c40f,
-      enrageThresholds: [0.5, 0.25],
-    };
-    super(scene, x, y, config, level);
+    super(scene, x, y, BOSS_CONFIGS.gunner, level);
     this._rotationAngle = 0;
   }
 

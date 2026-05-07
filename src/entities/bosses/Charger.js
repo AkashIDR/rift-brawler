@@ -1,15 +1,10 @@
 import Phaser from 'phaser';
 import BossBase from './BossBase.js';
+import { BOSS_CONFIGS } from '../../config/bossConfig.js';
 
 export default class Charger extends BossBase {
   constructor(scene, x, y, level) {
-    const config = {
-      name: 'The Charger',
-      baseHp: 200, baseDamage: 15, baseSpeed: 160,
-      size: 38, color: 0xff4500, accentColor: 0xff8800,
-      enrageThresholds: [0.5, 0.25],
-    };
-    super(scene, x, y, config, level);
+    super(scene, x, y, BOSS_CONFIGS.charger, level);
     this._charging = false;
     this._orbitAngle = 0;
   }

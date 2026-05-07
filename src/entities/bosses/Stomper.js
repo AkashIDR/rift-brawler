@@ -1,15 +1,10 @@
 import Phaser from 'phaser';
 import BossBase from './BossBase.js';
+import { BOSS_CONFIGS } from '../../config/bossConfig.js';
 
 export default class Stomper extends BossBase {
   constructor(scene, x, y, level) {
-    const config = {
-      name: 'The Stomper',
-      baseHp: 260, baseDamage: 20, baseSpeed: 80,
-      size: 48, color: 0x27ae60, accentColor: 0x1abc9c,
-      enrageThresholds: [0.5, 0.25],
-    };
-    super(scene, x, y, config, level);
+    super(scene, x, y, BOSS_CONFIGS.stomper, level);
     this._bobPhase = 0;
   }
 
