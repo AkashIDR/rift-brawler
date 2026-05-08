@@ -210,14 +210,15 @@ export default class BossBase {
   }
 
   // Spawn a boss projectile. maxDist=0 means unlimited range.
-  _spawnProjectile(angle, speed, color, radius, damage, homing = false, maxDist = 0) {
+  // spawnX/spawnY default to boss center; pass rift position for projectile attacks.
+  _spawnProjectile(angle, speed, color, radius, damage, homing = false, maxDist = 0, spawnX = null, spawnY = null) {
     const proj = this.scene.add.graphics();
     proj.fillStyle(color, 1);
     proj.fillCircle(0, 0, radius);
     proj.lineStyle(2, 0xffffff, 0.4);
     proj.strokeCircle(0, 0, radius);
-    proj.x = this.x;
-    proj.y = this.y;
+    proj.x = spawnX ?? this.x;
+    proj.y = spawnY ?? this.y;
     proj.setDepth(8);
 
     proj._vx = Math.cos(angle) * speed;
