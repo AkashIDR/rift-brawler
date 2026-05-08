@@ -99,15 +99,13 @@ export default class ArenaScene extends Phaser.Scene {
     const t = this.theme;
     const bounds = shape.bounds;
     const perimeter = shape.getPerimeterPolygon();
-    const WALL_DEPTH = 26;                       // px — pseudo-3D wall ring thickness
-    const innerRing = _shrinkPts(perimeter, WALL_DEPTH);
 
     // ── DEPTH 0: Void background ─────────────────────────────────────────────
     const voidG = this.add.graphics().setDepth(0);
     voidG.fillStyle(Phaser.Display.Color.ValueToColor(t.bg).darken(20).color, 1);
     voidG.fillRect(0, 0, worldW, worldH);
 
-    // Radial void rings from world center — atmosphere rings hinting at the abyss
+    // Radial void rings from world center — atmosphere hinting at the abyss
     _drawVoidRings(voidG, worldW * 0.5, worldH * 0.5,
       Math.max(worldW, worldH) * 0.6, t.wallShadow, 7, 0.055);
 
@@ -115,74 +113,59 @@ export default class ArenaScene extends Phaser.Scene {
     voidG.lineStyle(6, t.wallHighlight, 0.08);
     voidG.strokePoints(perimeter, true);
 
-    // ── DEPTH 1: Wall + floor (pseudo-3D) ────────────────────────────────────
-    // Draw the full polygon in wallTop, then "punch out" the floor interior by
-    // drawing the inset polygon in floor color — the ring difference IS the wall.
-    const wallG = this.add.graphics().setDepth(1);
-    wallG.fillStyle(t.wallTop, 1);
-    wallG.fillPoints(perimeter, true);
-    wallG.fillStyle(t.floor, 1);
-    wallG.fillPoints(innerRing, true);
+    // ── DEPTH 1: Floor (filled all the way to perimeter — no top-down ring) ──
+    const floorG = this.add.graphics().setDepth(1);
+    floorG.fillStyle(t.floor, 1);
+    floorG.fillPoints(perimeter, true);
 
-    // ── DEPTH 1: Floor texture (brick mortar + scattered patches) ────────────
+    // ── DEPTH 1: Floor texture (brick mortar + cross-hatch + patches) ────────
     // All floor-content graphics share ONE geometry mask (one stencil texture).
     const maskG = this.make.graphics({ add: false });
     maskG.fillStyle(0xffffff, 1);
-    maskG.fillPoints(innerRing, true);
+    maskG.fillPoints(perimeter, true);
     const floorMask = maskG.createGeometryMask();
 
     const floorTexG = this.add.graphics().setDepth(1);
     floorTexG.setMask(floorMask);
 
-    // Brick mortar lines
     _drawBrickTexture(floorTexG, bounds, 48, 32, t.accentDim, 0.055);
 
-    // Cross-hatch diagonal lines (subtle depth)
     floorTexG.lineStyle(1, t.accentDim, 0.03);
     for (let d = -bounds.h; d < bounds.w; d += 80) {
       floorTexG.lineBetween(bounds.x + d, bounds.y, bounds.x + d + bounds.h, bounds.y + bounds.h);
       floorTexG.lineBetween(bounds.x + d + bounds.h, bounds.y, bounds.x + d, bounds.y + bounds.h);
     }
 
-    // Scattered floor patches (light/dark ellipses for floor variation)
     _drawFloorPatches(floorTexG, this.arena, bounds, t.floorLight, t.floorDark, 22);
 
-    // ── DEPTH 2: AO shadow bands (dark near walls, bright in center) ─────────
-    // Validate innerRing before drawing AO bands
-    const innerRingValid = innerRing.every(p => this.arena.containsPoint(p.x, p.y, 0));
-    if (innerRingValid) {
+    // ── DEPTH 2: AO bands (floor darkens toward perimeter, all sides) ────────
+    // Build inner-ring polygons inward from the perimeter — same logic as the
+    // previous overhaul but anchored at the perimeter (since floor now fills it).
+    const aoBaseValid = perimeter.every(p => this.arena.containsPoint(p.x, p.y, 0));
+    if (aoBaseValid) {
       const aoG = this.add.graphics().setDepth(2);
-      _drawAOBands(aoG, innerRing, t.wallShadow);
+      aoG.setMask(floorMask);
+      _drawAOBands(aoG, perimeter, t.wallShadow);
     }
 
-    // ── DEPTH 2: Wall edge highlights ────────────────────────────────────────
-    const edgeG = this.add.graphics().setDepth(2);
+    // ── DEPTH 2: Drop shadow — wall casting onto floor, north-facing only ────
+    const dropG = this.add.graphics().setDepth(2);
+    dropG.setMask(floorMask);
+    _drawWallDropShadow(dropG, perimeter, ARENA.WALL_SHADOW_DEPTH);
 
-    // Outer wall bottom shadow — the wall's shadowed face
-    edgeG.lineStyle(3, t.wallShadow, 0.7);
-    edgeG.strokePoints(perimeter, true);
+    // ── DEPTH 3: Wall front faces (the headline 2.5D effect) ─────────────────
+    const wallFrontG = this.add.graphics().setDepth(3);
+    _drawWallFrontFaces(wallFrontG, perimeter, t, ARENA.WALL_HEIGHT);
 
-    // Inner wall top highlight — the lit top corner of the 3D wall ring
-    edgeG.lineStyle(1.5, t.wallHighlight, 0.55);
-    edgeG.strokePoints(innerRing, true);
+    // ── DEPTH 5: Floor details ────────────────────────────────────────────────
+    const detailG = this.add.graphics().setDepth(5);
 
-    // Secondary inner edge — subtle depth crease
-    const innerRing2 = _shrinkPts(perimeter, WALL_DEPTH - 6);
-    edgeG.lineStyle(1, t.wallHighlight, 0.20);
-    edgeG.strokePoints(innerRing2, true);
-
-    // ── DEPTH 2: Floor details ────────────────────────────────────────────────
-    const detailG = this.add.graphics().setDepth(2);
-
-    // Enhanced center medallion at altar point
     const { x: cx, y: cy } = this.arena.altarPoint;
     _drawMedallion(detailG, cx, cy, t.accent, t.accentDim);
 
-    // Theme-specific floor decorations (rune crosses, crystal shards, cracks, etc.)
     const themeIdx = _themeIndex(this.level);
     _drawThemeDetails(detailG, themeIdx, this.arena, bounds, t.accent, t.accentDim, 15);
 
-    // Scatter diamonds (accent details at key positions)
     const scatter = [
       [bounds.x + 110, bounds.y + 90], [bounds.x + bounds.w - 110, bounds.y + 90],
       [bounds.x + 110, bounds.y + bounds.h - 90], [bounds.x + bounds.w - 110, bounds.y + bounds.h - 90],
@@ -201,17 +184,17 @@ export default class ArenaScene extends Phaser.Scene {
       detailG.fillCircle(dx, dy, 2.5);
     });
 
-    // ── DEPTH 3: Vignette — progressive darkening inward from inner wall edge ─
+    // ── DEPTH 6: Vignette — progressive darkening inward from perimeter ──────
     const vigOffsets = [88, 64, 42, 24, 12];
     const vigAlphas  = [0.09, 0.09, 0.08, 0.07, 0.06];
     vigOffsets.forEach((d, i) => {
-      const vg = this.add.graphics().setDepth(3);
+      const vg = this.add.graphics().setDepth(6);
       vg.fillStyle(0x000000, vigAlphas[i]);
-      const inner = _shrinkPts(innerRing, d);
-      _fillBetweenPolygons(vg, innerRing, inner);
+      const inner = _shrinkPts(perimeter, d);
+      _fillBetweenPolygons(vg, perimeter, inner);
     });
 
-    // ── DEPTH 4: Ambient particles ───────────────────────────────────────────
+    // ── DEPTH 7: Ambient particles ───────────────────────────────────────────
     this._initParticles(t.particle);
     this.events.once('shutdown', () => this._cleanupParticles());
   }
@@ -252,7 +235,7 @@ export default class ArenaScene extends Phaser.Scene {
       const r = 1.5 + Math.random() * 1.0;
       const speed = 10 + Math.random() * 15;
       const angle = Math.random() * Math.PI * 2;
-      const g = this.add.graphics().setDepth(4);
+      const g = this.add.graphics().setDepth(7);
       g.fillStyle(color, 0.7);
       g.fillCircle(0, 0, r);
       g.setPosition(px, py);
@@ -291,7 +274,7 @@ export default class ArenaScene extends Phaser.Scene {
 
   _spawnObstacles() {
     this.obstacles = this.arena.obstacles.map(d =>
-      new Obstacle(this, d.x, d.y, d.type, d.tall)
+      new Obstacle(this, d.x, d.y, d.type, d.tall, d.themeIdx ?? 0)
     );
   }
 
@@ -673,7 +656,167 @@ function _drawSpiralFragment(g, x, y, color, alpha) {
     pts.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r });
   }
   g.strokePoints(pts, false);
-  // Ghost outer pass for glow feel
   g.lineStyle(3, color, alpha * 0.2);
   g.strokePoints(pts, false);
+}
+
+// ── 2.5D wall geometry helpers ────────────────────────────────────────────────
+
+/**
+ * Per-edge "facing factor": how much this edge's outward face points NORTH
+ * (toward the camera-tilted-forward direction). 1 = pure north, 0 = E/W or south.
+ *
+ * Polygon convention here: CCW with interior-on-right (Y-down screen coords).
+ * For an edge from A to B with direction (dx, dy), the OUTWARD normal is (dy, -dx).
+ * North-facing means outward.y < 0, i.e. -dx < 0, i.e. dx > 0.
+ */
+function _facingFactor(a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ny = -dx / len;             // outward-normal Y component
+  return Math.max(0, -ny);          // 1 pure north → 0 E/W or south
+}
+
+/**
+ * Draw vertical front-face quads for north-facing perimeter edges, extruded
+ * upward (in screen Y) by WALL_HEIGHT. Edges are tapered by facingFactor so
+ * E/W edges blend smoothly to a flat lip and south edges show no front face.
+ */
+function _drawWallFrontFaces(g, perimeter, theme, WALL_HEIGHT) {
+  const N = perimeter.length;
+
+  // Pre-compute per-edge facing factors
+  const facing = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const a = perimeter[i], b = perimeter[(i + 1) % N];
+    facing[i] = _facingFactor(a, b);
+  }
+
+  // Per-vertex extrusion height — max of adjacent edges so corners don't gap
+  const vH = new Array(N);
+  for (let i = 0; i < N; i++) {
+    vH[i] = WALL_HEIGHT * Math.max(facing[(i - 1 + N) % N], facing[i]);
+  }
+
+  for (let i = 0; i < N; i++) {
+    const fEdge = facing[i];
+    if (fEdge < 0.05) continue;        // skip south + pure E/W
+
+    const a = perimeter[i], b = perimeter[(i + 1) % N];
+    const ha = vH[i], hb = vH[(i + 1) % N];
+    const topA = { x: a.x, y: a.y - ha };
+    const topB = { x: b.x, y: b.y - hb };
+    const quad = [a, b, topB, topA];
+
+    // Base fill — wall inner color (the cliff face's main stone color)
+    g.fillStyle(theme.wallInner, 1);
+    g.fillPoints(quad, true);
+
+    // Procedural stone-block texture
+    _drawWallTextureOnQuad(g, quad, theme, fEdge, i, WALL_HEIGHT);
+
+    // Bottom crease — dark line where wall meets floor
+    g.lineStyle(1, theme.wallShadow, 0.7);
+    g.lineBetween(a.x, a.y, b.x, b.y);
+
+    // Top highlight — bright line where light catches the wall's top corner.
+    // Brighter on more north-facing edges (the lit edge of the cliff).
+    g.lineStyle(2, theme.wallHighlight, 0.4 + 0.5 * fEdge);
+    g.lineBetween(topA.x, topA.y, topB.x, topB.y);
+  }
+}
+
+/**
+ * Stone-block texture inside a wall front-face quad. Mortar joints (vertical),
+ * horizontal courses, weathered block tints — all procedural, deterministic per
+ * edge so re-renders don't flicker.
+ */
+function _drawWallTextureOnQuad(g, quad, theme, facingFactor, edgeIdx, WALL_HEIGHT) {
+  const [a, b, topB, topA] = quad;
+
+  // Edge axis (horizontal direction along the wall) and per-vertex top heights
+  const edgeDx = b.x - a.x;
+  const edgeDy = b.y - a.y;
+  const edgeLen = Math.hypot(edgeDx, edgeDy) || 1;
+  const ux = edgeDx / edgeLen, uy = edgeDy / edgeLen;          // unit along edge
+
+  // ── Vertical mortar joints ────────────────────────────────────────────────
+  // Position joints every ~46 px along the edge with a per-edge offset so
+  // adjacent quads' joints don't visually align.
+  const JOINT_SPACING = 46;
+  const hash = ((edgeIdx * 2654435761) >>> 0) / 0xffffffff;    // [0, 1)
+  const startOffset = hash * JOINT_SPACING;
+
+  g.lineStyle(1, theme.wallShadow, 0.55);
+  for (let s = startOffset; s < edgeLen; s += JOINT_SPACING) {
+    const t = s / edgeLen;
+    // Bottom point of joint along the floor edge
+    const bx = a.x + edgeDx * t;
+    const by = a.y + edgeDy * t;
+    // Interpolated top height at this point along the edge
+    const haTop = topA.y - a.y;
+    const hbTop = topB.y - b.y;
+    const tHeight = haTop + (hbTop - haTop) * t;
+    g.lineBetween(bx, by, bx, by + tHeight);
+  }
+
+  // ── Horizontal courses — at 33% and 66% of wall height ────────────────────
+  g.lineStyle(1, theme.wallShadow, 0.30);
+  [0.33, 0.66].forEach(frac => {
+    const cAx = a.x, cAy = a.y - (a.y - topA.y) * frac;
+    const cBx = b.x, cBy = b.y - (b.y - topB.y) * frac;
+    g.lineBetween(cAx, cAy, cBx, cBy);
+  });
+
+  // ── Random block weathering tints — sample 2–4 blocks and overlay ─────────
+  const blocks = Math.floor(edgeLen / JOINT_SPACING);
+  const tintCount = Math.min(4, Math.max(2, Math.floor(blocks * 0.4)));
+  for (let k = 0; k < tintCount; k++) {
+    const bhash = ((edgeIdx * 1009 + k * 7919) >>> 0) / 0xffffffff;
+    const blockIdx = Math.floor(bhash * Math.max(1, blocks));
+    const courseIdx = ((bhash * 100) | 0) % 3;                   // 0/1/2 → bottom/mid/top course
+
+    const sStart = startOffset + blockIdx * JOINT_SPACING;
+    const sEnd = sStart + JOINT_SPACING;
+    if (sStart >= edgeLen) continue;
+
+    const t1 = sStart / edgeLen;
+    const t2 = Math.min(1, sEnd / edgeLen);
+    const fracBot = courseIdx === 0 ? 0    : courseIdx === 1 ? 0.33 : 0.66;
+    const fracTop = courseIdx === 0 ? 0.33 : courseIdx === 1 ? 0.66 : 1.0;
+
+    const lerpY = (pt, top, frac) => pt.y - (pt.y - top.y) * frac;
+    const p1 = { x: a.x + edgeDx * t1, y: lerpY(a, topA, fracBot) };
+    const p2 = { x: a.x + edgeDx * t2, y: lerpY(a, topA, fracBot) };
+    const p3 = { x: a.x + edgeDx * t2, y: lerpY(a, topA, fracTop) };
+    const p4 = { x: a.x + edgeDx * t1, y: lerpY(a, topA, fracTop) };
+
+    const lighter = (bhash > 0.5);
+    const tintColor = lighter ? theme.wallHighlight : theme.wallShadow;
+    g.fillStyle(tintColor, 0.08);
+    g.fillPoints([p1, p2, p3, p4], true);
+  }
+}
+
+/**
+ * Drop-shadow band on the FLOOR side of each non-south edge — the wall casting
+ * shade onto the floor toward the camera. Tapered by facingFactor so south
+ * edges get nothing and pure-north edges get full opacity.
+ */
+function _drawWallDropShadow(g, perimeter, SHADOW_DEPTH) {
+  const N = perimeter.length;
+  for (let i = 0; i < N; i++) {
+    const a = perimeter[i], b = perimeter[(i + 1) % N];
+    const fEdge = _facingFactor(a, b);
+    if (fEdge < 0.05) continue;
+
+    const fA = Math.max(_facingFactor(perimeter[(i - 1 + N) % N], a), fEdge);
+    const fB = Math.max(fEdge, _facingFactor(b, perimeter[(i + 2) % N]));
+
+    const inA = { x: a.x, y: a.y + SHADOW_DEPTH * fA };
+    const inB = { x: b.x, y: b.y + SHADOW_DEPTH * fB };
+
+    g.fillStyle(0x000000, 0.35 * fEdge);
+    g.fillPoints([a, b, inB, inA], true);
+  }
 }

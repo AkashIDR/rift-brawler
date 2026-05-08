@@ -77,11 +77,12 @@ export default class ArenaGenerator {
     return arena;
   }
 
-  // ── Obstacle placement (unchanged from previous implementation) ───────────
+  // ── Obstacle placement ────────────────────────────────────────────────────
   static _placeObstacles(arena, level) {
     const { shape, spawnPoint, altarPoint } = arena;
     const bounds = shape.bounds;
     const clusters = this._generateClusters(arena, level);
+    const themeIdx = _themeIndexForLevel(level);
 
     const STEP = 82;
     const candidates = [];
@@ -110,6 +111,19 @@ export default class ArenaGenerator {
       const tooClose = placed.some(p => Math.hypot(c.x - p.x, c.y - p.y) < OBSTACLES.MIN_OBSTACLE_GAP);
       if (tooClose) continue;
       placed.push({ x: c.x, y: c.y, ..._pickType(c.x, c.y, bounds) });
+    }
+
+    // Spire pass — theme-specific tall props, ~1 per 600 000 px² of floor
+    const spireCount = Math.max(1, Math.floor(shape.area * OBSTACLES.SPIRE_DENSITY));
+    let spiresPlaced = 0;
+    _shuffle(candidates);
+    for (const c of candidates) {
+      if (spiresPlaced >= spireCount) break;
+      const tooClose = placed.some(p => Math.hypot(c.x - p.x, c.y - p.y) < OBSTACLES.MIN_OBSTACLE_GAP);
+      if (tooClose) continue;
+      // Spires are tall (canopy fades on occlusion) and carry the themeIdx
+      placed.push({ x: c.x, y: c.y, type: 'spire', tall: true, themeIdx });
+      spiresPlaced++;
     }
 
     for (const cluster of clusters) {
@@ -168,6 +182,15 @@ export default class ArenaGenerator {
     }
     return placed;
   }
+}
+
+/** Theme bracket from level — must match THEMES order in gameConfig.js */
+function _themeIndexForLevel(level) {
+  if (level <= 5)  return 0;
+  if (level <= 10) return 1;
+  if (level <= 15) return 2;
+  if (level <= 20) return 3;
+  return 4;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

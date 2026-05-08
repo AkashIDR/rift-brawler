@@ -11,6 +11,8 @@ export const ARENA = {
   PADDING: 70,           // default wall inset, used when callers omit `r` to containsPoint
   CAMERA_LERP: 0.1,      // camera follow smoothness
   CAMERA_ZOOM: 1.5,      // default zoom level (1 = no zoom, higher = closer in)
+  WALL_HEIGHT: 60,       // px — vertical extrusion for north-facing wall front faces
+  WALL_SHADOW_DEPTH: 14, // px — drop-shadow depth from wall onto floor
 };
 
 // ── Obstacle config ───────────────────────────────────────────────────────────
@@ -33,6 +35,10 @@ export const OBSTACLES = {
   CLUSTER_OBSTACLE_GAP: 52,     // tighter spacing inside a cluster
   CLUSTER_COUNT_MIN: 6,
   CLUSTER_COUNT_MAX: 14,
+
+  // Theme-specific vertical props (one per ~600 000 px² of floor)
+  SPIRE_RADIUS: 22,
+  SPIRE_DENSITY: 0.0000017,
 };
 
 // Player base stats
