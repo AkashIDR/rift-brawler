@@ -14,8 +14,8 @@ export const BOSS_CONFIGS = {
   },
   gunner: {
     name: 'The Gunner',
-    baseHp: 1600,
-    baseDamage: 150,
+    baseHp: 2000,
+    baseDamage: 250,
     baseSpeed: 100,
     size: 34,
     color: 0x9b59b6,

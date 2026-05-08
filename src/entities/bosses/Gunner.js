@@ -79,19 +79,24 @@ export default class Gunner extends BossBase {
 
   /**
    * Open a rift tear at world position (x, y), oriented perpendicular to angle.
-   * Returns the graphics object — caller must call _closeRift() when done.
+   * projDiameter sets the long axis of the slit — matches the projectile width so
+   * the player can read the incoming projectile size from the telegraph.
+   * Returns the graphics object — caller manages lifetime via _closeRift().
    */
-  _spawnRiftTelegraph(x, y, angle, duration, color = 0xaa44ff) {
+  _spawnRiftTelegraph(x, y, angle, duration, color = 0xaa44ff, projDiameter = 22) {
     const g = this.scene.add.graphics();
     g.x = x; g.y = y;
     g.angle = Phaser.Math.RadToDeg(angle) + 90; // perpendicular slit
     g.setDepth(6).setScale(0);
 
-    // Stacked ellipses drawn once; scale tween animates open/close
-    g.fillStyle(color, 0.20); g.fillEllipse(0, 0, 56, 16);
-    g.fillStyle(color, 0.50); g.fillEllipse(0, 0, 38, 10);
-    g.fillStyle(0xffffff, 0.90); g.fillEllipse(0, 0, 22, 5);
-    g.lineStyle(1, 0xffffff, 0.70); g.strokeEllipse(0, 0, 22, 5);
+    // Height scales with width to keep an oval shape (never circular)
+    const w = projDiameter;
+    const h = Math.max(8, Math.round(w * 0.22));
+
+    g.fillStyle(color, 0.20); g.fillEllipse(0, 0, w + 24, h + 10);
+    g.fillStyle(color, 0.50); g.fillEllipse(0, 0, w + 10, h + 5);
+    g.fillStyle(0xffffff, 0.90); g.fillEllipse(0, 0, w, h);
+    g.lineStyle(1, 0xffffff, 0.70); g.strokeEllipse(0, 0, w, h);
 
     // Snap open
     this.scene.tweens.add({
@@ -124,15 +129,27 @@ export default class Gunner extends BossBase {
     const p = this.scene.player;
     if (!p || !p.alive) { this._endAttack(); return; }
 
-    // Capture angle and rift position at telegraph time (honest telegraph)
-    const angle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
-    const rp    = this._riftPos(angle);
-    const rift  = this._spawnRiftTelegraph(rp.x, rp.y, angle, this._telegraphDuration, this.accentColor);
+    const TEL_MS = 700; // fixed telegraph duration for this attack
+    let angle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
+    let rp    = this._riftPos(angle);
+    const rift = this._spawnRiftTelegraph(rp.x, rp.y, angle, TEL_MS, this.accentColor, 100);
 
-    this.scene.time.delayedCall(this._telegraphDuration, () => {
+    // Track player — rift follows the player's direction in real time
+    const track = () => {
+      if (!p.alive || !rift.active) return;
+      angle  = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
+      rp     = this._riftPos(angle);
+      rift.x = rp.x; rift.y = rp.y;
+      rift.angle = Phaser.Math.RadToDeg(angle) + 90;
+    };
+    this.scene.events.on('update', track);
+    this.scene.events.once('shutdown', () => this.scene.events.off('update', track));
+
+    this.scene.time.delayedCall(TEL_MS, () => {
+      this.scene.events.off('update', track);
       this._closeRift(rift, () => {
         if (!this.alive) return;
-        this._spawnProjectile(angle, 480, 0xffcc00, 10, this.damage, false, 560, rp.x, rp.y);
+        this._spawnProjectile(angle, 500, 0xffcc00, 50, this.damage, false, 500, rp.x, rp.y);
         this._endAttack();
       });
     });
@@ -142,23 +159,42 @@ export default class Gunner extends BossBase {
     const p = this.scene.player;
     if (!p || !p.alive) { this._endAttack(); return; }
 
-    const baseA   = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
-    const offsets = [-0.35, 0, 0.35];
+    const OFFSETS = [-0.35, 0, 0.35];
+    let baseA = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
 
-    // Open all 3 rifts simultaneously
-    const rifts = offsets.map(off => {
-      const a  = baseA + off;
+    // Open all 3 rifts simultaneously at initial positions
+    const rifts = OFFSETS.map(off => {
+      const a = baseA + off;
       const rp = this._riftPos(a);
-      return { rift: this._spawnRiftTelegraph(rp.x, rp.y, a, this._telegraphDuration, this.accentColor), a, rp };
+      return { g: this._spawnRiftTelegraph(rp.x, rp.y, a, this._telegraphDuration, this.accentColor, 50), off };
     });
 
+    // Track player — all 3 rifts follow the base angle each frame
+    const track = () => {
+      if (!p.alive) return;
+      baseA = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
+      rifts.forEach(({ g, off }) => {
+        if (!g.active) return;
+        const a = baseA + off;
+        const rp = this._riftPos(a);
+        g.x = rp.x; g.y = rp.y;
+        g.angle = Phaser.Math.RadToDeg(a) + 90;
+      });
+    };
+    this.scene.events.on('update', track);
+    this.scene.events.once('shutdown', () => this.scene.events.off('update', track));
+
     this.scene.time.delayedCall(this._telegraphDuration, () => {
-      if (!this.alive) { rifts.forEach(r => { if (r.rift.active) r.rift.destroy(); }); return; }
-      // Close all 3 and fire simultaneously
+      this.scene.events.off('update', track);
+      if (!this.alive) { rifts.forEach(({ g }) => { if (g.active) g.destroy(); }); return; }
+
+      // Lock final angles and fire all 3 simultaneously
+      const finalAngles = rifts.map(({ off }) => ({ a: baseA + off, rp: this._riftPos(baseA + off) }));
       let closed = 0;
-      rifts.forEach(({ rift, a, rp }) => {
-        this._closeRift(rift, () => {
-          this._spawnProjectile(a, 360, 0xffcc00, 9, this.damage * 0.75, false, 440, rp.x, rp.y);
+      rifts.forEach(({ g }, i) => {
+        const { a, rp } = finalAngles[i];
+        this._closeRift(g, () => {
+          this._spawnProjectile(a, 400, 0xffcc00, 25, this.damage * 0.8, false, 500, rp.x, rp.y);
           if (++closed === rifts.length) this._endAttack();
         });
       });
@@ -166,19 +202,19 @@ export default class Gunner extends BossBase {
   }
 
   _attackFullRotation() {
-    // Open 8 rifts simultaneously in evenly-spaced directions
+    // 8 fixed directions — tracking doesn't apply to omnidirectional attacks
     const rifts = Array.from({ length: 8 }, (_, i) => {
       const a  = (i / 8) * Math.PI * 2;
       const rp = this._riftPos(a);
-      return { rift: this._spawnRiftTelegraph(rp.x, rp.y, a, this._telegraphDuration, 0xff44ff), a, rp };
+      return { g: this._spawnRiftTelegraph(rp.x, rp.y, a, this._telegraphDuration, 0xff44ff, 35), a, rp };
     });
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
-      if (!this.alive) { rifts.forEach(r => { if (r.rift.active) r.rift.destroy(); }); return; }
+      if (!this.alive) { rifts.forEach(({ g }) => { if (g.active) g.destroy(); }); return; }
       let closed = 0;
-      rifts.forEach(({ rift, a, rp }) => {
-        this._closeRift(rift, () => {
-          this._spawnProjectile(a, 300, 0xff44ff, 8, this.damage * 0.65, false, 400, rp.x, rp.y);
+      rifts.forEach(({ g, a, rp }) => {
+        this._closeRift(g, () => {
+          this._spawnProjectile(a, 400, 0xff44ff, 18, this.damage * 0.8, false, 500, rp.x, rp.y);
           if (++closed === rifts.length) this._endAttack();
         });
       });
@@ -189,36 +225,48 @@ export default class Gunner extends BossBase {
     const p = this.scene.player;
     if (!p || !p.alive) { this._endAttack(); return; }
 
-    // Rift opens toward player's current position and stays open for all shots
-    const initAngle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
-    const rp        = this._riftPos(initAngle);
-    const rift      = this._spawnRiftTelegraph(rp.x, rp.y, initAngle, 99999, 0xff88ff);
+    // Open rift at initial player direction
+    let angle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
+    let rp    = this._riftPos(angle);
+    const rift = this._spawnRiftTelegraph(rp.x, rp.y, angle, 99999, 0xff88ff, 70);
 
     const maxShots = this.enraged ? 6 : 4;
-    let   shots    = 0;
+    let shots = 0;
 
-    const fireShot = () => {
+    const aimAndFire = () => {
       if (!this.alive || !p.alive || shots >= maxShots) {
-        // Last shot done — close the rift and end
         this._closeRift(rift, () => this._endAttack());
         return;
       }
 
-      // Pulse the rift on each shot
-      this.scene.tweens.add({
-        targets: rift, alpha: { from: 1, to: 0.35 },
-        duration: 60, yoyo: true, ease: 'Quad.easeOut',
-      });
+      // Smoothly tween rift to new player direction before firing
+      const newAngle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
+      const newRp    = this._riftPos(newAngle);
 
-      // Each shot re-aims at player's current position, fires from the fixed rift
-      const angle = Phaser.Math.Angle.Between(this.x, this.y, p.x, p.y);
-      this._spawnProjectile(angle, 440, 0xff88ff, 10, this.damage, false, 520, rp.x, rp.y);
-      shots++;
-      this.scene.time.delayedCall(280, fireShot);
+      this.scene.tweens.killTweensOf(rift);
+      this.scene.tweens.add({
+        targets: rift,
+        x: newRp.x, y: newRp.y,
+        angle: Phaser.Math.RadToDeg(newAngle) + 90,
+        duration: 150, ease: 'Quad.easeOut',
+        onComplete: () => {
+          angle = newAngle; rp = newRp;
+
+          // Flash pulse on fire
+          this.scene.tweens.add({
+            targets: rift, alpha: { from: 1, to: 0.3 },
+            duration: 60, yoyo: true, ease: 'Quad.easeOut',
+          });
+
+          this._spawnProjectile(angle, 440, 0xff88ff, 35, this.damage * 0.6, false, 520, rp.x, rp.y);
+          shots++;
+          this.scene.time.delayedCall(280, aimAndFire);
+        },
+      });
     };
 
-    // Brief pause after rift opens before first shot
-    this.scene.time.delayedCall(400, fireShot);
+    // Brief pause after rift opens, then begin tracking + firing
+    this.scene.time.delayedCall(400, aimAndFire);
   }
 
   update(time, delta) {

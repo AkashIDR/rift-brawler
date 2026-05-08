@@ -35,17 +35,50 @@ Use a **spawn-point telegraph** — a visual that appears at the exact world pos
 projectile will emerge from, not along its travel path. The player reads "a projectile
 is coming from that spot" and repositions accordingly.
 
-Rules:
-- The telegraph graphic is placed at `bossPos + direction * (size + offset)` — just
-  outside the boss body, at the barrel tip or equivalent
-- The projectile must spawn from that same position (pass `spawnX, spawnY` to
-  `_spawnProjectile` — see `BossBase._spawnProjectile` signature)
-- Multiple simultaneous projectiles each get their own spawn-point telegraph
-- Persistent attacks (e.g. barrage) hold a single telegraph open for the full duration
-  and close it after the last shot
+**Position & shape**
+- Placed at `bossPos + direction * (size + 18)` — just beyond the boss outline at the
+  barrel tip or equivalent
+- The projectile must spawn from that same world position (pass `spawnX, spawnY` to
+  `_spawnProjectile`)
+- Oriented **perpendicular** to the fire direction (90° rotation) so it reads as a slit
+  opening sideways — never a dot or circle
+- **Width = projectile diameter** (not a fixed size). Height = `max(8, round(w × 0.22))`
+  to keep an oval slit at all sizes. Never let height exceed ~25% of width (would look
+  circular instead of a slit)
+
+**Layers (rift-tear default style)**
+```
+Outer glow:  fillEllipse(0, 0, w+24, h+10)  — accent color, alpha 0.20
+Mid glow:    fillEllipse(0, 0, w+10, h+5 )  — accent color, alpha 0.50
+Inner core:  fillEllipse(0, 0, w,    h   )  — 0xffffff,     alpha 0.90
+Edge stroke: strokeEllipse(0, 0, w,  h   )  — 0xffffff,     alpha 0.70
+```
+
+**Animation lifecycle**
+- **Open**: scale 0 → 1 over 200ms, `Back.easeOut` (snap open with slight overshoot)
+- **Wait**: alpha 0.75 ↔ 1.0, 160ms yoyo, repeats until fire
+- **Close**: scale → 0 over 80ms, `Quad.easeIn` — fires projectile in `onComplete`
+- Destroy the graphics object immediately after close; never leave orphaned rifts
+
+**Tracking**
+- Aimed / spread attacks: telegraph tracks the player in real time during the wind-up
+  via `scene.events.on('update', track)`. Lock the final angle when the timer fires,
+  remove the listener, then close the rift and spawn the projectile
+- Omnidirectional attacks (e.g. fullRotation): no tracking — positions are fixed at cast time
+- Persistent barrages: one rift stays open for the full attack; tween it to the new
+  player direction (150ms, `Quad.easeOut`) before each shot, flash alpha on fire,
+  close after the final shot
+
+**Multi-projectile**
+- Each simultaneous projectile gets its own rift at its own spawn position
+- All rifts for a single attack open at the same time and close together before firing
+
+**General**
 - The specific visual (rift tear, glow ring, charge spark, etc.) may differ per boss or
   attack theme — the concept is fixed, the art is not. Default to the rift-tear style
   (`Gunner._spawnRiftTelegraph`) unless a different visual is requested
+- Always register `scene.events.once('shutdown', () => { if (g.active) g.destroy(); })`
+  on every rift graphic to prevent orphaned graphics on scene transition
 
 **Never use a rectangle telegraph for a projectile attack** unless explicitly requested.
 
