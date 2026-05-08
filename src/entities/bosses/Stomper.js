@@ -364,36 +364,48 @@ export default class Stomper extends BossBase {
   }
 
   _spawnCrater(cx, cy, radius) {
+    // Position the graphics object at the crater center so scale/tween
+    // always transforms around (cx, cy) — never around world origin.
     const g = this.scene.add.graphics();
+    g.x = cx; g.y = cy;
     g.setDepth(6);
     g.setScale(0);
 
-    // Outer ring — two glow layers + bright rim
-    g.lineStyle(20, 0x00ff77, 0.18); g.strokeCircle(cx, cy, radius);
-    g.lineStyle(9,  0x00ff77, 0.55); g.strokeCircle(cx, cy, radius);
-    g.lineStyle(3,  0xaaffcc, 0.90); g.strokeCircle(cx, cy, radius);
-    // Inner ring
-    g.lineStyle(5,  0x00ff77, 0.35); g.strokeCircle(cx, cy, radius * 0.52);
-    g.lineStyle(1.5,0xaaffcc, 0.60); g.strokeCircle(cx, cy, radius * 0.52);
+    // Layer 1 — pit floor: near-black fill gives the hole its darkness
+    g.fillStyle(0x0f0705, 0.95); g.fillCircle(0, 0, radius);
 
-    // Radial cracks from inner ring outward to crater edge
+    // Layer 2 — inner floor: slightly lighter brown so the pit reads as
+    // having depth (darker outer walls, slightly lighter flat bottom)
+    g.fillStyle(0x1e100a, 0.75); g.fillCircle(0, 0, radius * 0.68);
+
+    // Layer 3 — thick raised rim: displaced earth pushed up by the impact
+    g.lineStyle(14, 0x5c3618, 1.0); g.strokeCircle(0, 0, radius);
+
+    // Layer 4 — rim highlight: lighter edge along the top of the rim
+    g.lineStyle(2.5, 0x8a5a30, 0.70); g.strokeCircle(0, 0, radius);
+
+    // Layer 5 — outer disturbed earth ring: loose dirt scattered just outside
+    g.lineStyle(5, 0x3d2010, 0.55); g.strokeCircle(0, 0, radius + 11);
+
+    // Layer 6 — 7 radial cracks from inner wall outward past the rim
     for (let i = 0; i < 7; i++) {
       const a  = (i / 7) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
-      const r1 = radius * 0.45;
-      const r2 = radius * (0.88 + Math.random() * 0.18);
-      g.lineStyle(6,   0x00ff77, 0.30); g.lineBetween(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
-      g.lineStyle(1.5, 0xaaffcc, 0.72); g.lineBetween(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1, cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+      const r1 = radius * 0.30;
+      const r2 = radius * (0.92 + Math.random() * 0.18);
+      g.lineStyle(9, 0x2d1a0a, 0.45); g.lineBetween(Math.cos(a) * r1, Math.sin(a) * r1, Math.cos(a) * r2, Math.sin(a) * r2);
+      g.lineStyle(2, 0x5c3d28, 0.80); g.lineBetween(Math.cos(a) * r1, Math.sin(a) * r1, Math.cos(a) * r2, Math.sin(a) * r2);
     }
 
-    // Stamp open with slight overshoot, then linger and fade
-    this.scene.tweens.add({ targets: g, scaleX: 1, scaleY: 1, duration: 90, ease: 'Back.easeOut' });
+    // Stamp open with slight overshoot — scaleY 0.82 gives top-down depth ellipse
+    this.scene.tweens.add({ targets: g, scaleX: 1, scaleY: 0.82, duration: 90, ease: 'Back.easeOut' });
     this.scene.tweens.add({ targets: g, alpha: 0, duration: 400, delay: 900, onComplete: () => g.destroy() });
 
-    // Debris chunks flying outward
+    // Debris chunks — alternating dirt and rock colors, fly outward and spin
     for (let i = 0; i < 9; i++) {
       const a    = (i / 9) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
       const frag = this.scene.add.graphics();
-      frag.fillStyle(0x1a6b40, 1);
+      const isRock = i % 2 === 0;
+      frag.fillStyle(isRock ? 0x5a5550 : 0x4a3018, 1);
       const sz = 4 + Math.random() * 9;
       frag.fillRect(-sz / 2, -sz / 2, sz, sz);
       frag.x = cx + Math.cos(a) * radius * 0.25;
