@@ -96,18 +96,37 @@ export const SCALING = {
   BOSS_SPEED_PER_LEVEL: 4,
 };
 
-// Level theme palettes
+// Level theme palettes (11 fields each for full procedural art)
+// floor/floorLight/floorDark — floor base, bright patches, dark patches
+// wallTop/wallInner/wallHighlight/wallShadow — pseudo-3D wall ring colors
+// accent/accentDim — detail line bright/muted
+// bg — void beyond the arena
+// particle — ambient mote color
 export const THEMES = [
-  // Levels 1-5: Green Fields
-  { floor: 0x2d5a1b, wall: 0x5c3d1e, accent: 0x7ec850, bg: 0x1a3a0f },
-  // Levels 6-10: Crystal Caves
-  { floor: 0x1a2a4a, wall: 0x2244aa, accent: 0x44eeff, bg: 0x0d1a33 },
-  // Levels 11-15: Volcanic Depths
-  { floor: 0x3a1a0a, wall: 0x8b2200, accent: 0xff6600, bg: 0x200a00 },
-  // Levels 16-20: Celestial Void
-  { floor: 0x0a0a2a, wall: 0x222266, accent: 0xffd700, bg: 0x050515 },
-  // Levels 21+: Chaos Realm
-  { floor: 0x1a0a2a, wall: 0x660066, accent: 0xff00ff, bg: 0x0a0010 },
+  // Levels 1-5: Green Fields (ancient moss-covered stone)
+  { floor: 0x2a4e18, floorLight: 0x3d6b24, floorDark: 0x1c3510,
+    wallTop: 0x4a3520, wallInner: 0x3a2a14, wallHighlight: 0x8aaa55, wallShadow: 0x0d1a08,
+    accent: 0x7ec850, accentDim: 0x3a6022, bg: 0x111a09, particle: 0x9ad060 },
+
+  // Levels 6-10: Crystal Caves (bioluminescent underground)
+  { floor: 0x162038, floorLight: 0x1e3058, floorDark: 0x0c1422,
+    wallTop: 0x1a3a7a, wallInner: 0x112a5a, wallHighlight: 0x88ddff, wallShadow: 0x050d1a,
+    accent: 0x44eeff, accentDim: 0x1a6677, bg: 0x070e1c, particle: 0x66ffee },
+
+  // Levels 11-15: Volcanic Depths (hellish lava rock)
+  { floor: 0x2e1008, floorLight: 0x4a1c0a, floorDark: 0x180600,
+    wallTop: 0x7a1e00, wallInner: 0x5a1400, wallHighlight: 0xff8844, wallShadow: 0x0a0200,
+    accent: 0xff6600, accentDim: 0x883300, bg: 0x0f0300, particle: 0xff4400 },
+
+  // Levels 16-20: Celestial Void (cosmic stone, ancient astral)
+  { floor: 0x08082a, floorLight: 0x14147a, floorDark: 0x040416,
+    wallTop: 0x1e1e6a, wallInner: 0x141450, wallHighlight: 0xffeebb, wallShadow: 0x020208,
+    accent: 0xffd700, accentDim: 0x886600, bg: 0x020210, particle: 0xddccff },
+
+  // Levels 21+: Chaos Realm (reality fracturing)
+  { floor: 0x18081e, floorLight: 0x280c36, floorDark: 0x0c0412,
+    wallTop: 0x550055, wallInner: 0x3a0040, wallHighlight: 0xff44ff, wallShadow: 0x08000e,
+    accent: 0xff00ff, accentDim: 0x660066, bg: 0x060008, particle: 0xee00dd },
 ];
 
 export function getTheme(level) {
