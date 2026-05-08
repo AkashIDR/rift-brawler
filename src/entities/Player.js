@@ -282,6 +282,8 @@ export default class Player {
     proj._color = color;
     proj._radius = radius;
     proj._trailTimer = 0;
+    proj._speed = speed;
+    proj._distTraveled = 0;
 
     this.projectiles.add(proj);
   }
@@ -637,6 +639,14 @@ export default class Player {
       if (!proj._alive) return;
       proj.x += proj._vx * dt;
       proj.y += proj._vy * dt;
+      proj._distTraveled += proj._speed * dt;
+
+      // Fizzle at max range
+      if (proj._distTraveled >= PLAYER.PROJECTILE_MAX_RANGE) {
+        proj._alive = false;
+        this.scene.tweens.add({ targets: proj, alpha: 0, scaleX: 0.2, scaleY: 0.2, duration: 80, onComplete: () => proj.destroy() });
+        return;
+      }
 
       // Trail particle
       proj._trailTimer = (proj._trailTimer || 0) + dt;

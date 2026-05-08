@@ -50,6 +50,7 @@ export const PLAYER = {
   STAMINA_MAX: 100,
   STAMINA_REGEN_RATE: 8,         // stamina per second (passive)
   STAMINA_REGEN_PER_HIT: 12,
+  PROJECTILE_MAX_RANGE: 350,     // px — all player projectiles fizzle at this distance
   // Floating HP bar above player
   HP_BAR_WIDTH: 48,
   HP_BAR_HEIGHT: 6,
