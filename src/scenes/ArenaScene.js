@@ -138,24 +138,16 @@ export default class ArenaScene extends Phaser.Scene {
 
     _drawFloorPatches(floorTexG, this.arena, bounds, t.floorLight, t.floorDark, 22);
 
-    // ── DEPTH 2: AO bands (floor darkens toward perimeter, all sides) ────────
-    // Build inner-ring polygons inward from the perimeter — same logic as the
-    // previous overhaul but anchored at the perimeter (since floor now fills it).
-    const aoBaseValid = perimeter.every(p => this.arena.containsPoint(p.x, p.y, 0));
-    if (aoBaseValid) {
-      const aoG = this.add.graphics().setDepth(2);
-      aoG.setMask(floorMask);
-      _drawAOBands(aoG, perimeter, t.wallShadow);
-    }
-
     // ── DEPTH 2: Drop shadow — wall casting onto floor, north-facing only ────
     const dropG = this.add.graphics().setDepth(2);
     dropG.setMask(floorMask);
     _drawWallDropShadow(dropG, perimeter, ARENA.WALL_SHADOW_DEPTH);
 
-    // ── DEPTH 3: Wall front faces (the headline 2.5D effect) ─────────────────
+    // ── DEPTH 3 & 4: Wall front faces + top caps (the 2.5D wall geometry) ────
     const wallFrontG = this.add.graphics().setDepth(3);
-    _drawWallFrontFaces(wallFrontG, perimeter, t, ARENA.WALL_HEIGHT);
+    const wallCapG = this.add.graphics().setDepth(4);
+    _drawWallFrontFaces(wallFrontG, wallCapG, perimeter, t,
+      ARENA.WALL_HEIGHT, ARENA.WALL_THICKNESS);
 
     // ── DEPTH 5: Floor details ────────────────────────────────────────────────
     const detailG = this.add.graphics().setDepth(5);
@@ -498,23 +490,6 @@ function _drawFloorPatches(g, arena, bounds, lightColor, darkColor, count = 22) 
 }
 
 /**
- * Draw 5 ambient-occlusion shadow bands inward from the innerRing wall edge.
- * Darkens the floor near the walls to give a recessed shadow feel on the floor.
- */
-function _drawAOBands(g, innerRing, shadowColor) {
-  // Each band is a 6px slice on the FLOOR side (inside innerRing, toward center)
-  // offset=0 means right at the wall edge; higher = further into the floor
-  const bandW = 8;
-  const alphas = [0.16, 0.12, 0.09, 0.06, 0.04];
-  for (let i = 0; i < alphas.length; i++) {
-    const outer = _shrinkPts(innerRing, i * bandW);           // floor side, near wall
-    const inner = _shrinkPts(innerRing, (i + 1) * bandW);    // floor side, further in
-    g.fillStyle(shadowColor, alphas[i]);
-    _fillBetweenPolygons(g, outer, inner);
-  }
-}
-
-/**
  * Draw an enhanced center medallion — decorative compass rose / ritual circle.
  * Rings, spokes, and diamond tips create an ancient stone etching feel.
  */
@@ -678,51 +653,116 @@ function _facingFactor(a, b) {
 }
 
 /**
- * Draw vertical front-face quads for north-facing perimeter edges, extruded
- * upward (in screen Y) by WALL_HEIGHT. Edges are tapered by facingFactor so
- * E/W edges blend smoothly to a flat lip and south edges show no front face.
+ * Two-pass wall geometry for the faked 2.5D look:
+ *
+ *   1. Front face — vertical cliff side, drawn ONLY on north-facing edges.
+ *      Extruded UP in screen Y by `WALL_HEIGHT * facingFactor`. Stone-block
+ *      texture for visible depth on the cliff.
+ *
+ *   2. Top cap — visible "thickness of the wall from above", drawn on EVERY
+ *      edge (including south). The cap is a band extruded OUTWARD from the
+ *      perimeter by THICKNESS pixels (perpendicular to each edge, into the
+ *      void), then ALSO lifted UP in screen Y by `WALL_HEIGHT * facingFactor`
+ *      so north walls appear elevated above the floor while south walls sit
+ *      right at floor level. This gives the "wall around the entire arena"
+ *      illusion with camera-tilt asymmetry baked in via the lift.
+ *
+ * Because the cap is drawn at depth 4 (above floor and front face), the wall
+ * reads as a continuous ring around the arena from any viewpoint, with the
+ * THICK part at the top of the wall (the cap), not at the bottom.
  */
-function _drawWallFrontFaces(g, perimeter, theme, WALL_HEIGHT) {
+function _drawWallFrontFaces(frontG, capG, perimeter, theme, WALL_HEIGHT, THICKNESS) {
   const N = perimeter.length;
 
-  // Pre-compute per-edge facing factors
+  // Per-edge outward unit normal (CCW polygon, inside-on-right, Y-down)
+  const outwardEdge = new Array(N);
   const facing = new Array(N);
   for (let i = 0; i < N; i++) {
     const a = perimeter[i], b = perimeter[(i + 1) % N];
-    facing[i] = _facingFactor(a, b);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    outwardEdge[i] = { x: dy / len, y: -dx / len };
+    facing[i] = Math.max(0, -outwardEdge[i].y);
   }
 
-  // Per-vertex extrusion height — max of adjacent edges so corners don't gap
-  const vH = new Array(N);
+  // Per-vertex outward direction (average of the two adjacent edges' normals)
+  // and per-vertex lift (how high to push the cap up in screen Y).
+  const vOutward = new Array(N);
+  const vLift    = new Array(N);
   for (let i = 0; i < N; i++) {
-    vH[i] = WALL_HEIGHT * Math.max(facing[(i - 1 + N) % N], facing[i]);
+    const prev = outwardEdge[(i - 1 + N) % N];
+    const curr = outwardEdge[i];
+    const x = prev.x + curr.x, y = prev.y + curr.y;
+    const len = Math.hypot(x, y) || 1;
+    vOutward[i] = { x: x / len, y: y / len };
+    vLift[i]    = WALL_HEIGHT * Math.max(facing[(i - 1 + N) % N], facing[i]);
   }
 
+  // ── Pass 1: Front faces (north-facing edges only) ─────────────────────────
   for (let i = 0; i < N; i++) {
     const fEdge = facing[i];
-    if (fEdge < 0.05) continue;        // skip south + pure E/W
+    if (fEdge < 0.05) continue;
 
     const a = perimeter[i], b = perimeter[(i + 1) % N];
-    const ha = vH[i], hb = vH[(i + 1) % N];
-    const topA = { x: a.x, y: a.y - ha };
-    const topB = { x: b.x, y: b.y - hb };
+    const la = vLift[i], lb = vLift[(i + 1) % N];
+    const topA = { x: a.x, y: a.y - la };
+    const topB = { x: b.x, y: b.y - lb };
     const quad = [a, b, topB, topA];
 
-    // Base fill — wall inner color (the cliff face's main stone color)
-    g.fillStyle(theme.wallInner, 1);
-    g.fillPoints(quad, true);
+    // Base fill — cliff face stone color
+    frontG.fillStyle(theme.wallInner, 1);
+    frontG.fillPoints(quad, true);
 
-    // Procedural stone-block texture
-    _drawWallTextureOnQuad(g, quad, theme, fEdge, i, WALL_HEIGHT);
+    // Stone-block texture on the cliff
+    _drawWallTextureOnQuad(frontG, quad, theme, fEdge, i, WALL_HEIGHT);
 
     // Bottom crease — dark line where wall meets floor
-    g.lineStyle(1, theme.wallShadow, 0.7);
-    g.lineBetween(a.x, a.y, b.x, b.y);
+    frontG.lineStyle(1, theme.wallShadow, 0.7);
+    frontG.lineBetween(a.x, a.y, b.x, b.y);
+  }
 
-    // Top highlight — bright line where light catches the wall's top corner.
-    // Brighter on more north-facing edges (the lit edge of the cliff).
-    g.lineStyle(2, theme.wallHighlight, 0.4 + 0.5 * fEdge);
-    g.lineBetween(topA.x, topA.y, topB.x, topB.y);
+  // ── Pass 2: Top caps (ALL edges — wall is continuous around perimeter) ────
+  for (let i = 0; i < N; i++) {
+    const a = perimeter[i], b = perimeter[(i + 1) % N];
+    const oA = vOutward[i], oB = vOutward[(i + 1) % N];
+    const la = vLift[i], lb = vLift[(i + 1) % N];
+
+    // Inner edge of cap = top of front face on north edges, perimeter on south
+    const inA = { x: a.x,                       y: a.y - la };
+    const inB = { x: b.x,                       y: b.y - lb };
+    // Outer edge of cap = inner edge pushed outward by THICKNESS
+    const outA = { x: a.x + oA.x * THICKNESS,   y: a.y - la + oA.y * THICKNESS };
+    const outB = { x: b.x + oB.x * THICKNESS,   y: b.y - lb + oB.y * THICKNESS };
+
+    const capQuad = [inA, inB, outB, outA];
+
+    // Cap fill — the brighter "top of wall" stone color
+    capG.fillStyle(theme.wallTop, 1);
+    capG.fillPoints(capQuad, true);
+
+    // Subtle stone-block markers on the cap (small dark tick lines every ~46 px)
+    const fE = facing[i];
+    const edgeLen = Math.hypot(b.x - a.x, b.y - a.y);
+    const TICK_SPACING = 46;
+    const tickHash = ((i * 2654435761) >>> 0) / 0xffffffff;
+    const startOff = tickHash * TICK_SPACING;
+    capG.lineStyle(1, theme.wallShadow, 0.45);
+    for (let s = startOff; s < edgeLen; s += TICK_SPACING) {
+      const t = s / edgeLen;
+      const innerPx = a.x + (b.x - a.x) * t;
+      const innerPy = (a.y - la) + ((b.y - lb) - (a.y - la)) * t;
+      const outerPx = innerPx + (oA.x + (oB.x - oA.x) * t) * THICKNESS;
+      const outerPy = innerPy + (oA.y + (oB.y - oA.y) * t) * THICKNESS;
+      capG.lineBetween(innerPx, innerPy, outerPx, outerPy);
+    }
+
+    // Outer-edge highlight — bright line on the lit (back) edge of the cap
+    capG.lineStyle(2, theme.wallHighlight, 0.55 + 0.35 * fE);
+    capG.lineBetween(outA.x, outA.y, outB.x, outB.y);
+
+    // Inner-edge crease — dark line where cap transitions to front face / floor
+    capG.lineStyle(1, theme.wallShadow, 0.65);
+    capG.lineBetween(inA.x, inA.y, inB.x, inB.y);
   }
 }
 

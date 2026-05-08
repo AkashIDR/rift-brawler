@@ -11,7 +11,8 @@ export const ARENA = {
   PADDING: 70,           // default wall inset, used when callers omit `r` to containsPoint
   CAMERA_LERP: 0.1,      // camera follow smoothness
   CAMERA_ZOOM: 1.5,      // default zoom level (1 = no zoom, higher = closer in)
-  WALL_HEIGHT: 60,       // px — vertical extrusion for north-facing wall front faces
+  WALL_HEIGHT: 60,       // px — vertical lift of wall top on north-facing edges
+  WALL_THICKNESS: 22,    // px — visible "top of wall" thickness (band drawn outward from perimeter)
   WALL_SHADOW_DEPTH: 14, // px — drop-shadow depth from wall onto floor
 };
 
