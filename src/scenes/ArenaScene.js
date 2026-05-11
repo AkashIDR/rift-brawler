@@ -99,15 +99,22 @@ export default class ArenaScene extends Phaser.Scene {
     const t = this.theme;
     const bounds = shape.bounds;
     const perimeter = shape.getPerimeterPolygon();
+    const themeIdx = _themeIndex(this.level);
 
     // ── DEPTH 0: Void background ─────────────────────────────────────────────
     const voidG = this.add.graphics().setDepth(0);
     voidG.fillStyle(Phaser.Display.Color.ValueToColor(t.bg).darken(20).color, 1);
     voidG.fillRect(0, 0, worldW, worldH);
 
-    // Radial void rings from world center — atmosphere hinting at the abyss
-    _drawVoidRings(voidG, worldW * 0.5, worldH * 0.5,
-      Math.max(worldW, worldH) * 0.6, t.wallShadow, 7, 0.055);
+    // Theme-specific void background art
+    _drawThemedVoid(voidG, themeIdx, worldW, worldH, bounds, t);
+
+    // Island underside glow — soft colored halo beneath the floating arena
+    const glowCx = worldW * 0.5, glowCy = worldH * 0.5;
+    voidG.fillStyle(t.particle, 0.06);
+    voidG.fillEllipse(glowCx, glowCy + bounds.h * 0.35, bounds.w * 0.85, bounds.h * 0.25);
+    voidG.fillStyle(t.particle, 0.035);
+    voidG.fillEllipse(glowCx, glowCy + bounds.h * 0.42, bounds.w * 1.1, bounds.h * 0.32);
 
     // Outer wall halo — soft glow on the void side of the wall
     voidG.lineStyle(6, t.wallHighlight, 0.08);
@@ -155,7 +162,6 @@ export default class ArenaScene extends Phaser.Scene {
     const { x: cx, y: cy } = this.arena.altarPoint;
     _drawMedallion(detailG, cx, cy, t.accent, t.accentDim);
 
-    const themeIdx = _themeIndex(this.level);
     _drawThemeDetails(detailG, themeIdx, this.arena, bounds, t.accent, t.accentDim, 15);
 
     const scatter = [
@@ -698,6 +704,14 @@ function _drawWallFrontFaces(frontG, capG, perimeter, theme, WALL_HEIGHT, THICKN
     vLift[i]    = WALL_HEIGHT * Math.max(facing[(i - 1 + N) % N], facing[i]);
   }
 
+  // Per-vertex exterior height — south-facing weight for the floating island cliff
+  const vExtH = new Array(N);
+  for (let i = 0; i < N; i++) {
+    const extPrev = Math.max(0, outwardEdge[(i - 1 + N) % N].y);
+    const extCurr = Math.max(0, outwardEdge[i].y);
+    vExtH[i] = WALL_HEIGHT * Math.max(extPrev, extCurr);
+  }
+
   // ── Pass 1: Front faces (north-facing edges only) ─────────────────────────
   for (let i = 0; i < N; i++) {
     const fEdge = facing[i];
@@ -719,6 +733,42 @@ function _drawWallFrontFaces(frontG, capG, perimeter, theme, WALL_HEIGHT, THICKN
     // Bottom crease — dark line where wall meets floor
     frontG.lineStyle(1, theme.wallShadow, 0.7);
     frontG.lineBetween(a.x, a.y, b.x, b.y);
+  }
+
+  // ── Pass 1b: Exterior faces (south-facing — floating island cliff) ───────
+  // The exterior cliff starts at the outer cap edge and extends downward into the void,
+  // mirroring the interior north face. Drawn into the same frontG at depth 3 so the
+  // cap at depth 4 naturally sits on top of it and hides the seam.
+  for (let i = 0; i < N; i++) {
+    const extFactor = outwardEdge[i].y;   // positive = outward points south = south-facing
+    if (extFactor < 0.05) continue;
+
+    const a = perimeter[i], b = perimeter[(i + 1) % N];
+    const oA = vOutward[i], oB = vOutward[(i + 1) % N];
+    const la = vLift[i], lb = vLift[(i + 1) % N];
+    const hA = vExtH[i], hB = vExtH[(i + 1) % N];
+
+    // Top of exterior face = outer cap edge (cap hides this seam at depth 4)
+    const topA = { x: a.x + oA.x * THICKNESS, y: a.y - la + oA.y * THICKNESS };
+    const topB = { x: b.x + oB.x * THICKNESS, y: b.y - lb + oB.y * THICKNESS };
+    // Bottom = top pushed further outward + downward by exterior height
+    const botA = { x: topA.x + oA.x * hA, y: topA.y + hA };
+    const botB = { x: topB.x + oB.x * hB, y: topB.y + hB };
+
+    // Base fill — cliff face stone color
+    frontG.fillStyle(theme.wallInner, 1);
+    frontG.fillPoints([topA, topB, botB, botA], true);
+
+    // Stone-block texture on the exterior cliff
+    _drawWallExtTextureOnQuad(frontG, topA, topB, botA, botB, theme, extFactor, i);
+
+    // Bottom edge — dark shadow at the very base of the island
+    frontG.lineStyle(2, theme.wallShadow, 0.85);
+    frontG.lineBetween(botA.x, botA.y, botB.x, botB.y);
+
+    // Top-edge crease (cap covers this at depth 4, but crease adds sharpness)
+    frontG.lineStyle(1, theme.wallShadow, 0.50);
+    frontG.lineBetween(topA.x, topA.y, topB.x, topB.y);
   }
 
   // ── Pass 2: Top caps (ALL edges — wall is continuous around perimeter) ────
@@ -839,6 +889,50 @@ function _drawWallTextureOnQuad(g, quad, theme, facingFactor, edgeIdx, WALL_HEIG
 }
 
 /**
+ * Stone-block texture for the EXTERIOR (south-facing) cliff face.
+ * The face runs from topA/topB (at the cap outer edge) to botA/botB (cliff bottom).
+ * Joints are vertical (top→bottom), courses are horizontal, and the bottom 20%
+ * gets an extra dark AO overlay suggesting depth at the cliff base.
+ */
+function _drawWallExtTextureOnQuad(g, topA, topB, botA, botB, theme, extFactor, edgeIdx) {
+  const edgeDx = topB.x - topA.x;
+  const edgeDy = topB.y - topA.y;
+  const edgeLen = Math.hypot(edgeDx, edgeDy) || 1;
+
+  // ── Vertical mortar joints ────────────────────────────────────────────────
+  const JOINT_SPACING = 46;
+  const hash = ((edgeIdx * 2654435761) >>> 0) / 0xffffffff;
+  const startOffset = hash * JOINT_SPACING;
+
+  g.lineStyle(1, theme.wallShadow, 0.55);
+  for (let s = startOffset; s < edgeLen; s += JOINT_SPACING) {
+    const t = s / edgeLen;
+    const tx = topA.x + edgeDx * t;
+    const ty = topA.y + edgeDy * t;
+    const bx = botA.x + (botB.x - botA.x) * t;
+    const by = botA.y + (botB.y - botA.y) * t;
+    g.lineBetween(tx, ty, bx, by);
+  }
+
+  // ── Horizontal courses at 33% and 66% of cliff height ────────────────────
+  g.lineStyle(1, theme.wallShadow, 0.30);
+  [0.33, 0.66].forEach(frac => {
+    const cAx = topA.x + (botA.x - topA.x) * frac;
+    const cAy = topA.y + (botA.y - topA.y) * frac;
+    const cBx = topB.x + (botB.x - topB.x) * frac;
+    const cBy = topB.y + (botB.y - topB.y) * frac;
+    g.lineBetween(cAx, cAy, cBx, cBy);
+  });
+
+  // ── Bottom 20% ambient occlusion overlay — deep shadow at the cliff base ──
+  const fracStart = 0.80;
+  const shadA1 = { x: topA.x + (botA.x - topA.x) * fracStart, y: topA.y + (botA.y - topA.y) * fracStart };
+  const shadB1 = { x: topB.x + (botB.x - topB.x) * fracStart, y: topB.y + (botB.y - topB.y) * fracStart };
+  g.fillStyle(theme.wallShadow, 0.18);
+  g.fillPoints([shadA1, shadB1, botB, botA], true);
+}
+
+/**
  * Drop-shadow band on the FLOOR side of each non-south edge — the wall casting
  * shade onto the floor toward the camera. Tapered by facingFactor so south
  * edges get nothing and pure-north edges get full opacity.
@@ -858,5 +952,151 @@ function _drawWallDropShadow(g, perimeter, SHADOW_DEPTH) {
 
     g.fillStyle(0x000000, 0.35 * fEdge);
     g.fillPoints([a, b, inB, inA], true);
+  }
+}
+
+/**
+ * Theme-specific procedural art drawn in the void surrounding the arena.
+ * Rendered at depth 0, on top of the solid void fill but below the arena floor
+ * (depth 1), so the floor polygon covers it naturally. No masks needed.
+ */
+function _drawThemedVoid(g, themeIdx, worldW, worldH, bounds, t) {
+  const cx = worldW * 0.5, cy = worldH * 0.5;
+  const bx = bounds.x, by = bounds.y, bw = bounds.w, bh = bounds.h;
+
+  switch (themeIdx) {
+    case 0: { // Green Fields — layered distant hills + treeline
+      const hillData = [
+        { color: t.floorDark, alpha: 0.18, rScale: 0.70 },
+        { color: t.accentDim, alpha: 0.12, rScale: 0.55 },
+        { color: t.floorDark, alpha: 0.08, rScale: 0.45 },
+      ];
+      hillData.forEach(({ color, alpha, rScale }) => {
+        const rx = worldW * rScale, ry = worldH * 0.22;
+        g.fillStyle(color, alpha);
+        g.fillEllipse(cx, by - ry * 0.4,         rx * 2,  ry * 2);   // top hills
+        g.fillEllipse(bx - rx * 0.3, cy,          rx,      worldH * rScale * 1.3); // left
+        g.fillEllipse(bx + bw + rx * 0.3, cy,     rx,      worldH * rScale * 1.3); // right
+        g.fillEllipse(cx, by + bh + ry * 0.4,     rx * 2,  ry * 2);  // bottom hills
+      });
+      // Treeline silhouette along the top void
+      g.fillStyle(t.floorDark, 0.22);
+      for (let i = 0; i < 24; i++) {
+        const tx = bx - 120 + (bw + 240) * (i / 23);
+        const r  = 8 + Math.sin(i * 7.3) * 4;
+        g.fillCircle(tx, by - 20 - Math.abs(Math.sin(i * 2.1)) * 28, r);
+      }
+      break;
+    }
+
+    case 1: { // Crystal Caves — stalactites from top + glow reflection pools
+      // Glow pools at bottom void
+      g.fillStyle(t.wallHighlight, 0.04);
+      g.fillEllipse(cx - 200, by + bh + 80, 320, 80);
+      g.fillEllipse(cx + 150, by + bh + 60, 260, 60);
+      g.fillStyle(t.accent, 0.06);
+      g.fillEllipse(cx, by + bh + 100, 400, 90);
+      // Stalactite silhouettes
+      g.fillStyle(t.wallInner, 0.35);
+      const stCount = 22;
+      for (let i = 0; i < stCount; i++) {
+        const stx = bx - 80 + (bw + 160) * (i / (stCount - 1));
+        const sth = 20 + Math.abs(Math.sin(i * 3.7)) * 60;
+        const stw = 4  + Math.abs(Math.cos(i * 2.3)) * 8;
+        g.fillTriangle(stx - stw, by - 8, stx + stw, by - 8, stx, by - 8 - sth);
+      }
+      // Crystal tip glows on every 3rd stalactite
+      g.fillStyle(t.accent, 0.30);
+      for (let i = 0; i < stCount; i += 3) {
+        const stx = bx - 80 + (bw + 160) * (i / (stCount - 1));
+        const sth = 20 + Math.abs(Math.sin(i * 3.7)) * 60;
+        g.fillCircle(stx, by - 8 - sth, 2.5);
+      }
+      break;
+    }
+
+    case 2: { // Volcanic Depths — lava glow + magma rivers + embers
+      g.fillStyle(0xff4400, 0.08);
+      g.fillEllipse(cx, by + bh + 100, bw * 1.2, bh * 0.35);
+      g.fillStyle(0xff6600, 0.05);
+      g.fillEllipse(cx, by + bh + 80,  bw * 0.9, bh * 0.22);
+      g.fillStyle(0xff3300, 0.05);
+      g.fillEllipse(bx - 80,       cy + 60, 220, bh * 0.6);
+      g.fillEllipse(bx + bw + 80,  cy + 60, 220, bh * 0.6);
+      // Distant magma rivers
+      g.lineStyle(2, 0xff6600, 0.14);
+      g.lineBetween(bx - 200, by + bh * 0.6,  bx + bw * 0.4, by + bh + 160);
+      g.lineBetween(bx + bw + 200, by + bh * 0.5, bx + bw * 0.7, by + bh + 140);
+      g.lineStyle(1, 0xff4400, 0.10);
+      g.lineBetween(bx - 150, by + bh * 0.8, bx + bw * 0.3, by + bh + 200);
+      // Ember dots (skip those inside the arena bounding box)
+      g.fillStyle(0xff8800, 0.5);
+      for (let i = 0; i < 18; i++) {
+        const ex = bx - 100 + (bw + 200) * ((i * 0.618) % 1);
+        const ey = by - 50  + (bh + 200) * ((i * 0.382) % 1);
+        if (ex > bx && ex < bx + bw && ey > by && ey < by + bh) continue;
+        g.fillCircle(ex, ey, 1.5 + (i % 3) * 0.8);
+      }
+      break;
+    }
+
+    case 3: { // Celestial Void — starfield + nebula clouds + faint grid
+      for (let i = 0; i < 140; i++) {
+        const sx = worldW * ((i * 0.618033) % 1);
+        const sy = worldH * ((i * 0.381966) % 1);
+        if (sx > bx + 20 && sx < bx + bw - 20 && sy > by + 20 && sy < by + bh - 20) continue;
+        const alpha = 0.20 + ((i * 97) % 100) / 100 * 0.60;
+        const r     = 0.8  + ((i * 31) % 5)   * 0.30;
+        g.fillStyle(t.wallHighlight, alpha);
+        g.fillCircle(sx, sy, r);
+      }
+      // Nebula clouds
+      g.fillStyle(t.accent, 0.04);
+      g.fillEllipse(bx - 180, by - 100, 460, 220);
+      g.fillStyle(t.accentDim, 0.06);
+      g.fillEllipse(bx + bw + 100, cy - 60, 380, 200);
+      g.fillStyle(t.accent, 0.03);
+      g.fillEllipse(cx, by + bh + 120, 520, 180);
+      // Faint star-chart grid
+      g.lineStyle(1, t.accentDim, 0.04);
+      for (let gx = 0; gx < worldW; gx += 160) g.lineBetween(gx, 0, gx, worldH);
+      for (let gy = 0; gy < worldH; gy += 160) g.lineBetween(0, gy, worldW, gy);
+      break;
+    }
+
+    case 4: { // Chaos Realm — void slashes + fractured ring fragments
+      const slashes = [
+        [bx - 200, by + bh * 0.2,    bx + bw * 0.30,  by - 80         ],
+        [bx + bw + 150, by + bh * 0.3, bx + bw * 0.75, by - 60        ],
+        [bx - 150, by + bh * 0.8,    bx + bw * 0.20,  by + bh + 120   ],
+        [bx + bw + 180, by + bh * 0.7, bx + bw * 0.80, by + bh + 100  ],
+        [bx - 100, cy,               bx + bw * 0.15,  by + bh * 0.35  ],
+        [bx + bw + 130, cy - 40,     bx + bw * 0.85,  by + bh * 0.40  ],
+      ];
+      slashes.forEach(([x1, y1, x2, y2]) => {
+        g.lineStyle(3, t.accent, 0.09);    g.lineBetween(x1, y1, x2, y2);
+        g.lineStyle(1, t.wallHighlight, 0.18); g.lineBetween(x1, y1, x2, y2);
+      });
+      // Fractured arc fragments
+      g.lineStyle(1, t.accentDim, 0.20);
+      const frags = [
+        [bx - 120,      by + 80,        90, 0.4, 1.8],
+        [bx + bw + 100, by + 60,        70, 2.2, 3.5],
+        [cx - 300,      by - 80,        60, 3.8, 5.1],
+        [cx + 250,      by + bh + 70,   80, 1.0, 2.6],
+        [bx - 80,       by + bh + 50,   55, 4.2, 5.8],
+        [bx + bw + 60,  cy + 120,       65, 0.8, 2.0],
+      ];
+      frags.forEach(([fx, fy, fr, startA, endA]) => {
+        const steps = Math.ceil((endA - startA) / 0.15);
+        const pts = [];
+        for (let s = 0; s <= steps; s++) {
+          const a = startA + (endA - startA) * s / steps;
+          pts.push({ x: fx + Math.cos(a) * fr, y: fy + Math.sin(a) * fr });
+        }
+        if (pts.length >= 2) g.strokePoints(pts, false);
+      });
+      break;
+    }
   }
 }
