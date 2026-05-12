@@ -292,53 +292,51 @@ export default class ArenaScene extends Phaser.Scene {
 
   // ── Foliage ────────────────────────────────────────────────────────────────
   // Decorative-only plants — no collision, no obstacle system.
-  // Ground cover (depth 5.5) floats above the floor details and below entities.
-  // Mid-size props use setDepth(y) so they Y-sort correctly with the player/boss.
+  //
+  // PERFORMANCE DESIGN:
+  //   Ground cover: all drawn once into a single RenderTexture → 0 tweens,
+  //   1 GPU draw call per frame instead of 73 Graphics + 73 repeat:-1 tweens.
+  //   Mid-size props: ≤14 individual Graphics, Y-sorted, no tweens.
+  //   Total before: 98 Graphics + 98 perpetual tweens.
+  //   Total after:  1 RT + 14 Graphics + 0 tweens.
 
   _spawnFoliage() {
-    const t = this.theme;
+    const t        = this.theme;
     const themeIdx = _themeIndex(this.level);
     const perimeter = this.arena.shape.getPerimeterPolygon();
     const bounds    = this.arena.shape.bounds;
+    const { worldW, worldH } = this.arena;
 
-    // ── Ground cover — dense near walls, sparser on floor ──────────────────
+    // ── Ground cover — all baked into one RenderTexture ────────────────────
     const edgeCover  = _sampleEdgePositions(perimeter, this.arena, 55, 50, 140);
     const floorCover = _sampleFloorPositions(this.arena, bounds, 18);
 
+    const rt = this.add.renderTexture(0, 0, worldW, worldH);
+    rt.setDepth(5.5).setOrigin(0, 0);
+
     for (const { x, y } of [...edgeCover, ...floorCover]) {
-      const g = this.add.graphics();
-      g.setPosition(x, y).setDepth(5.5);
-      g.setScale(0.65 + Math.random() * 0.70);
-      _drawGroundCover(g, themeIdx, t);
-      this.tweens.add({
-        targets: g,
-        angle: { from: -(2 + Math.random() * 3), to: 2 + Math.random() * 3 },
-        duration: 1400 + Math.random() * 1100,
-        yoyo: true, repeat: -1, delay: Math.random() * 1400,
-        ease: 'Sine.easeInOut',
-      });
+      const tmpG = this.add.graphics();
+      tmpG.setPosition(x, y);
+      tmpG.setScale(0.65 + Math.random() * 0.70);
+      _drawGroundCover(tmpG, themeIdx, t);
+      rt.draw(tmpG);   // stamp into the cached texture
+      tmpG.destroy();  // no live Graphics object remains
     }
 
-    // ── Mid-size props — Y-sorted with entities ─────────────────────────────
-    // Depth offset -8: sort point is 8 px above prop centre so the player
-    // only appears "in front" once they clear the prop base — and every
-    // prop's extended shadow fill covers the player's foot zone while
-    // the player is "behind".
-    const edgeProps  = _sampleEdgePositions(perimeter, this.arena, 18, 55, 135);
-    const floorProps = _sampleFloorPositions(this.arena, bounds, 7);
+    // ── Mid-size props — Y-sorted, static (no tweens) ──────────────────────
+    // Depth offset -8: sort boundary sits 8 px above prop centre;
+    // every prop has an extended shadow fill that covers the player's
+    // foot zone while the player is "behind" the prop.
+    const edgeProps  = _sampleEdgePositions(perimeter, this.arena, 10, 55, 135);
+    const floorProps = _sampleFloorPositions(this.arena, bounds, 4);
 
     for (const { x, y } of [...edgeProps, ...floorProps]) {
       const g = this.add.graphics();
       g.setPosition(x, y).setDepth(y - 8);
       g.setScale(0.75 + Math.random() * 0.55);
       _drawMidProp(g, themeIdx, t);
-      this.tweens.add({
-        targets: g,
-        angle: { from: -(4 + Math.random() * 3), to: 4 + Math.random() * 3 },
-        duration: 2200 + Math.random() * 1200,
-        yoyo: true, repeat: -1, delay: Math.random() * 1800,
-        ease: 'Sine.easeInOut',
-      });
+      // No tween — static props are indistinguishable at game speed and
+      // eliminate the last of the per-frame JS overhead for foliage.
     }
   }
 
