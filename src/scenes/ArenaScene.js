@@ -704,12 +704,17 @@ function _drawWallFrontFaces(frontG, capG, perimeter, theme, WALL_HEIGHT, THICKN
     vLift[i]    = WALL_HEIGHT * Math.max(facing[(i - 1 + N) % N], facing[i]);
   }
 
-  // Per-vertex exterior height — south-facing weight for the floating island cliff
+  // Per-vertex exterior height — south-facing weight for the floating island cliff.
+  // Uses min(prev, curr) instead of max so the cliff bottom starts at ZERO at the
+  // E/W→south transition vertex, then ramps up smoothly — preventing the abrupt
+  // "stepping edge" that max produces at the first south-facing vertex.
+  // (For north faces max is correct because the gap risk is at convex top corners;
+  //  for south faces the exposed risk is at the bottom corner where the face begins.)
   const vExtH = new Array(N);
   for (let i = 0; i < N; i++) {
     const extPrev = Math.max(0, outwardEdge[(i - 1 + N) % N].y);
     const extCurr = Math.max(0, outwardEdge[i].y);
-    vExtH[i] = WALL_HEIGHT * Math.max(extPrev, extCurr);
+    vExtH[i] = WALL_HEIGHT * Math.min(extPrev, extCurr);
   }
 
   // ── Pass 1: Front faces (north-facing edges only) ─────────────────────────
@@ -751,9 +756,10 @@ function _drawWallFrontFaces(frontG, capG, perimeter, theme, WALL_HEIGHT, THICKN
     // Top of exterior face = outer cap edge (cap hides this seam at depth 4)
     const topA = { x: a.x + oA.x * THICKNESS, y: a.y - la + oA.y * THICKNESS };
     const topB = { x: b.x + oB.x * THICKNESS, y: b.y - lb + oB.y * THICKNESS };
-    // Bottom = top pushed further outward + downward by exterior height
-    const botA = { x: topA.x + oA.x * hA, y: topA.y + hA };
-    const botB = { x: topB.x + oB.x * hB, y: topB.y + hB };
+    // Bottom = top dropped straight down by exterior height (no horizontal spread —
+    // mirrors how the north face goes straight UP, keeping consistent geometry)
+    const botA = { x: topA.x, y: topA.y + hA };
+    const botB = { x: topB.x, y: topB.y + hB };
 
     // Base fill — cliff face stone color
     frontG.fillStyle(theme.wallInner, 1);
