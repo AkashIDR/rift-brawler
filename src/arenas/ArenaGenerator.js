@@ -110,7 +110,7 @@ export default class ArenaGenerator {
       if (placed.length >= maxCount) break;
       const tooClose = placed.some(p => Math.hypot(c.x - p.x, c.y - p.y) < OBSTACLES.MIN_OBSTACLE_GAP);
       if (tooClose) continue;
-      placed.push({ x: c.x, y: c.y, ..._pickType(c.x, c.y, bounds) });
+      placed.push({ x: c.x, y: c.y, ..._pickType(c.x, c.y, bounds, themeIdx) });
     }
 
     // Spire pass — theme-specific tall props, ~1 per 600 000 px² of floor
@@ -127,7 +127,7 @@ export default class ArenaGenerator {
     }
 
     for (const cluster of clusters) {
-      const clusterObs = this._fillCluster(cluster, shape, spawnPoint, altarPoint, placed);
+      const clusterObs = this._fillCluster(cluster, shape, spawnPoint, altarPoint, placed, themeIdx);
       placed.push(...clusterObs);
     }
     return placed;
@@ -160,7 +160,7 @@ export default class ArenaGenerator {
     return clusters;
   }
 
-  static _fillCluster(cluster, shape, spawnPoint, altarPoint, existingObs) {
+  static _fillCluster(cluster, shape, spawnPoint, altarPoint, existingObs, themeIdx = 0) {
     const { x: cx, y: cy, radius, theme } = cluster;
     const placed = [];
     const count = _rndInt(OBSTACLES.CLUSTER_COUNT_MIN, OBSTACLES.CLUSTER_COUNT_MAX);
@@ -178,7 +178,7 @@ export default class ArenaGenerator {
       const allSoFar = existingObs.concat(placed);
       if (allSoFar.some(p => Math.hypot(px - p.x, py - p.y) < OBSTACLES.CLUSTER_OBSTACLE_GAP)) continue;
 
-      placed.push({ x: px, y: py, ..._pickClusterType(theme) });
+      placed.push({ x: px, y: py, ..._pickClusterType(theme, themeIdx) });
     }
     return placed;
   }
@@ -615,29 +615,29 @@ function _distToEdge(px, py, bounds) {
   );
 }
 
-function _pickType(px, py, bounds) {
+function _pickType(px, py, bounds, themeIdx = 0) {
   const edgeFactor = Math.max(0, 1 - _distToEdge(px, py, bounds) / 300);
   const tall = Math.random() < 0.2 + edgeFactor * 0.35;
   if (tall) {
-    return { type: 'tree', tall: true, baseRadius: OBSTACLES.TREE_TRUNK_RADIUS, canopyRadius: OBSTACLES.TREE_CANOPY_RADIUS };
+    return { type: 'tree', tall: true, themeIdx, baseRadius: OBSTACLES.TREE_TRUNK_RADIUS, canopyRadius: OBSTACLES.TREE_CANOPY_RADIUS };
   }
   const r = Math.random();
-  if (r < 0.55) return { type: 'rock',   tall: false, baseRadius: OBSTACLES.ROCK_RADIUS,   canopyRadius: 0 };
-  if (r < 0.80) return { type: 'stump',  tall: false, baseRadius: OBSTACLES.STUMP_RADIUS,  canopyRadius: 0 };
-  return               { type: 'pillar', tall: false, baseRadius: OBSTACLES.PILLAR_RADIUS, canopyRadius: 0 };
+  if (r < 0.55) return { type: 'rock',   tall: false, themeIdx, baseRadius: OBSTACLES.ROCK_RADIUS,   canopyRadius: 0 };
+  if (r < 0.80) return { type: 'stump',  tall: false, themeIdx, baseRadius: OBSTACLES.STUMP_RADIUS,  canopyRadius: 0 };
+  return               { type: 'pillar', tall: false, themeIdx, baseRadius: OBSTACLES.PILLAR_RADIUS, canopyRadius: 0 };
 }
 
-function _pickClusterType(theme) {
+function _pickClusterType(theme, themeIdx = 0) {
   if (theme === 'forest') {
     const r = Math.random();
-    if (r < 0.55) return { type: 'tree',  tall: true,  baseRadius: OBSTACLES.TREE_TRUNK_RADIUS, canopyRadius: OBSTACLES.TREE_CANOPY_RADIUS };
-    if (r < 0.85) return { type: 'stump', tall: false, baseRadius: OBSTACLES.STUMP_RADIUS,      canopyRadius: 0 };
-    return               { type: 'rock',  tall: false, baseRadius: OBSTACLES.ROCK_RADIUS,       canopyRadius: 0 };
+    if (r < 0.55) return { type: 'tree',  tall: true,  themeIdx, baseRadius: OBSTACLES.TREE_TRUNK_RADIUS, canopyRadius: OBSTACLES.TREE_CANOPY_RADIUS };
+    if (r < 0.85) return { type: 'stump', tall: false, themeIdx, baseRadius: OBSTACLES.STUMP_RADIUS,      canopyRadius: 0 };
+    return               { type: 'rock',  tall: false, themeIdx, baseRadius: OBSTACLES.ROCK_RADIUS,       canopyRadius: 0 };
   }
   const r = Math.random();
-  if (r < 0.60) return { type: 'rock',   tall: false, baseRadius: OBSTACLES.ROCK_RADIUS,   canopyRadius: 0 };
-  if (r < 0.85) return { type: 'pillar', tall: false, baseRadius: OBSTACLES.PILLAR_RADIUS, canopyRadius: 0 };
-  return               { type: 'stump',  tall: false, baseRadius: OBSTACLES.STUMP_RADIUS,  canopyRadius: 0 };
+  if (r < 0.60) return { type: 'rock',   tall: false, themeIdx, baseRadius: OBSTACLES.ROCK_RADIUS,   canopyRadius: 0 };
+  if (r < 0.85) return { type: 'pillar', tall: false, themeIdx, baseRadius: OBSTACLES.PILLAR_RADIUS, canopyRadius: 0 };
+  return               { type: 'stump',  tall: false, themeIdx, baseRadius: OBSTACLES.STUMP_RADIUS,  canopyRadius: 0 };
 }
 
 function _shuffle(arr) {

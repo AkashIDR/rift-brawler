@@ -27,6 +27,67 @@ export default class Obstacle {
     this._build();
   }
 
+  // ── Theme palette ─────────────────────────────────────────────────────────
+  // Returns a colour object used by all non-spire obstacle builders.
+  // Each field is a 0xRRGGBB integer. Theme 0 (Green Fields) reproduces the
+  // original hardcoded values; themes 1-4 give biome-appropriate palettes.
+
+  _getObstacleTheme() {
+    const T = [
+      { // 0 — Green Fields (original colours)
+        rockBody: 0x4a4a55, rockShade: 0x33333c, rockHL: 0x7a7a88, rockCrack: 0x222228,
+        trunkBody: 0x3e200a, trunkDark: 0x2a1606, roots: 0x3a1e08,
+        canopyA: 0x1a4010, canopyB: 0x276618, canopyC: 0x38882a, canopyD: 0x52aa3e,
+        canopyHL: 0xddffdd, canopyRim: 0x0e2808, canopyHLAlpha: 0.50,
+        stumpBark: 0x4a2e10, stumpWood: 0x7a4e20, stumpRing: 0x5c3a16,
+        pillarBody: 0x808080, pillarDark: 0x555555, pillarCap: 0x909090,
+        pillarCrack: 0x404040, pillarChip: 0x707070,
+        lavaGlow: false,
+      },
+      { // 1 — Crystal Caves
+        rockBody: 0x252a4a, rockShade: 0x14182e, rockHL: 0x4a5590, rockCrack: 0x5577cc,
+        trunkBody: 0x1a1e3a, trunkDark: 0x0e1020, roots: 0x14182e,
+        canopyA: 0x104048, canopyB: 0x1a6878, canopyC: 0x2a90a8, canopyD: 0x44b0c8,
+        canopyHL: 0x88ddee, canopyRim: 0x0a2830, canopyHLAlpha: 0.55,
+        stumpBark: 0x1a1e3a, stumpWood: 0x2a3060, stumpRing: 0x3a4480,
+        pillarBody: 0x252a4a, pillarDark: 0x14182e, pillarCap: 0x354a7a,
+        pillarCrack: 0x4466aa, pillarChip: 0x3a4a7a,
+        lavaGlow: false,
+      },
+      { // 2 — Volcanic Depths
+        rockBody: 0x1c0e06, rockShade: 0x0e0702, rockHL: 0x3c1a08, rockCrack: 0xff5500,
+        trunkBody: 0x160a02, trunkDark: 0x0a0400, roots: 0x1a0900,
+        canopyA: 0x1a0800, canopyB: 0x280e04, canopyC: 0x200a02, canopyD: 0x301208,
+        canopyHL: 0xff6600, canopyRim: 0x0a0300, canopyHLAlpha: 0.40,
+        stumpBark: 0x1a0a04, stumpWood: 0x100602, stumpRing: 0x3c1a08,
+        pillarBody: 0x1e1008, pillarDark: 0x0c0604, pillarCap: 0x2a1a0c,
+        pillarCrack: 0xff4400, pillarChip: 0x241208,
+        lavaGlow: true,
+      },
+      { // 3 — Celestial Void
+        rockBody: 0x1c1030, rockShade: 0x0e0818, rockHL: 0x3c2060, rockCrack: 0x9966cc,
+        trunkBody: 0x14102a, trunkDark: 0x0a0814, roots: 0x181430,
+        canopyA: 0x101828, canopyB: 0x1a2850, canopyC: 0x283878, canopyD: 0x3848a0,
+        canopyHL: 0x8899ee, canopyRim: 0x080c18, canopyHLAlpha: 0.48,
+        stumpBark: 0x1c1030, stumpWood: 0x2c1a50, stumpRing: 0x4c2a80,
+        pillarBody: 0x1e1230, pillarDark: 0x0e0a1a, pillarCap: 0x2e1a50,
+        pillarCrack: 0x8855bb, pillarChip: 0x241540,
+        lavaGlow: false,
+      },
+      { // 4 — Chaos Realm
+        rockBody: 0x14101e, rockShade: 0x0a0812, rockHL: 0x302050, rockCrack: 0xcc44ff,
+        trunkBody: 0x120e1c, trunkDark: 0x080610, roots: 0x16101e,
+        canopyA: 0x140e20, canopyB: 0x1e1438, canopyC: 0x281a50, canopyD: 0x381a70,
+        canopyHL: 0xaa44ff, canopyRim: 0x080610, canopyHLAlpha: 0.42,
+        stumpBark: 0x14101e, stumpWood: 0x201830, stumpRing: 0x3c2060,
+        pillarBody: 0x16101e, pillarDark: 0x0a0812, pillarCap: 0x241630,
+        pillarCrack: 0xbb44ff, pillarChip: 0x1e1230,
+        lavaGlow: false,
+      },
+    ];
+    return T[Math.min(this.themeIdx ?? 0, 4)];
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   _build() {
@@ -46,6 +107,7 @@ export default class Obstacle {
     const g = this.scene.add.graphics();
     g.x = this.x;
     g.y = this.y;
+    const tc = this._getObstacleTheme();
 
     const r = this.baseRadius;
     const numRocks = 2 + Math.floor(Math.random() * 2); // 2 or 3 rocks in cluster
@@ -61,17 +123,24 @@ export default class Obstacle {
       g.fillStyle(0x000000, 0.3);
       g.fillEllipse(dx + 3, dy + rr * 0.55, rr * 1.7, rr * 0.55);
       // Body
-      g.fillStyle(0x4a4a55, 1);
+      g.fillStyle(tc.rockBody, 1);
       g.fillCircle(dx, dy, rr);
       // Side shading
-      g.fillStyle(0x33333c, 1);
+      g.fillStyle(tc.rockShade, 1);
       g.fillCircle(dx + rr * 0.18, dy + rr * 0.18, rr * 0.72);
       // Top highlight
-      g.fillStyle(0x7a7a88, 0.65);
+      g.fillStyle(tc.rockHL, 0.65);
       g.fillEllipse(dx - rr * 0.3, dy - rr * 0.35, rr * 0.8, rr * 0.5);
       // Crack detail
-      g.lineStyle(1, 0x222228, 0.7);
+      g.lineStyle(1, tc.rockCrack, tc.lavaGlow ? 0.85 : 0.7);
       g.lineBetween(dx - rr * 0.1, dy - rr * 0.3, dx + rr * 0.3, dy + rr * 0.1);
+      // Volcanic extra: glowing lava seep in the crack
+      if (tc.lavaGlow) {
+        g.lineStyle(0.8, 0xff8800, 0.4);
+        g.lineBetween(dx - rr * 0.1, dy - rr * 0.3, dx + rr * 0.3, dy + rr * 0.1);
+        g.fillStyle(0xff6600, 0.22);
+        g.fillCircle(dx + rr * 0.1, dy, rr * 0.25);
+      }
     });
 
     g.setDepth(this.y);
@@ -86,34 +155,44 @@ export default class Obstacle {
     g.x = this.x;
     g.y = this.y;
     const r = this.baseRadius;
+    const tc = this._getObstacleTheme();
 
     // Shadow
     g.fillStyle(0x000000, 0.3);
     g.fillEllipse(3, r * 0.5, r * 1.9, r * 0.6);
 
-    // Outer stump ring (bark)
-    g.fillStyle(0x4a2e10, 1);
+    // Outer stump ring (bark / crust)
+    g.fillStyle(tc.stumpBark, 1);
     g.fillCircle(0, 0, r);
-    // Inner wood face
-    g.fillStyle(0x7a4e20, 1);
+    // Inner wood / crystal / obsidian face
+    g.fillStyle(tc.stumpWood, 1);
     g.fillCircle(0, 0, r * 0.75);
-    // Growth rings
-    g.lineStyle(1.5, 0x5c3a16, 0.5);
+    // Growth / fracture rings
+    g.lineStyle(1.5, tc.stumpRing, tc.lavaGlow ? 0.75 : 0.5);
     g.strokeCircle(0, 0, r * 0.55);
-    g.lineStyle(1, 0x5c3a16, 0.35);
+    g.lineStyle(1, tc.stumpRing, tc.lavaGlow ? 0.55 : 0.35);
     g.strokeCircle(0, 0, r * 0.35);
-    // Center dot
-    g.fillStyle(0x3a2008, 0.8);
+    // Center
+    g.fillStyle(tc.lavaGlow ? 0xff4400 : tc.stumpBark, tc.lavaGlow ? 0.6 : 0.8);
     g.fillCircle(0, 0, r * 0.12);
-    // Grain lines (radial cracks)
-    g.lineStyle(1, 0x4a3010, 0.5);
+    // Radial grain / crack lines
+    const lineColor = tc.lavaGlow ? 0xff5500 : tc.stumpRing;
+    const lineAlpha = tc.lavaGlow ? 0.45 : 0.5;
+    g.lineStyle(1, lineColor, lineAlpha);
     for (let i = 0; i < 5; i++) {
       const angle = (i / 5) * Math.PI * 2;
       g.lineBetween(0, 0, Math.cos(angle) * r * 0.65, Math.sin(angle) * r * 0.65);
     }
-    // Bark edge highlight
-    g.lineStyle(1.5, 0x6a3e18, 0.6);
+    // Outer edge highlight
+    g.lineStyle(1.5, tc.stumpRing, 0.6);
     g.strokeCircle(0, 0, r);
+    // Volcanic: lava glow pool in center
+    if (tc.lavaGlow) {
+      g.fillStyle(0xff6600, 0.18);
+      g.fillCircle(0, 0, r * 0.65);
+      g.fillStyle(0xff8800, 0.28);
+      g.fillCircle(0, 0, r * 0.30);
+    }
 
     g.setDepth(this.y);
     this.container = g;
@@ -130,30 +209,39 @@ export default class Obstacle {
     const trunk = this.scene.add.container(this.x, this.y);
     trunk.setDepth(this.y);
 
+    const tc = this._getObstacleTheme();
     const tg = this.scene.add.graphics();
     // Shadow on ground — boosted for stronger sense of mass
     tg.fillStyle(0x000000, 0.5);
     tg.fillEllipse(5, tr * 0.5, tr * 2.4, tr * 0.7);
     // Roots (small arcs)
-    tg.lineStyle(tr * 0.4, 0x3a1e08, 1);
+    tg.lineStyle(tr * 0.4, tc.roots, 1);
     for (let i = 0; i < 4; i++) {
       const a = (i / 4) * Math.PI * 2 + Math.PI * 0.15;
       const ex = Math.cos(a) * tr * 1.35, ey = Math.sin(a) * tr * 0.6;
       tg.lineBetween(0, 0, ex, ey);
     }
     // Trunk cylinder body
-    tg.fillStyle(0x3e200a, 1);
+    tg.fillStyle(tc.trunkBody, 1);
     tg.fillRoundedRect(-tr, -tr * 3.5, tr * 2, tr * 4, tr * 0.5);
     // Darker right-side band for cylindrical depth (light from upper-left)
-    tg.fillStyle(0x2a1606, 0.5);
+    tg.fillStyle(tc.trunkDark, 0.5);
     tg.fillRoundedRect(tr * 0.2, -tr * 3.5, tr * 0.8, tr * 4, { tl: 0, tr: tr * 0.5, bl: 0, br: tr * 0.5 });
-    // Outline — darker + more opaque for crisper edge definition
-    tg.lineStyle(1.5, 0x1f1004, 0.85);
+    // Outline
+    tg.lineStyle(1.5, tc.trunkDark, 0.85);
     tg.strokeRoundedRect(-tr, -tr * 3.5, tr * 2, tr * 4, tr * 0.5);
-    // Bark highlights
-    tg.lineStyle(1, 0x6a4018, 0.4);
+    // Bark / surface highlights
+    tg.lineStyle(1, tc.trunkBody, 0.4);
     tg.lineBetween(-tr * 0.3, -tr * 3, -tr * 0.3, tr * 0.3);
     tg.lineBetween(tr * 0.2, -tr * 3, tr * 0.2, tr * 0.3);
+    // Volcanic: ember cinders on trunk
+    if (tc.lavaGlow) {
+      for (let i = 0; i < 4; i++) {
+        const ex = -tr * 0.5 + Math.random() * tr, ey = -tr * 3 + Math.random() * tr * 3;
+        tg.fillStyle(0xff6600, 0.55);
+        tg.fillCircle(ex, ey, 1.2 + Math.random() * 1.2);
+      }
+    }
 
     trunk.add(tg);
     this.trunkContainer = trunk;
@@ -163,25 +251,33 @@ export default class Obstacle {
     canopy.setDepth(this.y + 140);
 
     const cg = this.scene.add.graphics();
-    // Three layered circles: dark base, mid, bright center
+    // Four layered canopy circles — colours from theme palette
     const layers = [
-      { r: cr, color: 0x1a4010, alpha: 1, ox: 0, oy: 0 },
-      { r: cr * 0.82, color: 0x276618, alpha: 1, ox: -cr * 0.05, oy: cr * 0.05 },
-      { r: cr * 0.62, color: 0x38882a, alpha: 1, ox: cr * 0.08, oy: -cr * 0.08 },
-      { r: cr * 0.35, color: 0x52aa3e, alpha: 0.85, ox: -cr * 0.04, oy: -cr * 0.12 },
+      { r: cr,         color: tc.canopyA, alpha: 1,    ox: 0,          oy: 0          },
+      { r: cr * 0.82,  color: tc.canopyB, alpha: 1,    ox: -cr * 0.05, oy:  cr * 0.05 },
+      { r: cr * 0.62,  color: tc.canopyC, alpha: 1,    ox:  cr * 0.08, oy: -cr * 0.08 },
+      { r: cr * 0.35,  color: tc.canopyD, alpha: 0.85, ox: -cr * 0.04, oy: -cr * 0.12 },
     ];
     layers.forEach(({ r, color, alpha, ox, oy }) => {
       cg.fillStyle(color, alpha);
       cg.fillCircle(ox, oy, r);
     });
     // Rim shadow
-    cg.lineStyle(3, 0x0e2808, 0.55);
+    cg.lineStyle(3, tc.canopyRim, 0.55);
     cg.strokeCircle(0, 0, cr);
-    // Top-left highlight crescent — brighter, layered for a 3-shade radial feel
-    cg.fillStyle(0xaaddaa, 0.45);
+    // Top-left highlight crescent
+    cg.fillStyle(tc.canopyHL, tc.canopyHLAlpha ?? 0.45);
     cg.fillCircle(-cr * 0.28, -cr * 0.3, cr * 0.22);
-    cg.fillStyle(0xddffdd, 0.5);
+    cg.fillStyle(tc.canopyHL, (tc.canopyHLAlpha ?? 0.45) + 0.05);
     cg.fillCircle(-cr * 0.32, -cr * 0.36, cr * 0.10);
+    // Volcanic: scattered ember sparks on canopy
+    if (tc.lavaGlow) {
+      for (let i = 0; i < 6; i++) {
+        const ea = Math.random() * Math.PI * 2, ed = Math.random() * cr * 0.7;
+        cg.fillStyle(0xff6600, 0.6 + Math.random() * 0.3);
+        cg.fillCircle(Math.cos(ea) * ed, Math.sin(ea) * ed, 1.5 + Math.random() * 1.5);
+      }
+    }
 
     canopy.add(cg);
     this.canopyContainer = canopy;
@@ -418,32 +514,40 @@ export default class Obstacle {
     g.y = this.y;
     const r = this.baseRadius;
     const pw = r * 1.6, ph = r * 3.4;
+    const tc = this._getObstacleTheme();
 
     // Shadow
     g.fillStyle(0x000000, 0.35);
     g.fillEllipse(4, ph * 0.12, pw * 1.8, ph * 0.22);
 
     // Main shaft
-    g.fillStyle(0x808080, 1);
+    g.fillStyle(tc.pillarBody, 1);
     g.fillRoundedRect(-pw / 2, -ph, pw, ph, r * 0.35);
     // Dark side
-    g.fillStyle(0x555555, 1);
+    g.fillStyle(tc.pillarDark, 1);
     g.fillRoundedRect(pw * 0.2, -ph, pw * 0.3, ph, { tl: 0, tr: r * 0.35, bl: 0, br: 0 });
     // Cap (slightly wider)
-    g.fillStyle(0x909090, 1);
+    g.fillStyle(tc.pillarCap, 1);
     g.fillRoundedRect(-pw * 0.6, -ph, pw * 1.2, ph * 0.12, 3);
-    // Cracks
-    g.lineStyle(1.5, 0x404040, 0.7);
+    // Cracks / veins
+    g.lineStyle(1.5, tc.pillarCrack, tc.lavaGlow ? 0.85 : 0.7);
     g.lineBetween(-pw * 0.1, -ph * 0.65, pw * 0.25, -ph * 0.4);
     g.lineBetween(-pw * 0.3, -ph * 0.3, pw * 0.1, -ph * 0.15);
+    // Volcanic: lava seep at crack
+    if (tc.lavaGlow) {
+      g.lineStyle(0.8, 0xff6600, 0.45);
+      g.lineBetween(-pw * 0.1, -ph * 0.65, pw * 0.25, -ph * 0.4);
+      g.fillStyle(0xff5500, 0.3);
+      g.fillCircle(pw * 0.1, -ph * 0.4, pw * 0.12);
+    }
     // Crumbled chips at top
     for (let i = 0; i < 3; i++) {
       const cx2 = -pw * 0.4 + i * pw * 0.35;
-      g.fillStyle(0x707070, 1);
+      g.fillStyle(tc.pillarChip, 1);
       g.fillTriangle(cx2, -ph, cx2 + pw * 0.18, -ph, cx2 + pw * 0.09, -ph - ph * 0.08);
     }
     // Outline
-    g.lineStyle(1.5, 0x404040, 0.6);
+    g.lineStyle(1.5, tc.pillarDark, 0.6);
     g.strokeRoundedRect(-pw / 2, -ph, pw, ph, r * 0.35);
 
     g.setDepth(this.y);
