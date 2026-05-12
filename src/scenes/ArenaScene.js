@@ -29,6 +29,7 @@ export default class ArenaScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(this.theme.bg);
 
     this._buildArena();
+    this._spawnFoliage();
     this._spawnObstacles();
     this._spawnPlayer();
     this._spawnAltar();
@@ -287,6 +288,58 @@ export default class ArenaScene extends Phaser.Scene {
     const { x, y } = this.arena.altarPoint;
     this.altar = new Altar(this, x, y);
     this.altar.onInteract = () => this._summonBoss();
+  }
+
+  // ── Foliage ────────────────────────────────────────────────────────────────
+  // Decorative-only plants — no collision, no obstacle system.
+  // Ground cover (depth 5.5) floats above the floor details and below entities.
+  // Mid-size props use setDepth(y) so they Y-sort correctly with the player/boss.
+
+  _spawnFoliage() {
+    const t = this.theme;
+    const themeIdx = _themeIndex(this.level);
+    const perimeter = this.arena.shape.getPerimeterPolygon();
+    const bounds    = this.arena.shape.bounds;
+
+    // ── Ground cover — dense near walls, sparser on floor ──────────────────
+    const edgeCover  = _sampleEdgePositions(perimeter, this.arena, 55, 50, 140);
+    const floorCover = _sampleFloorPositions(this.arena, bounds, 18);
+
+    for (const { x, y } of [...edgeCover, ...floorCover]) {
+      const g = this.add.graphics();
+      g.setPosition(x, y).setDepth(5.5);
+      g.setScale(0.65 + Math.random() * 0.70);
+      _drawGroundCover(g, themeIdx, t);
+      this.tweens.add({
+        targets: g,
+        angle: { from: -(2 + Math.random() * 3), to: 2 + Math.random() * 3 },
+        duration: 1400 + Math.random() * 1100,
+        yoyo: true, repeat: -1, delay: Math.random() * 1400,
+        ease: 'Sine.easeInOut',
+      });
+    }
+
+    // ── Mid-size props — Y-sorted with entities ─────────────────────────────
+    // Depth offset -8: sort point is 8 px above prop centre so the player
+    // only appears "in front" once they clear the prop base — and every
+    // prop's extended shadow fill covers the player's foot zone while
+    // the player is "behind".
+    const edgeProps  = _sampleEdgePositions(perimeter, this.arena, 18, 55, 135);
+    const floorProps = _sampleFloorPositions(this.arena, bounds, 7);
+
+    for (const { x, y } of [...edgeProps, ...floorProps]) {
+      const g = this.add.graphics();
+      g.setPosition(x, y).setDepth(y - 8);
+      g.setScale(0.75 + Math.random() * 0.55);
+      _drawMidProp(g, themeIdx, t);
+      this.tweens.add({
+        targets: g,
+        angle: { from: -(4 + Math.random() * 3), to: 4 + Math.random() * 3 },
+        duration: 2200 + Math.random() * 1200,
+        yoyo: true, repeat: -1, delay: Math.random() * 1800,
+        ease: 'Sine.easeInOut',
+      });
+    }
   }
 
   _summonBoss() {
@@ -1104,5 +1157,681 @@ function _drawThemedVoid(g, themeIdx, worldW, worldH, bounds, t) {
       });
       break;
     }
+  }
+}
+
+// ── Foliage placement helpers ──────────────────────────────────────────────
+
+/**
+ * Sample `count` positions near the arena perimeter using a cluster-based
+ * walk: groups of 2–5 plants in a short arc, separated by random gaps,
+ * producing organic uneven distribution instead of regular spacing.
+ */
+function _sampleEdgePositions(perimeter, arena, count, minInset, maxInset) {
+  const N = perimeter.length;
+  let cx = 0, cy = 0;
+  for (const p of perimeter) { cx += p.x; cy += p.y; }
+  cx /= N; cy /= N;
+
+  const positions = [];
+  // Random starting vertex so each arena looks different
+  let i = Math.floor(Math.random() * N);
+  let safety = 0;
+
+  while (positions.length < count && safety++ < count * 30) {
+    // Cluster: 2–5 plants in a short perimeter arc
+    const cSize  = 2 + Math.floor(Math.random() * 4);
+    const arcLen = 3 + Math.floor(Math.random() * 11); // perimeter vertices in this cluster's arc
+    // Cluster shares a base inset distance (with per-plant spread)
+    const cInset = minInset + Math.random() * (maxInset - minInset);
+
+    for (let c = 0; c < cSize && positions.length < count; c++) {
+      const pi  = (i + Math.floor(Math.random() * arcLen)) % N;
+      const p   = perimeter[pi];
+      const dx  = cx - p.x, dy = cy - p.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const inset  = Math.max(minInset * 0.45, cInset + (Math.random() - 0.5) * 38);
+      const perpX  = -dy / len, perpY = dx / len;
+      const jitter = (Math.random() - 0.5) * 26;
+      const x = p.x + (dx / len) * inset + perpX * jitter;
+      const y = p.y + (dy / len) * inset + perpY * jitter;
+      if (arena.containsPoint(x, y, 8)) positions.push({ x, y });
+    }
+
+    // Random gap between clusters — 8–22 % of perimeter
+    const gap = Math.floor(N * (0.08 + Math.random() * 0.14));
+    i = (i + arcLen + gap) % N;
+  }
+
+  return positions;
+}
+
+/**
+ * Sample `count` positions scattered across the arena interior, well
+ * inside the perimeter and clear of the altar/spawn areas.
+ */
+function _sampleFloorPositions(arena, bounds, count) {
+  const { altarPoint, spawnPoint } = arena;
+  const positions = [];
+  let attempts = 0;
+  while (positions.length < count && attempts < count * 16) {
+    attempts++;
+    const x = bounds.x + Math.random() * bounds.w;
+    const y = bounds.y + Math.random() * bounds.h;
+    if (!arena.containsPoint(x, y, 80)) continue;
+    if (Math.hypot(x - altarPoint.x, y - altarPoint.y) < 130) continue;
+    if (Math.hypot(x - spawnPoint.x, y - spawnPoint.y)  < 130) continue;
+    positions.push({ x, y });
+  }
+  return positions;
+}
+
+// ── Ground cover drawing ───────────────────────────────────────────────────
+
+function _drawGroundCover(g, themeIdx, t) {
+  const v = Math.floor(Math.random() * 3);
+  switch (themeIdx) {
+    case 0: _gcGreenFields(g, t, v);   break;
+    case 1: _gcCrystalCaves(g, t, v); break;
+    case 2: _gcVolcanic(g, t, v);     break;
+    case 3: _gcCelestial(g, t, v);    break;
+    case 4: _gcChaos(g, t, v);        break;
+  }
+}
+
+// Theme 0 — Green Fields
+function _gcGreenFields(g, t, v) {
+  if (v === 0) {
+    // Grass tuft — layered blades with shadow underlay + colour variation
+    const blades = 5 + Math.floor(Math.random() * 4);
+    const spread = 0.88;
+    // Shadow layer — slightly behind and offset, dark green
+    for (let i = 0; i < blades; i++) {
+      const ang = -Math.PI / 2 - spread / 2 + spread * (i / (blades - 1)) + 0.06;
+      const len = 7 + Math.random() * 5;
+      const bend = (Math.random() - 0.5) * 0.28;
+      g.lineStyle(2.8, 0x1e4008, 0.42);
+      g.lineBetween(0, 2, Math.cos(ang + bend) * len, Math.sin(ang + bend) * len);
+    }
+    // Base ground patch
+    g.fillStyle(0x2e5a10, 0.38);
+    g.fillEllipse(0, 2, 12, 6);
+    // Main blades — three alternating colours
+    const cols = [0x9de060, 0x7ec850, 0x5aaa38];
+    for (let i = 0; i < blades; i++) {
+      const ang = -Math.PI / 2 - spread / 2 + spread * (i / (blades - 1));
+      const len = 9 + Math.random() * 8;
+      const bend = (Math.random() - 0.5) * 0.32;
+      const midX = Math.cos(ang + bend * 0.5) * len * 0.55;
+      const midY = Math.sin(ang + bend * 0.5) * len * 0.55;
+      const tipX = Math.cos(ang + bend) * len;
+      const tipY = Math.sin(ang + bend) * len;
+      g.lineStyle(1.8, cols[i % 3], 0.88);
+      g.lineBetween(0, 0, midX, midY);
+      g.lineBetween(midX, midY, tipX, tipY);
+      // Lighter highlight streak on every other blade
+      if (i % 2 === 0) {
+        g.lineStyle(0.8, 0xc4f07c, 0.52);
+        g.lineBetween(midX, midY, tipX, tipY);
+      }
+    }
+  } else if (v === 1) {
+    // Wildflower cluster — stems with leaf pairs + petals
+    const count = 2 + Math.floor(Math.random() * 3);
+    const petColors = [0xff88aa, 0xffffaa, 0xff6677, 0xddaaff, 0xff99cc];
+    for (let i = 0; i < count; i++) {
+      const ox = (Math.random() - 0.5) * 16;
+      const oy = (Math.random() - 0.5) * 8;
+      const sh = 9 + Math.random() * 9;
+      // Shadow stem
+      g.lineStyle(2, 0x1e3a08, 0.32);
+      g.lineBetween(ox + 1, oy + 2, ox + 1, oy - sh + 1);
+      // Stem
+      g.lineStyle(1.2, 0x4a8820, 0.88);
+      g.lineBetween(ox, oy, ox, oy - sh);
+      // Leaf pair at mid-stem
+      const lmy = oy - sh * 0.52;
+      const la  = (Math.random() - 0.5) * 0.5;
+      g.fillStyle(0x4a8820, 0.62);
+      g.fillEllipse(ox + Math.cos(la) * 5, lmy + Math.sin(la) * 2, 8, 3.5);
+      g.fillEllipse(ox - Math.cos(la) * 5, lmy - Math.sin(la) * 2, 6.5, 3);
+      // Petals
+      const fc     = petColors[i % petColors.length];
+      const petals = 5 + Math.floor(Math.random() * 2);
+      for (let j = 0; j < petals; j++) {
+        const pa = (j / petals) * Math.PI * 2;
+        g.fillStyle(fc, 0.82);
+        g.fillEllipse(ox + Math.cos(pa) * 3.5, oy - sh + Math.sin(pa) * 3.5, 5.5, 3.2);
+      }
+      // Centre
+      g.fillStyle(0xffee44, 0.95);
+      g.fillCircle(ox, oy - sh, 2.2);
+      g.fillStyle(0xffaa00, 0.6);
+      g.fillCircle(ox - 0.5, oy - sh - 0.5, 1);
+    }
+  } else {
+    // Moss / clover patch — layered organic blobs with micro highlights
+    g.fillStyle(0x243d10, 0.40);
+    g.fillEllipse(1, 2, 28, 15);
+    g.fillStyle(0x3d6b24, 0.55);
+    g.fillEllipse(-3, -1, 22, 11);
+    g.fillStyle(0x4e8030, 0.52);
+    g.fillEllipse(4, -2, 15, 8);
+    g.fillStyle(0x5aaa38, 0.58);
+    g.fillEllipse(-5, -3, 11, 7);
+    g.fillStyle(0x3d6b24, 0.45);
+    g.fillEllipse(6, -4, 9, 5);
+    // Clover-dot ring
+    for (let i = 0; i < 6; i++) {
+      const la = (i / 6) * Math.PI * 2;
+      g.fillStyle(0x7ec850, 0.68);
+      g.fillCircle(Math.cos(la) * 8 - 1, Math.sin(la) * 4 - 1, 1.8 + Math.random() * 0.9);
+    }
+    // Micro highlights
+    for (let i = 0; i < 5; i++) {
+      g.fillStyle(0xaae060, 0.32);
+      g.fillCircle((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 10, 1.1 + Math.random() * 0.6);
+    }
+  }
+}
+
+// Theme 1 — Crystal Caves
+function _gcCrystalCaves(g, t, v) {
+  if (v === 0) {
+    // Tiny crystal cluster — 3-5 miniature shards
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const ox = (Math.random() - 0.5) * 18;
+      const oy = (Math.random() - 0.5) * 8;
+      const h  = 5 + Math.random() * 8;
+      const w  = 2 + Math.random() * 2.5;
+      const tilt = (Math.random() - 0.5) * 0.4;
+      g.fillStyle(t.accent, 0.75);
+      g.fillPoints([{ x: ox - w, y: oy }, { x: ox + w, y: oy },
+                    { x: ox + Math.sin(tilt) * h, y: oy - h }], true);
+      g.lineStyle(0.8, t.wallHighlight, 0.5);
+      g.strokePoints([{ x: ox - w, y: oy }, { x: ox + w, y: oy },
+                      { x: ox + Math.sin(tilt) * h, y: oy - h }], true);
+    }
+  } else if (v === 1) {
+    // Glowing mushroom cluster
+    const count = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < count; i++) {
+      const ox = (Math.random() - 0.5) * 16;
+      const oy = (Math.random() - 0.5) * 6;
+      const sh = 7 + Math.random() * 6;
+      const cr = 4 + Math.random() * 4;
+      g.lineStyle(1.5, t.wallInner, 0.9);
+      g.lineBetween(ox, oy, ox, oy - sh);
+      g.fillStyle(t.accentDim, 0.85);
+      g.fillEllipse(ox, oy - sh - cr * 0.3, cr * 2.4, cr * 1.3);
+      g.fillStyle(t.accent, 0.4);
+      g.fillEllipse(ox - cr * 0.2, oy - sh - cr * 0.5, cr * 1.4, cr * 0.7);
+      g.fillStyle(t.wallHighlight, 0.7);
+      g.fillCircle(ox - cr * 0.25, oy - sh - cr * 0.4, 1.5);
+    }
+  } else {
+    // Crystal dust — scattered tiny diamonds on floor
+    g.fillStyle(t.accent, 0.25);
+    g.fillEllipse(0, 0, 20, 10);
+    const count = 5 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < count; i++) {
+      const dx = (Math.random() - 0.5) * 16;
+      const dy = (Math.random() - 0.5) * 8;
+      const s  = 1.5 + Math.random() * 2;
+      g.fillStyle(t.wallHighlight, 0.55 + Math.random() * 0.35);
+      g.fillTriangle(dx, dy - s, dx + s * 0.65, dy + s * 0.4, dx - s * 0.65, dy + s * 0.4);
+    }
+  }
+}
+
+// Theme 2 — Volcanic
+function _gcVolcanic(g, t, v) {
+  if (v === 0) {
+    // Ash patch with dark pebbles
+    g.fillStyle(0x555555, 0.18);
+    g.fillEllipse(0, 0, 24, 13);
+    g.fillStyle(0x333333, 0.12);
+    g.fillEllipse(-3, 2, 14, 7);
+    for (let i = 0; i < 6; i++) {
+      g.fillStyle(0x2a1a10, 0.7);
+      g.fillCircle((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 10, 1.2 + Math.random() * 1.5);
+    }
+  } else if (v === 1) {
+    // Ember cluster — small glowing coals
+    const count = 5 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < count; i++) {
+      const ox = (Math.random() - 0.5) * 18;
+      const oy = (Math.random() - 0.5) * 10;
+      const r  = 1.5 + Math.random() * 2.5;
+      g.fillStyle(0xff4400, 0.22);
+      g.fillCircle(ox, oy, r * 2.2);
+      g.fillStyle(0xff6600, 0.6);
+      g.fillCircle(ox, oy, r);
+      g.fillStyle(0xffaa44, 0.9);
+      g.fillCircle(ox, oy, r * 0.45);
+    }
+  } else {
+    // Scorched debris — charred branch sticks with ember tips
+    for (let i = 0; i < 3; i++) {
+      const ox  = (Math.random() - 0.5) * 14;
+      const oy  = (Math.random() - 0.5) * 8;
+      const ang = Math.random() * Math.PI;
+      const len = 8 + Math.random() * 10;
+      const ex  = ox + Math.cos(ang) * len / 2;
+      const ey  = oy + Math.sin(ang) * len / 2;
+      g.lineStyle(2, 0x1a0a00, 0.9);
+      g.lineBetween(ox - Math.cos(ang) * len / 2, oy - Math.sin(ang) * len / 2, ex, ey);
+      g.fillStyle(0xff4400, 0.55);
+      g.fillCircle(ex, ey, 2);
+    }
+  }
+}
+
+// Theme 3 — Celestial
+function _gcCelestial(g, t, v) {
+  if (v === 0) {
+    // Stardust — scattered tiny bright specks
+    const count = 8 + Math.floor(Math.random() * 6);
+    for (let i = 0; i < count; i++) {
+      const ox = (Math.random() - 0.5) * 22;
+      const oy = (Math.random() - 0.5) * 12;
+      const r  = 0.8 + Math.random() * 1.4;
+      g.fillStyle(t.wallHighlight, 0.4 + Math.random() * 0.5);
+      g.fillCircle(ox, oy, r);
+      if (Math.random() < 0.35) {
+        g.fillStyle(t.wallHighlight, 0.16);
+        g.fillCircle(ox, oy, r * 2.5);
+      }
+    }
+  } else if (v === 1) {
+    // Cosmic rune — small glowing inscription circle
+    g.lineStyle(1, t.accent, 0.5);
+    g.strokeCircle(0, 0, 9);
+    g.lineStyle(0.8, t.accent, 0.28);
+    g.strokeCircle(0, 0, 6);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      g.lineStyle(1, t.accent, 0.42);
+      g.lineBetween(Math.cos(a) * 4, Math.sin(a) * 4, Math.cos(a) * 8, Math.sin(a) * 8);
+    }
+    g.fillStyle(t.accent, 0.3);
+    g.fillCircle(0, 0, 2.5);
+  } else {
+    // Void pebbles — dark stones with star-shimmer
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const ox = (Math.random() - 0.5) * 16;
+      const oy = (Math.random() - 0.5) * 8;
+      const r  = 2.5 + Math.random() * 2.5;
+      g.fillStyle(t.wallInner, 0.9);
+      g.fillCircle(ox, oy, r);
+      g.lineStyle(0.8, t.accentDim, 0.55);
+      g.strokeCircle(ox, oy, r);
+      g.fillStyle(t.wallHighlight, 0.7);
+      g.fillCircle(ox - r * 0.3, oy - r * 0.35, 0.9);
+    }
+  }
+}
+
+// Theme 4 — Chaos
+function _gcChaos(g, t, v) {
+  if (v === 0) {
+    // Reality crack — jagged fissure with void glow
+    const len = 14 + Math.random() * 12;
+    const ang = Math.random() * Math.PI;
+    const pts = [];
+    for (let i = 0; i <= 5; i++) {
+      const f  = i / 5;
+      const jx = i > 0 && i < 5 ? (Math.random() - 0.5) * 5 : 0;
+      const jy = i > 0 && i < 5 ? (Math.random() - 0.5) * 3 : 0;
+      pts.push({ x: Math.cos(ang) * (len * f - len / 2) + jx,
+                 y: Math.sin(ang) * (len * f - len / 2) + jy });
+    }
+    g.lineStyle(4, t.accent, 0.14);  g.strokePoints(pts, false);
+    g.lineStyle(1.5, t.accent, 0.7); g.strokePoints(pts, false);
+    g.lineStyle(0.8, 0xffffff, 0.45); g.strokePoints(pts, false);
+  } else if (v === 1) {
+    // Void shard cluster — angular glassy fragments
+    const count = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const ox = (Math.random() - 0.5) * 16;
+      const oy = (Math.random() - 0.5) * 10;
+      const a  = Math.random() * Math.PI * 2;
+      const s  = 3 + Math.random() * 4;
+      const pts = [
+        { x: ox + Math.cos(a)       * s, y: oy + Math.sin(a)       * s },
+        { x: ox + Math.cos(a + 2.2) * s, y: oy + Math.sin(a + 2.2) * s },
+        { x: ox + Math.cos(a + 4.0) * s * 0.8, y: oy + Math.sin(a + 4.0) * s * 0.8 },
+      ];
+      g.fillStyle(t.wallInner, 0.8);
+      g.fillPoints(pts, true);
+      g.lineStyle(0.8, t.accent, 0.6);
+      g.strokePoints(pts, true);
+    }
+  } else {
+    // Distortion ripple — concentric broken ellipses
+    for (let i = 0; i < 3; i++) {
+      const r = 5 + i * 5;
+      g.lineStyle(0.8, t.accent, 0.22 - i * 0.06);
+      g.strokeEllipse(0, 0, r * 2.2, r * 1.1);
+    }
+    g.fillStyle(t.accentDim, 0.2);
+    g.fillEllipse(0, 0, 10, 5);
+  }
+}
+
+// ── Mid-size prop drawing ──────────────────────────────────────────────────
+
+function _drawMidProp(g, themeIdx, t) {
+  const v = Math.floor(Math.random() * 2);
+  switch (themeIdx) {
+    case 0: _mpGreenFields(g, t, v);   break;
+    case 1: _mpCrystalCaves(g, t, v); break;
+    case 2: _mpVolcanic(g, t, v);     break;
+    case 3: _mpCelestial(g, t, v);    break;
+    case 4: _mpChaos(g, t, v);        break;
+  }
+}
+
+// Theme 0 — Green Fields mid-size
+function _mpGreenFields(g, t, v) {
+  if (v === 0) {
+    // Round layered bush
+    // Extended occluder shadow — faint, covers player foot zone (y+24)
+    g.fillStyle(0x000000, 0.13);
+    g.fillEllipse(3, 14, 56, 24);
+    // Visual shadow
+    g.fillStyle(0x000000, 0.26);
+    g.fillEllipse(4, 6, 48, 13);
+    // Dark base layer
+    g.fillStyle(0x1a4010, 1);
+    g.fillCircle(-6, -4, 16);  g.fillCircle(7, -6, 18);  g.fillCircle(0, -10, 14);
+    // Mid layer
+    g.fillStyle(0x2e6820, 1);
+    g.fillCircle(-5, -8, 12);  g.fillCircle(6, -10, 14);
+    // Accent layer
+    g.fillStyle(0x4a9030, 1);
+    g.fillCircle(-2, -13, 9);  g.fillCircle(8, -14, 7);
+    // Highlight layer
+    g.fillStyle(0x52aa3e, 0.74);
+    g.fillCircle(4, -13, 9);
+    g.fillStyle(0x7ec850, 0.44);
+    g.fillCircle(2, -16, 5);
+    // Berries
+    const berryC = [0xee3322, 0xff5544, 0xcc2211];
+    for (let i = 0; i < 6; i++) {
+      const bx = (Math.random() - 0.5) * 24;
+      const by = -4 - Math.random() * 14;
+      g.fillStyle(berryC[i % 3], 0.80);
+      g.fillCircle(bx, by, 1.8 + Math.random() * 0.8);
+      g.fillStyle(0xffffff, 0.38);
+      g.fillCircle(bx - 0.7, by - 0.7, 0.65);
+    }
+    // Top leaf specular
+    g.fillStyle(0xa0e060, 0.28);
+    g.fillEllipse(-3, -17, 8, 4);
+  } else {
+    // Tall fern — arcing fronds with shadow underlay
+    // Extended occluder shadow (reaches y+25)
+    g.fillStyle(0x000000, 0.11);
+    g.fillEllipse(2, 14, 44, 24);
+    g.fillStyle(0x000000, 0.20);
+    g.fillEllipse(3, 4, 36, 10);
+    const fronds = 6 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < fronds; i++) {
+      const t2  = i / (fronds - 1);
+      const ang = -Math.PI / 2 - Math.PI / 3 + t2 * (Math.PI * 2 / 3);
+      const len = 18 + Math.random() * 14;
+      const bend = 0.22 + Math.random() * 0.18;
+      const ctrlX = Math.cos(ang + bend * 0.4) * len * 0.5;
+      const ctrlY = Math.sin(ang + bend * 0.4) * len * 0.5;
+      const tipX  = Math.cos(ang + bend) * len;
+      const tipY  = Math.sin(ang + bend) * len;
+      // Shadow stroke
+      g.lineStyle(2.5, 0x1a3a08, 0.38);
+      g.lineBetween(1, 1, ctrlX + 1, ctrlY + 1);
+      g.lineBetween(ctrlX + 1, ctrlY + 1, tipX + 1, tipY + 1);
+      // Main frond
+      g.lineStyle(1.8, 0x2a6010, 0.92);
+      g.lineBetween(0, 0, ctrlX, ctrlY);
+      g.lineBetween(ctrlX, ctrlY, tipX, tipY);
+      // Leaflets with alternating colour
+      const leafCount = 3 + Math.floor(len / 7);
+      for (let j = 1; j < leafCount; j++) {
+        const f  = j / leafCount;
+        const lx = ctrlX * (1 - f) + tipX * f;
+        const ly = ctrlY * (1 - f) + tipY * f;
+        const lr = (1 - f) * 5.5 + 1.5;
+        const la = ang + Math.PI * 0.45 * (j % 2 === 0 ? 1 : -1);
+        g.fillStyle(j % 2 === 0 ? 0x3a8020 : 0x4a9428, 0.80);
+        g.fillEllipse(lx + Math.cos(la) * lr, ly + Math.sin(la) * lr, lr * 2.2, lr * 0.85);
+      }
+    }
+  }
+}
+
+// Theme 1 — Crystal Caves mid-size
+function _mpCrystalCaves(g, t, v) {
+  if (v === 0) {
+    // Crystal spire formation — dark base rock + multiple angled shards
+    // Extended occluder shadow (reaches y+25)
+    g.fillStyle(0x000000, 0.11);
+    g.fillEllipse(3, 15, 54, 24);
+    g.fillStyle(0x000000, 0.4);
+    g.fillEllipse(4, 6, 50, 15);
+    g.fillStyle(t.wallInner, 1);
+    g.fillEllipse(0, 2, 42, 18);
+    g.fillStyle(0x000000, 0.4);
+    g.fillEllipse(4, 3, 28, 12);
+    const shards = [
+      { ox: 0,   h: 32, tilt: 0,     c: t.accent      },
+      { ox: -9,  h: 22, tilt: -0.22, c: t.accentDim   },
+      { ox: 10,  h: 26, tilt: 0.2,   c: t.accent      },
+      { ox: -18, h: 15, tilt: -0.4,  c: t.accentDim   },
+      { ox: 17,  h: 18, tilt: 0.35,  c: t.wallHighlight},
+    ];
+    shards.forEach(({ ox, h, tilt, c }) => {
+      const w   = 4 + Math.random() * 3;
+      const tipX = ox + Math.sin(tilt) * h;
+      const tipY = -(h - Math.abs(Math.sin(tilt)) * 4);
+      const pts  = [{ x: ox - w, y: 0 }, { x: ox + w, y: 0 },
+                    { x: tipX + w * 0.3, y: tipY }, { x: tipX - w * 0.3, y: tipY }];
+      g.fillStyle(c, 0.82);
+      g.fillPoints(pts, true);
+      g.lineStyle(1, t.wallHighlight, 0.38);
+      g.strokePoints(pts, true);
+      g.fillStyle(0xffffff, 0.5);
+      g.fillCircle(tipX, tipY, 1.8);
+    });
+  } else {
+    // Bioluminescent mushroom — large glowing cap on tapered stem
+    // Extended occluder shadow (reaches y+25)
+    g.fillStyle(0x000000, 0.11);
+    g.fillEllipse(2, 14, 48, 24);
+    g.fillStyle(0x000000, 0.3);
+    g.fillEllipse(3, 5, 44, 13);
+    g.fillStyle(t.wallInner, 1);
+    g.fillRoundedRect(-5, -28, 10, 28, 5 * 0.5);
+    g.fillStyle(t.accentDim, 0.6);
+    for (let i = 0; i < 4; i++) {
+      g.fillCircle((Math.random() - 0.5) * 6, -28 * (0.2 + Math.random() * 0.65), 1.5 + Math.random());
+    }
+    g.fillStyle(t.accentDim, 1);
+    g.fillEllipse(0, -28, 36, 20);
+    g.fillStyle(t.accent, 0.6);
+    g.fillEllipse(-3, -31, 24, 14);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI;
+      g.fillStyle(t.wallHighlight, 0.72);
+      g.fillCircle(Math.cos(a) * 11, -28 + Math.sin(a) * 4 + 3, 2);
+    }
+    g.lineStyle(1.5, t.wallInner, 0.65);
+    g.strokeEllipse(0, -28, 36, 20);
+  }
+}
+
+// Theme 2 — Volcanic mid-size
+function _mpVolcanic(g, t, v) {
+  if (v === 0) {
+    // Charred dead tree — angular blackened limbs with ember tips
+    // Extended occluder shadow (reaches y+25)
+    g.fillStyle(0x000000, 0.11);
+    g.fillEllipse(3, 14, 46, 24);
+    g.fillStyle(0x000000, 0.3);
+    g.fillEllipse(4, 5, 42, 12);
+    g.lineStyle(6, 0x1a0800, 1);  g.lineBetween(0, 0, -2, -22);
+    g.lineStyle(4, 0x260e04, 1);  g.lineBetween(-2, -22, 12, -36);
+    g.lineStyle(4, 0x260e04, 1);  g.lineBetween(-2, -22, -14, -32);
+    g.lineStyle(3, 0x1a0800, 1);  g.lineBetween(12, -36, 18, -44);
+    g.lineStyle(2, 0x1a0800, 1);  g.lineBetween(12, -36, 22, -30);
+    g.lineStyle(0.8, 0x0f0400, 0.6);
+    g.lineBetween(-1, -5, 1, -18); g.lineBetween(-2, -10, -4, -20);
+    [[18, -44], [22, -30], [-14, -32]].forEach(([ex, ey]) => {
+      g.fillStyle(0xff4400, 0.28); g.fillCircle(ex, ey, 5);
+      g.fillStyle(0xff8800, 0.7);  g.fillCircle(ex, ey, 2.5);
+      g.fillStyle(0xffcc44, 0.9);  g.fillCircle(ex, ey, 1.2);
+    });
+  } else {
+    // Sulfur crystal formation — obsidian rock with angular yellow-orange shards
+    // Extended occluder shadow (reaches y+25)
+    g.fillStyle(0x000000, 0.11);
+    g.fillEllipse(3, 15, 50, 24);
+    g.fillStyle(0x000000, 0.35);
+    g.fillEllipse(4, 6, 46, 14);
+    const basePts = [];
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const r = 16 + (i % 2) * 4;
+      basePts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r * 0.5 + 2 });
+    }
+    g.fillStyle(0x0e0806, 1);
+    g.fillPoints(basePts, true);
+    g.lineStyle(1.5, 0x1a1008, 0.8);
+    g.strokePoints(basePts, true);
+    [{ ox: -5, h: 24, c: 0xcc8800 }, { ox: 8, h: 18, c: 0xffaa00 },
+     { ox: 0,  h: 28, c: 0xdd9900 }, { ox: -14, h: 14, c: 0xbb7700 },
+     { ox: 14, h: 16, c: 0xffbb22 }].forEach(({ ox, h, c }) => {
+      const w = 4 + Math.random() * 3;
+      const tilt = (Math.random() - 0.5) * 0.3;
+      g.fillStyle(c, 0.85);
+      g.fillPoints([{ x: ox - w, y: 0 }, { x: ox + w, y: 0 },
+                    { x: ox + Math.sin(tilt) * h, y: -h }], true);
+      g.lineStyle(0.8, 0xffcc44, 0.28);
+      g.strokePoints([{ x: ox - w, y: 0 }, { x: ox + w, y: 0 },
+                      { x: ox + Math.sin(tilt) * h, y: -h }], true);
+    });
+  }
+}
+
+// Theme 3 — Celestial mid-size
+function _mpCelestial(g, t, v) {
+  if (v === 0) {
+    // Ancient obelisk fragment — tapered stone with gold inlay
+    const pw = 12, ph = 40;
+    // Extended occluder shadow (reaches y+25)
+    g.fillStyle(0x000000, 0.11);
+    g.fillEllipse(3, 14, 36, 24);
+    g.fillStyle(0x000000, 0.3);
+    g.fillEllipse(4, 6, 32, 10);
+    const body = [{ x: -pw / 2, y: 0 }, { x: pw / 2, y: 0 },
+                  { x: pw / 2 - 2, y: -ph }, { x: -pw / 2 + 2, y: -ph }];
+    g.fillStyle(t.wallInner, 1);
+    g.fillPoints(body, true);
+    g.fillStyle(0x000000, 0.55);
+    g.fillRect(pw * 0.1, -ph, pw * 0.4, ph);
+    // Gold bands + rune marks
+    g.lineStyle(1, t.accentDim, 0.55);
+    g.lineBetween(-pw / 2, -ph * 0.25, pw / 2 - 2, -ph * 0.25);
+    g.lineBetween(-pw / 2, -ph * 0.6,  pw / 2 - 2, -ph * 0.6);
+    g.lineStyle(0.8, t.accent, 0.4);
+    g.lineBetween(-pw * 0.25, -ph * 0.35, pw * 0.25, -ph * 0.35);
+    g.lineBetween(-pw * 0.1,  -ph * 0.45, pw * 0.1,  -ph * 0.45);
+    // Gold capstone
+    g.fillStyle(t.accentDim, 0.8);
+    g.fillTriangle(-pw / 2 + 2, -ph, pw / 2 - 2, -ph, 0, -ph - 10);
+    g.lineStyle(1.5, t.wallShadow, 0.7);
+    g.strokePoints(body, true);
+  } else {
+    // Cosmic orb on a carved stone pedestal
+    // Extended occluder shadow (reaches y+25)
+    g.fillStyle(0x000000, 0.11);
+    g.fillEllipse(3, 14, 40, 24);
+    g.fillStyle(0x000000, 0.3);
+    g.fillEllipse(4, 6, 36, 11);
+    g.fillStyle(t.wallInner, 1);
+    g.fillRoundedRect(-12, -10, 24, 10, 3);
+    g.lineStyle(1, t.wallShadow, 0.65);
+    g.strokeRoundedRect(-12, -10, 24, 10, 3);
+    const or = 14;
+    g.fillStyle(t.floor, 0.95);
+    g.fillCircle(0, -10 - or, or);
+    g.fillStyle(t.accent, 0.1);
+    g.fillCircle(0, -10 - or, or);
+    g.lineStyle(1, t.accent, 0.22);
+    g.strokeCircle(0, -10 - or, or);
+    g.lineStyle(0.8, t.accentDim, 0.18);
+    g.strokeCircle(0, -10 - or, or * 0.7);
+    g.fillStyle(t.wallHighlight, 0.38);
+    g.fillCircle(-or * 0.3, -10 - or - or * 0.3, or * 0.22);
+    g.fillStyle(0xffffff, 0.22);
+    g.fillCircle(-or * 0.32, -10 - or - or * 0.32, or * 0.1);
+    for (let i = 0; i < 5; i++) {
+      const sa = Math.random() * Math.PI * 2;
+      const sd = Math.random() * or * 0.65;
+      g.fillStyle(t.wallHighlight, 0.7);
+      g.fillCircle(Math.cos(sa) * sd, -10 - or + Math.sin(sa) * sd, 0.9 + Math.random() * 0.8);
+    }
+  }
+}
+
+// Theme 4 — Chaos mid-size
+function _mpChaos(g, t, v) {
+  if (v === 0) {
+    // Chaos crystal — irregular fractured body with glowing internal cracks
+    // Extended occluder shadow (reaches y+25)
+    g.fillStyle(0x000000, 0.11);
+    g.fillEllipse(3, 14, 48, 24);
+    g.fillStyle(0x000000, 0.35);
+    g.fillEllipse(4, 6, 44, 13);
+    const body = [
+      { x: 0, y: -36 }, { x: 14, y: -24 }, { x: 18, y: -10 },
+      { x: 10, y: 2 },  { x: -8, y: 4 },   { x: -18, y: -8 },
+      { x: -12, y: -26}, { x: -4, y: -34 },
+    ];
+    g.fillStyle(t.wallInner, 1);
+    g.fillPoints(body, true);
+    g.lineStyle(1.5, t.accent, 0.65);
+    g.lineBetween(0, -36, 6, -18); g.lineBetween(6, -18, 12, -4);
+    g.lineBetween(-12, -26, -4, -12); g.lineBetween(-4, -12, 6, -18);
+    g.fillStyle(t.accent, 0.07);
+    g.fillPoints(body, true);
+    g.lineStyle(1.5, t.wallShadow, 0.8);
+    g.strokePoints(body, true);
+    g.lineStyle(0.8, 0xffffff, 0.32);
+    g.lineBetween(-4, -34, 14, -24); g.lineBetween(-12, -26, -18, -8);
+  } else {
+    // Reality fragment — flat angular slab with chaos veining
+    // Extended occluder shadow (reaches y+25)
+    g.fillStyle(0x000000, 0.11);
+    g.fillEllipse(3, 15, 44, 24);
+    g.fillStyle(0x000000, 0.3);
+    g.fillEllipse(4, 8, 40, 12);
+    const frag = [
+      { x: -16, y: -6 }, { x: 12, y: -18 }, { x: 20, y: -4 },
+      { x: 6, y: 8 },    { x: -14, y: 4 },
+    ];
+    g.fillStyle(t.wallInner, 1);
+    g.fillPoints(frag, true);
+    g.fillStyle(t.accent, 0.06);
+    g.fillPoints(frag, true);
+    g.lineStyle(1.5, t.accent, 0.48);
+    g.strokePoints(frag, true);
+    g.lineStyle(0.8, t.accentDim, 0.32);
+    g.lineBetween(-10, -4, 14, -14);
+    g.lineBetween(-8,  2,  10, -8);
+    g.lineBetween(-4,  6,  18, 0);
+    g.fillStyle(t.wallHighlight, 0.52);
+    [frag[0], frag[1], frag[2]].forEach(({ x, y }) => g.fillCircle(x, y, 1.5));
   }
 }
