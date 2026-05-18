@@ -27,6 +27,17 @@ export default class Obstacle {
     this._build();
   }
 
+  // ── Deterministic per-instance hash ──────────────────────────────────────
+  // Returns a float in [0, 1) seeded by (this.x, this.y, salt).
+  // Same obstacle position → same appearance across reloads.
+  // Use this instead of Math.random() in all build methods.
+  _h(salt) {
+    const n = (Math.abs(Math.round(this.x) * 374761393
+                      + Math.round(this.y) * 1274126177
+                      + salt * 2654435761) >>> 0);
+    return n / 0xffffffff;
+  }
+
   // ── Theme palette ─────────────────────────────────────────────────────────
   // Returns a colour object used by all non-spire obstacle builders.
   // Each field is a 0xRRGGBB integer. Theme 0 (Green Fields) reproduces the
@@ -103,45 +114,119 @@ export default class Obstacle {
 
   // ── Rock ──────────────────────────────────────────────────────────────────
 
+  // Draws a jagged rock polygon at (cx, cy) with semi-axes rx, ry.
+  // Returns the vertex array so callers can reuse it for shade/highlight overlays.
+  _rockPolygon(g, cx, cy, rx, ry, ptCount, hashOff) {
+    const verts = [];
+    for (let i = 0; i < ptCount; i++) {
+      const baseA  = (i / ptCount) * Math.PI * 2;
+      const jitter = (this._h(hashOff + i * 2) - 0.5) * (Math.PI * 2 / ptCount) * 0.55;
+      const rScale = 0.62 + this._h(hashOff + i * 2 + 1) * 0.38;
+      verts.push({
+        x: cx + Math.cos(baseA + jitter) * rx * rScale,
+        y: cy + Math.sin(baseA + jitter) * ry * rScale,
+      });
+    }
+    g.fillPoints(verts, true);
+    return verts;
+  }
+
   _buildRock() {
     const g = this.scene.add.graphics();
     g.x = this.x;
     g.y = this.y;
     const tc = this._getObstacleTheme();
+    const r  = this.baseRadius;
 
-    const r = this.baseRadius;
-    const numRocks = 2 + Math.floor(Math.random() * 2); // 2 or 3 rocks in cluster
-    const offsets = [
-      { dx: 0, dy: 0, s: 1.0 },
-      { dx: r * 0.65, dy: r * 0.3, s: 0.72 },
-      { dx: -r * 0.55, dy: r * 0.25, s: 0.65 },
-    ].slice(0, numRocks);
+    // Per-instance hash-driven layout properties
+    const variant   = Math.floor(this._h(0) * 4);      // 0=solo, 1=twin, 2=cluster, 3=slab
+    const ptCount   = 7 + Math.floor(this._h(1) * 3);  // 7, 8, or 9 polygon vertices
+    const scaleMult = 0.88 + this._h(2) * 0.26;        // 0.88–1.14× overall size
 
-    offsets.forEach(({ dx, dy, s }) => {
-      const rr = r * s;
+    // Draws one rock at local coords (cx, cy) with semi-axes rxArg×ryArg.
+    // hBase: salt offset so each rock in a cluster uses independent hash streams.
+    const drawOneRock = (cx, cy, rxArg, ryArg, hBase) => {
       // Shadow
-      g.fillStyle(0x000000, 0.3);
-      g.fillEllipse(dx + 3, dy + rr * 0.55, rr * 1.7, rr * 0.55);
-      // Body
+      g.fillStyle(0x000000, 0.28);
+      g.fillEllipse(cx + rxArg * 0.22, cy + ryArg * 0.65, rxArg * 1.55, ryArg * 0.52);
+
+      // Base polygon — jagged irregular shape (no fillCircle)
       g.fillStyle(tc.rockBody, 1);
-      g.fillCircle(dx, dy, rr);
-      // Side shading
-      g.fillStyle(tc.rockShade, 1);
-      g.fillCircle(dx + rr * 0.18, dy + rr * 0.18, rr * 0.72);
-      // Top highlight
-      g.fillStyle(tc.rockHL, 0.65);
-      g.fillEllipse(dx - rr * 0.3, dy - rr * 0.35, rr * 0.8, rr * 0.5);
-      // Crack detail
-      g.lineStyle(1, tc.rockCrack, tc.lavaGlow ? 0.85 : 0.7);
-      g.lineBetween(dx - rr * 0.1, dy - rr * 0.3, dx + rr * 0.3, dy + rr * 0.1);
-      // Volcanic extra: glowing lava seep in the crack
-      if (tc.lavaGlow) {
-        g.lineStyle(0.8, 0xff8800, 0.4);
-        g.lineBetween(dx - rr * 0.1, dy - rr * 0.3, dx + rr * 0.3, dy + rr * 0.1);
-        g.fillStyle(0xff6600, 0.22);
-        g.fillCircle(dx + rr * 0.1, dy, rr * 0.25);
+      const verts = this._rockPolygon(g, cx, cy, rxArg, ryArg, ptCount, hBase);
+
+      // Shade overlay — same verts scaled toward center + shifted right-down
+      // Gives directional shading without any circular blob
+      g.fillStyle(tc.rockShade, 0.88);
+      const shadeV = verts.map(v => ({
+        x: cx + (v.x - cx) * 0.72 + rxArg * 0.20,
+        y: cy + (v.y - cy) * 0.72 + ryArg * 0.15,
+      }));
+      g.fillPoints(shadeV, true);
+
+      // Highlight patch — same verts scaled small + shifted up-left (lit face)
+      g.fillStyle(tc.rockHL, 0.60);
+      const hlV = verts.map(v => ({
+        x: cx + (v.x - cx) * 0.38 - rxArg * 0.22,
+        y: cy + (v.y - cy) * 0.38 - ryArg * 0.28,
+      }));
+      g.fillPoints(hlV, true);
+
+      // 2–3 angular crack lines across the rock face
+      const crackN = 2 + Math.floor(this._h(hBase + 50) * 2);
+      for (let k = 0; k < crackN; k++) {
+        const ch = hBase + 51 + k * 4;
+        const cA = this._h(ch) * Math.PI * 2;
+        const cL = rxArg * (0.28 + this._h(ch + 1) * 0.42);
+        const mX = cx + (this._h(ch + 2) - 0.5) * rxArg * 0.38;
+        const mY = cy + (this._h(ch + 3) - 0.5) * ryArg * 0.38;
+        g.lineStyle(1, tc.rockCrack, tc.lavaGlow ? 0.85 : 0.70);
+        g.lineBetween(mX - Math.cos(cA) * cL * 0.5, mY - Math.sin(cA) * cL * 0.5,
+                      mX + Math.cos(cA) * cL * 0.5, mY + Math.sin(cA) * cL * 0.5);
+        if (tc.lavaGlow) {
+          g.lineStyle(0.8, 0xff8800, 0.40);
+          g.lineBetween(mX - Math.cos(cA) * cL * 0.5, mY - Math.sin(cA) * cL * 0.5,
+                        mX + Math.cos(cA) * cL * 0.5, mY + Math.sin(cA) * cL * 0.5);
+          g.fillStyle(0xff6600, 0.22);
+          g.fillCircle(mX + Math.cos(cA) * cL * 0.3, mY + Math.sin(cA) * cL * 0.3, ryArg * 0.22);
+        }
       }
-    });
+    };
+
+    // ── Variant rock layouts ────────────────────────────────────────────────
+    switch (variant) {
+      case 0: { // Solo boulder — one large faceted rock
+        const rx = r * scaleMult, ry = rx * 0.78;
+        drawOneRock(0, 0, rx, ry, 100);
+        break;
+      }
+      case 1: { // Twin cluster — two rocks side by side at a hash-driven angle
+        const ang = this._h(10) * Math.PI;
+        const rx0 = r * scaleMult,                          ry0 = rx0 * 0.78;
+        const rx1 = rx0 * (0.72 + this._h(11) * 0.18),    ry1 = rx1 * 0.78;
+        const d   = r * (0.55 + this._h(12) * 0.20);
+        drawOneRock(-Math.cos(ang) * d * 0.40, -Math.sin(ang) * d * 0.20, rx0, ry0, 100);
+        drawOneRock( Math.cos(ang) * d * 0.60,  Math.sin(ang) * d * 0.25, rx1, ry1, 150);
+        break;
+      }
+      case 2: { // Classic cluster — main rock + 2 smaller satellites
+        const ang1 = this._h(10) * Math.PI * 2;
+        const ang2 = ang1 + Math.PI * (0.5 + this._h(11) * 0.60);
+        const rx0  = r * scaleMult,                         ry0 = rx0 * 0.78;
+        const rx1  = rx0 * (0.66 + this._h(12) * 0.14),   ry1 = rx1 * 0.78;
+        const rx2  = rx0 * (0.58 + this._h(13) * 0.14),   ry2 = rx2 * 0.78;
+        drawOneRock(0, 0, rx0, ry0, 100);
+        drawOneRock(Math.cos(ang1) * r * (0.60 + this._h(14) * 0.15),
+                    Math.sin(ang1) * r * 0.30, rx1, ry1, 150);
+        drawOneRock(Math.cos(ang2) * r * (0.52 + this._h(15) * 0.15),
+                    Math.sin(ang2) * r * 0.25, rx2, ry2, 200);
+        break;
+      }
+      case 3: { // Flat slab — wide, low-profile rock
+        const rx = r * scaleMult * 1.30, ry = rx * 0.52;
+        drawOneRock(0, 0, rx, ry, 100);
+        break;
+      }
+    }
 
     g.setDepth(this.y);
     this.container = g;
@@ -149,150 +234,293 @@ export default class Obstacle {
   }
 
   // ── Tree stump ────────────────────────────────────────────────────────────
+  // 2.5D cylinder: front bark face (visible side) + top ellipse (cut face).
+  //
+  //   ___________
+  //  / top face  \   ← cut ellipse — wood + growth rings
+  // |_____________|  ← top rim line
+  // |  bark face  |  ← front cylinder band — bark texture + fissures
+  // |_____________|  ← ground line
+  //      shadow
 
   _buildStump() {
     const g = this.scene.add.graphics();
     g.x = this.x;
     g.y = this.y;
-    const r = this.baseRadius;
+    const r  = this.baseRadius;
     const tc = this._getObstacleTheme();
 
-    // Shadow
-    g.fillStyle(0x000000, 0.3);
-    g.fillEllipse(3, r * 0.5, r * 1.9, r * 0.6);
+    // Hash-driven variant — affects front face height and detail
+    const variant = Math.floor(this._h(0) * 4);
+    // 0 = fresh cut, 1 = old/mossy, 2 = tall stump, 3 = low slab
+    // frontH drives how tall the visible bark side-face is.
+    // Values were doubled from original to give proper cylinder height.
+    const frontH = [r * 1.10, r * 1.00, r * 1.60, r * 0.70][variant];
+    const topW   = r * 2.0;                // uniform width for all variants
+    const topH   = Math.min(frontH * 0.65, r * 0.80); // top face always shorter than bark band
+    const topCY  = -frontH;   // center of top face (in local Y coords)
 
-    // Outer stump ring (bark / crust)
+    // 1. Ground contact shadow — at the stump base (local y ≈ 0) so it sits
+    //    flush under the bark face rather than floating below it.
+    g.fillStyle(0x000000, 0.32);
+    g.fillEllipse(2, 2, r * 2.2, r * 0.50);
+
+    // 2. Front face — bark cylinder side (trapezoid with slight perspective taper)
+    const frontTrap = [
+      { x: -r,        y: topCY },
+      { x:  r,        y: topCY },
+      { x:  r * 0.85, y: 0 },
+      { x: -r * 0.85, y: 0 },
+    ];
     g.fillStyle(tc.stumpBark, 1);
-    g.fillCircle(0, 0, r);
-    // Inner wood / crystal / obsidian face
-    g.fillStyle(tc.stumpWood, 1);
-    g.fillCircle(0, 0, r * 0.75);
-    // Growth / fracture rings
-    g.lineStyle(1.5, tc.stumpRing, tc.lavaGlow ? 0.75 : 0.5);
-    g.strokeCircle(0, 0, r * 0.55);
-    g.lineStyle(1, tc.stumpRing, tc.lavaGlow ? 0.55 : 0.35);
-    g.strokeCircle(0, 0, r * 0.35);
-    // Center
-    g.fillStyle(tc.lavaGlow ? 0xff4400 : tc.stumpBark, tc.lavaGlow ? 0.6 : 0.8);
-    g.fillCircle(0, 0, r * 0.12);
-    // Radial grain / crack lines
-    const lineColor = tc.lavaGlow ? 0xff5500 : tc.stumpRing;
-    const lineAlpha = tc.lavaGlow ? 0.45 : 0.5;
-    g.lineStyle(1, lineColor, lineAlpha);
-    for (let i = 0; i < 5; i++) {
-      const angle = (i / 5) * Math.PI * 2;
-      g.lineBetween(0, 0, Math.cos(angle) * r * 0.65, Math.sin(angle) * r * 0.65);
+    g.fillPoints(frontTrap, true);
+
+    // Horizontal bark lines on front face
+    // xEdge tapers from r (at top) to r*0.85 (at base), matching the trapezoid width.
+    const barkLines = variant === 2 ? 5 : (variant === 3 ? 2 : 4);
+    for (let i = 1; i <= barkLines; i++) {
+      const ly       = topCY + frontH * i / (barkLines + 1);
+      const progress = (ly - topCY) / frontH;   // 0 = top of face, 1 = base
+      const xEdge    = r * (1.0 - 0.15 * progress); // tapers r → r*0.85
+      g.lineStyle(1, tc.stumpRing, 0.30 + this._h(20 + i) * 0.15);
+      g.lineBetween(-xEdge, ly, xEdge, ly);
     }
-    // Outer edge highlight
-    g.lineStyle(1.5, tc.stumpRing, 0.6);
-    g.strokeCircle(0, 0, r);
-    // Volcanic: lava glow pool in center
+
+    // Vertical bark fissures
+    const fissureCount = 1 + Math.floor(this._h(30) * 2);
+    for (let i = 0; i < fissureCount; i++) {
+      const fx     = (this._h(31 + i) - 0.5) * r * 1.4;
+      const fLen   = frontH * (0.35 + this._h(32 + i) * 0.50);
+      const fTop   = topCY + frontH * (0.05 + this._h(33 + i) * 0.2);
+      const fTilt  = (this._h(34 + i) - 0.5) * 4;
+      g.lineStyle(0.8, tc.stumpRing, 0.50);
+      g.lineBetween(fx, fTop, fx + fTilt, fTop + fLen);
+    }
+
+    // Knot ovals on front face (variant 2 — tall stump)
+    if (variant === 2) {
+      for (let k = 0; k < 2; k++) {
+        const kx = (this._h(40 + k * 2) - 0.5) * r * 1.2;
+        const ky = topCY + frontH * (0.25 + this._h(41 + k * 2) * 0.50);
+        g.fillStyle(tc.stumpRing, 0.55);
+        g.fillEllipse(kx, ky, r * 0.28, r * 0.20);
+        g.lineStyle(1, tc.stumpBark, 0.70);
+        g.strokeEllipse(kx, ky, r * 0.28, r * 0.20);
+      }
+    }
+
+    // 3. Top rim shadow — dark edge where front face meets the top face
+    g.lineStyle(2, tc.stumpBark, 0.70);
+    g.lineBetween(-r, topCY, r, topCY);
+
+    // 4. Top face — cut ellipse (wood surface, slightly flattened for 2.5D)
+    g.fillStyle(tc.stumpWood, 1);
+    g.fillEllipse(0, topCY, topW, topH);
+
+    // Moss patch on old stump (variant 1)
+    if (variant === 1 && tc.canopyA) {
+      g.fillStyle(tc.canopyA, 0.25);
+      g.fillEllipse(-topW * 0.15, topCY - topH * 0.05, topW * 0.55, topH * 0.50);
+    }
+
+    // 5. Growth rings — flattened ellipses matching the top face shape
+    const ringScales = variant === 1 ? [0.70, 0.46] : [0.72, 0.50, 0.32];
+    ringScales.forEach((rs, ri) => {
+      const offX = (this._h(50 + ri) - 0.5) * 2;
+      const offY = (this._h(51 + ri) - 0.5) * 2;
+      g.lineStyle(1, tc.stumpRing, tc.lavaGlow ? 0.75 : 0.50);
+      g.strokeEllipse(offX, topCY + offY, topW * rs, topH * rs);
+    });
+
+    // 6. Radial grain lines from center to ellipse edge
+    const grainCount = 4 + Math.floor(this._h(60) * 3);   // 4–6
+    const lineColor  = tc.lavaGlow ? 0xff5500 : tc.stumpRing;
+    g.lineStyle(1, lineColor, tc.lavaGlow ? 0.45 : 0.45);
+    for (let i = 0; i < grainCount; i++) {
+      const ga  = (i / grainCount) * Math.PI * 2 + this._h(61 + i) * 0.8;
+      const gex = Math.cos(ga) * topW * 0.42;
+      const gey = Math.sin(ga) * topH * 0.42;
+      g.lineBetween(0, topCY, gex, topCY + gey);
+    }
+
+    // 7. Top ellipse rim highlight
+    g.lineStyle(1.5, tc.stumpRing, 0.55);
+    g.strokeEllipse(0, topCY, topW, topH);
+
+    // 8. Center / lava pool
     if (tc.lavaGlow) {
       g.fillStyle(0xff6600, 0.18);
-      g.fillCircle(0, 0, r * 0.65);
+      g.fillEllipse(0, topCY, topW * 0.55, topH * 0.55);
       g.fillStyle(0xff8800, 0.28);
-      g.fillCircle(0, 0, r * 0.30);
+      g.fillEllipse(0, topCY, topW * 0.28, topH * 0.28);
+    } else {
+      g.fillStyle(tc.stumpBark, 0.80);
+      g.fillEllipse(0, topCY, topW * 0.12, topH * 0.12);
     }
 
     g.setDepth(this.y);
     this.container = g;
-    this._addShadow(r);
+    // No _addShadow() here — the inline shadow above is sufficient and
+    // correctly placed. _addShadow() would add a second ellipse at
+    // y + r*0.45 which is visually disconnected from the stump base.
   }
 
   // ── Tall tree ─────────────────────────────────────────────────────────────
 
   _buildTree() {
-    const tr = this.baseRadius;  // trunk radius
-    const cr = this.canopyRadius; // canopy radius
+    const tr = this.baseRadius;   // trunk radius
+    const cr = this.canopyRadius; // base canopy radius
+    const tc = this._getObstacleTheme();
+
+    // Hash-driven per-instance variety
+    const tHMult  = 0.88 + this._h(3) * 0.30;   // trunk height  0.88–1.18×
+    const lean    = (this._h(4) - 0.5) * 8;      // ±4° trunk lean
+    const rootN   = 3 + Math.floor(this._h(5) * 2); // 3 or 4 roots
+    const crMult  = 0.90 + this._h(6) * 0.22;    // canopy radius 0.90–1.12×
+    const cOX     = (this._h(7) - 0.5) * cr * 0.18; // canopy asymmetry X
+    const cOY     = (this._h(8) - 0.5) * cr * 0.12; // canopy asymmetry Y
+    const swayMs  = 1600 + this._h(9) * 800;      // unique sway pace per tree
+    const cr2     = cr * crMult;                   // actual canopy radius
 
     // ── Trunk container (Y-depth = this.y) ──
     const trunk = this.scene.add.container(this.x, this.y);
     trunk.setDepth(this.y);
+    trunk.angle = lean;
 
-    const tc = this._getObstacleTheme();
     const tg = this.scene.add.graphics();
-    // Shadow on ground — boosted for stronger sense of mass
-    tg.fillStyle(0x000000, 0.5);
+    // Ground shadow
+    tg.fillStyle(0x000000, 0.50);
     tg.fillEllipse(5, tr * 0.5, tr * 2.4, tr * 0.7);
-    // Roots (small arcs)
+    // Roots — count and angles hash-driven
     tg.lineStyle(tr * 0.4, tc.roots, 1);
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + Math.PI * 0.15;
+    for (let i = 0; i < rootN; i++) {
+      const a  = (i / rootN) * Math.PI * 2 + this._h(70 + i) * 0.6;
       const ex = Math.cos(a) * tr * 1.35, ey = Math.sin(a) * tr * 0.6;
       tg.lineBetween(0, 0, ex, ey);
     }
-    // Trunk cylinder body
+    // Trunk cylinder — height scaled by tHMult
+    const tTop = tr * 3.5 * tHMult, tH = tr * 4 * tHMult;
     tg.fillStyle(tc.trunkBody, 1);
-    tg.fillRoundedRect(-tr, -tr * 3.5, tr * 2, tr * 4, tr * 0.5);
-    // Darker right-side band for cylindrical depth (light from upper-left)
+    tg.fillRoundedRect(-tr, -tTop, tr * 2, tH, tr * 0.5);
+    // Darker right-side band (cylindrical depth shading)
     tg.fillStyle(tc.trunkDark, 0.5);
-    tg.fillRoundedRect(tr * 0.2, -tr * 3.5, tr * 0.8, tr * 4, { tl: 0, tr: tr * 0.5, bl: 0, br: tr * 0.5 });
+    tg.fillRoundedRect(tr * 0.2, -tTop, tr * 0.8, tH, { tl: 0, tr: tr * 0.5, bl: 0, br: tr * 0.5 });
     // Outline
     tg.lineStyle(1.5, tc.trunkDark, 0.85);
-    tg.strokeRoundedRect(-tr, -tr * 3.5, tr * 2, tr * 4, tr * 0.5);
-    // Bark / surface highlights
+    tg.strokeRoundedRect(-tr, -tTop, tr * 2, tH, tr * 0.5);
+    // Bark highlight streaks
     tg.lineStyle(1, tc.trunkBody, 0.4);
-    tg.lineBetween(-tr * 0.3, -tr * 3, -tr * 0.3, tr * 0.3);
-    tg.lineBetween(tr * 0.2, -tr * 3, tr * 0.2, tr * 0.3);
-    // Volcanic: ember cinders on trunk
+    tg.lineBetween(-tr * 0.3, -tTop * 0.86, -tr * 0.3, tr * 0.3);
+    tg.lineBetween( tr * 0.2, -tTop * 0.86,  tr * 0.2, tr * 0.3);
+    // Volcanic embers — positions deterministic
     if (tc.lavaGlow) {
       for (let i = 0; i < 4; i++) {
-        const ex = -tr * 0.5 + Math.random() * tr, ey = -tr * 3 + Math.random() * tr * 3;
+        const ex = -tr * 0.5 + this._h(75 + i * 2) * tr;
+        const ey = -tTop + this._h(76 + i * 2) * tH;
         tg.fillStyle(0xff6600, 0.55);
-        tg.fillCircle(ex, ey, 1.2 + Math.random() * 1.2);
+        tg.fillCircle(ex, ey, 1.2 + this._h(77 + i) * 1.2);
       }
     }
-
     trunk.add(tg);
     this.trunkContainer = trunk;
 
     // ── Canopy container (depth = this.y + 140, always above entities) ──
-    const canopy = this.scene.add.container(this.x, this.y - tr * 3.2);
+    const canopy = this.scene.add.container(this.x, this.y - tr * 3.2 * tHMult);
     canopy.setDepth(this.y + 140);
 
     const cg = this.scene.add.graphics();
-    // Four layered canopy circles — colours from theme palette
-    const layers = [
-      { r: cr,         color: tc.canopyA, alpha: 1,    ox: 0,          oy: 0          },
-      { r: cr * 0.82,  color: tc.canopyB, alpha: 1,    ox: -cr * 0.05, oy:  cr * 0.05 },
-      { r: cr * 0.62,  color: tc.canopyC, alpha: 1,    ox:  cr * 0.08, oy: -cr * 0.08 },
-      { r: cr * 0.35,  color: tc.canopyD, alpha: 0.85, ox: -cr * 0.04, oy: -cr * 0.12 },
-    ];
-    layers.forEach(({ r, color, alpha, ox, oy }) => {
-      cg.fillStyle(color, alpha);
-      cg.fillCircle(ox, oy, r);
-    });
-    // Rim shadow
-    cg.lineStyle(3, tc.canopyRim, 0.55);
-    cg.strokeCircle(0, 0, cr);
-    // Top-left highlight crescent
-    cg.fillStyle(tc.canopyHL, tc.canopyHLAlpha ?? 0.45);
-    cg.fillCircle(-cr * 0.28, -cr * 0.3, cr * 0.22);
-    cg.fillStyle(tc.canopyHL, (tc.canopyHLAlpha ?? 0.45) + 0.05);
-    cg.fillCircle(-cr * 0.32, -cr * 0.36, cr * 0.10);
-    // Volcanic: scattered ember sparks on canopy
+
+    // ── Canopy shape — 3 deciduous styles, all using the same 4-layer sphere
+    //    shading principle: dark shadow base (bottom rim) → medium body →
+    //    wide lit-face ellipse (the 2.5D tilt element) → small highlight.
+    //    this._h(0) is unused elsewhere in _buildTree (hashes start at _h(3)).
+    //    0.00–0.33: Round crown   0.33–0.66: Wide spreading   0.66–1.0: Multi-cluster
+    const CR           = cr2;
+    const canopyStyle  = this._h(0);
+
+    if (canopyStyle < 0.33) {
+      // ── A: Round crown — single sphere, clean and elegant ──────────────
+      // Layer 1: shadow hemisphere, pushed down — dark rim shows at bottom
+      cg.fillStyle(tc.canopyA, 1);
+      cg.fillCircle(cOX * 0.5, CR * 0.14 + cOY * 0.5, CR);
+      // Layer 2: body — medium green, slightly upper-left
+      cg.fillStyle(tc.canopyB, 1);
+      cg.fillCircle(-CR * 0.04 + cOX, cOY, CR * 0.88);
+      // Layer 3: lit top face — wide ellipse (2.5D tilt), slightly less extreme ratio
+      cg.fillStyle(tc.canopyC, 1);
+      cg.fillEllipse(-CR * 0.08 + cOX, -CR * 0.24 + cOY, CR * 1.20, CR * 0.88);
+      // Layer 4: highlight — softened alpha so it blends rather than pops
+      cg.fillStyle(tc.canopyD, 0.65);
+      cg.fillEllipse(-CR * 0.14 + cOX, -CR * 0.38 + cOY, CR * 0.44, CR * 0.38);
+
+    } else if (canopyStyle < 0.66) {
+      // ── B: Wide spreading crown — broader than tall, full and heavy ────
+      // Layer 1: shadow base (wide, pushed down)
+      cg.fillStyle(tc.canopyA, 1);
+      cg.fillEllipse(CR * 0.06 + cOX, CR * 0.18 + cOY, CR * 2.20, CR * 1.10);
+      // Layer 2: main body
+      cg.fillStyle(tc.canopyB, 1);
+      cg.fillEllipse(-CR * 0.04 + cOX, CR * 0.04 + cOY, CR * 1.95, CR * 0.95);
+      // Layer 3: lit face (upper-left, slightly narrower)
+      cg.fillStyle(tc.canopyC, 1);
+      cg.fillEllipse(-CR * 0.10 + cOX, -CR * 0.18 + cOY, CR * 1.65, CR * 0.72);
+      // Layer 4: highlight — softened alpha
+      cg.fillStyle(tc.canopyD, 0.65);
+      cg.fillEllipse(-CR * 0.18 + cOX, -CR * 0.28 + cOY, CR * 0.72, CR * 0.42);
+
+    } else {
+      // ── C: Multi-cluster crown — 3 overlapping lobes ──────────────────
+      // ALL FOUR layers applied to each lobe individually:
+      // shadow base → body → lit face (circle, matching lobe shape) → highlight.
+      // No separate shared highlight — each lobe is self-contained.
+      const SR = CR * 0.60;
+      const anchors = [
+        { cx: -CR * 0.38, cy:  CR * 0.12 }, // lower-left lobe
+        { cx:  CR * 0.35, cy:  CR * 0.05 }, // lower-right lobe
+        { cx: -CR * 0.06, cy: -CR * 0.32 }, // upper-centre lobe
+      ];
+      anchors.forEach(({ cx, cy }, si) => {
+        const jx = (this._h(200 + si * 2)     - 0.5) * CR * 0.24;
+        const jy = (this._h(200 + si * 2 + 1) - 0.5) * CR * 0.16;
+        const ox = cx + jx + cOX * 0.5;
+        const oy = cy + jy + cOY * 0.5;
+        // Layer 1: shadow base per lobe (pushed down)
+        cg.fillStyle(tc.canopyA, 1);
+        cg.fillCircle(ox, oy + SR * 0.12, SR);
+        // Layer 2: body per lobe (slightly upper-left)
+        cg.fillStyle(tc.canopyB, 1);
+        cg.fillCircle(ox - SR * 0.04, oy, SR * 0.86);
+        // Layer 3: lit face — circle to match the lobe shape (no flat wide ellipse)
+        cg.fillStyle(tc.canopyC, 1);
+        cg.fillCircle(ox - SR * 0.10, oy - SR * 0.20, SR * 0.62);
+        // Layer 4: highlight — soft circle, low alpha so it blends
+        cg.fillStyle(tc.canopyD, 0.65);
+        cg.fillCircle(ox - SR * 0.18, oy - SR * 0.34, SR * 0.30);
+      });
+    }
+    // Volcanic embers — deterministic positions
     if (tc.lavaGlow) {
       for (let i = 0; i < 6; i++) {
-        const ea = Math.random() * Math.PI * 2, ed = Math.random() * cr * 0.7;
-        cg.fillStyle(0xff6600, 0.6 + Math.random() * 0.3);
-        cg.fillCircle(Math.cos(ea) * ed, Math.sin(ea) * ed, 1.5 + Math.random() * 1.5);
+        const ea = this._h(80 + i * 2) * Math.PI * 2;
+        const ed = this._h(81 + i * 2) * cr2 * 0.7;
+        cg.fillStyle(0xff6600, 0.60 + this._h(82 + i) * 0.30);
+        cg.fillCircle(Math.cos(ea) * ed, Math.sin(ea) * ed, 1.5 + this._h(83 + i) * 1.5);
       }
     }
-
     canopy.add(cg);
     this.canopyContainer = canopy;
 
-    // Gentle sway tween on canopy
+    // Gentle sway — each tree has a unique pace and amplitude
     this.scene.tweens.add({
       targets: canopy,
-      x: this.x + 4,
-      duration: 1800 + Math.random() * 600,
+      x: this.x + 3 + this._h(90) * 3,  // 3–6 px sway amplitude
+      duration: swayMs,
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
 
-    this.container = trunk; // primary reference
+    this.container = trunk;
   }
 
   // ── Spire (theme-specific vertical prop) ──────────────────────────────────
@@ -512,9 +740,16 @@ export default class Obstacle {
     const g = this.scene.add.graphics();
     g.x = this.x;
     g.y = this.y;
-    const r = this.baseRadius;
-    const pw = r * 1.6, ph = r * 3.4;
+    const r  = this.baseRadius;
     const tc = this._getObstacleTheme();
+
+    // Hash-driven dimensions and variant
+    const phVariant = this._h(0);
+    const pw = r * (1.4 + this._h(1) * 0.4);   // width: 1.4–1.8× radius
+    // Height variant: full / half-broken / stub
+    const ph = phVariant < 0.33 ? r * 3.4
+             : phVariant < 0.66 ? r * 2.1
+             :                    r * 1.3;
 
     // Shadow
     g.fillStyle(0x000000, 0.35);
@@ -523,31 +758,75 @@ export default class Obstacle {
     // Main shaft
     g.fillStyle(tc.pillarBody, 1);
     g.fillRoundedRect(-pw / 2, -ph, pw, ph, r * 0.35);
-    // Dark side
+    // Dark side (cylindrical depth)
     g.fillStyle(tc.pillarDark, 1);
     g.fillRoundedRect(pw * 0.2, -ph, pw * 0.3, ph, { tl: 0, tr: r * 0.35, bl: 0, br: 0 });
-    // Cap (slightly wider)
-    g.fillStyle(tc.pillarCap, 1);
-    g.fillRoundedRect(-pw * 0.6, -ph, pw * 1.2, ph * 0.12, 3);
-    // Cracks / veins
-    g.lineStyle(1.5, tc.pillarCrack, tc.lavaGlow ? 0.85 : 0.7);
-    g.lineBetween(-pw * 0.1, -ph * 0.65, pw * 0.25, -ph * 0.4);
-    g.lineBetween(-pw * 0.3, -ph * 0.3, pw * 0.1, -ph * 0.15);
-    // Volcanic: lava seep at crack
-    if (tc.lavaGlow) {
-      g.lineStyle(0.8, 0xff6600, 0.45);
-      g.lineBetween(-pw * 0.1, -ph * 0.65, pw * 0.25, -ph * 0.4);
-      g.fillStyle(0xff5500, 0.3);
-      g.fillCircle(pw * 0.1, -ph * 0.4, pw * 0.12);
+
+    // Cap / broken top treatment
+    if (phVariant < 0.33) {
+      // Full pillar — clean cap + crumbled chips
+      g.fillStyle(tc.pillarCap, 1);
+      g.fillRoundedRect(-pw * 0.6, -ph, pw * 1.2, ph * 0.12, 3);
+      const chipCount = 2 + Math.floor(this._h(10) * 4);  // 2–5 chips
+      for (let i = 0; i < chipCount; i++) {
+        const cx2 = -pw * 0.45 + this._h(11 + i) * pw * 0.9;
+        const cs  = pw * (0.10 + this._h(12 + i) * 0.12);
+        g.fillStyle(tc.pillarChip, 1);
+        g.fillTriangle(cx2, -ph, cx2 + cs * 1.6, -ph,
+                       cx2 + cs * 0.8 + (this._h(13 + i) - 0.5) * cs, -ph - cs * 1.1);
+      }
+    } else if (phVariant < 0.66) {
+      // Half-broken — jagged fractured top edge
+      const breakPts = [{ x: -pw / 2, y: -ph }];
+      for (let ci = 0; ci < 5; ci++) {
+        breakPts.push({
+          x: -pw / 2 + pw * (ci + 1) / 6,
+          y: -ph + (this._h(20 + ci) - 0.25) * ph * 0.22,
+        });
+      }
+      breakPts.push({ x:  pw / 2,     y: -ph        });
+      breakPts.push({ x:  pw / 2,     y: -ph + ph * 0.18 });
+      breakPts.push({ x: -pw / 2,     y: -ph + ph * 0.14 });
+      g.fillStyle(tc.pillarDark, 1);
+      g.fillPoints(breakPts, true);
+      // Exposed broken-face fill (lighter stone)
+      g.fillStyle(tc.pillarCap, 0.70);
+      g.fillPoints(breakPts.slice(0, 7), true);
+    } else {
+      // Stub — very low; rubble chips scattered around top
+      g.fillStyle(tc.pillarCap, 1);
+      g.fillRoundedRect(-pw * 0.6, -ph, pw * 1.2, ph * 0.18, 3);
+      const chipCount = 3 + Math.floor(this._h(30) * 3);
+      for (let i = 0; i < chipCount; i++) {
+        const cx2 = -pw * 0.4 + this._h(31 + i) * pw * 0.8;
+        const cy2 = -ph * (0.78 + this._h(32 + i) * 0.22);
+        const cs  = pw * (0.10 + this._h(33 + i) * 0.15);
+        g.fillStyle(tc.pillarChip, 1);
+        g.fillTriangle(cx2 - cs, cy2, cx2 + cs, cy2,
+                       cx2 + (this._h(34 + i) - 0.5) * cs, cy2 - cs * 1.2);
+      }
     }
-    // Crumbled chips at top
-    for (let i = 0; i < 3; i++) {
-      const cx2 = -pw * 0.4 + i * pw * 0.35;
-      g.fillStyle(tc.pillarChip, 1);
-      g.fillTriangle(cx2, -ph, cx2 + pw * 0.18, -ph, cx2 + pw * 0.09, -ph - ph * 0.08);
+
+    // Cracks / veins — count and endpoints hash-driven
+    const crackCount = 2 + Math.floor(this._h(40) * 3);  // 2–4 cracks
+    for (let k = 0; k < crackCount; k++) {
+      const ch  = 41 + k * 6;
+      const x1  = (-pw * 0.45 + this._h(ch)     * pw * 0.9);
+      const y1  = (-ph * 0.20 - this._h(ch + 1) * ph * 0.65);
+      const x2  = (-pw * 0.45 + this._h(ch + 2) * pw * 0.9);
+      const y2  = (-ph * 0.05 - this._h(ch + 3) * ph * 0.40);
+      g.lineStyle(1.5, tc.pillarCrack, tc.lavaGlow ? 0.85 : 0.70);
+      g.lineBetween(x1, y1, x2, y2);
+      if (tc.lavaGlow) {
+        g.lineStyle(0.8, 0xff6600, 0.45);
+        g.lineBetween(x1, y1, x2, y2);
+        g.fillStyle(0xff5500, 0.30);
+        g.fillCircle((x1 + x2) * 0.5, (y1 + y2) * 0.5, pw * 0.10);
+      }
     }
+
     // Outline
-    g.lineStyle(1.5, tc.pillarDark, 0.6);
+    g.lineStyle(1.5, tc.pillarDark, 0.60);
     g.strokeRoundedRect(-pw / 2, -ph, pw, ph, r * 0.35);
 
     g.setDepth(this.y);

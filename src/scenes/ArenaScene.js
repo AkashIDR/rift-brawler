@@ -186,12 +186,51 @@ export default class ArenaScene extends Phaser.Scene {
     // ── DEPTH 6: Vignette — progressive darkening inward from perimeter ──────
     const vigOffsets = [88, 64, 42, 24, 12];
     const vigAlphas  = [0.09, 0.09, 0.08, 0.07, 0.06];
+    const vigGs = [];
     vigOffsets.forEach((d, i) => {
       const vg = this.add.graphics().setDepth(6);
       vg.fillStyle(0x000000, vigAlphas[i]);
       const inner = _shrinkPts(perimeter, d);
       _fillBetweenPolygons(vg, perimeter, inner);
+      vigGs.push(vg);
     });
+
+    // ── Bake all static layers into one RenderTexture ───────────────────────
+    // Phaser Graphics replay all draw commands every render frame. Baking into
+    // a RenderTexture converts static content to a cached GPU texture:
+    // 1 draw call per frame instead of 14, and 0 stencil passes instead of 2.
+    //
+    // Clear geometry masks before stamping — the RT bakes final pixel output
+    // so masks are no longer needed once content is composited into the RT.
+    // floorTexG and dropG share the same floorMask; clearMask(true) on the
+    // first call destroys the mask object, clearMask(false) on the second just
+    // removes the now-dead reference safely.
+    floorTexG.clearMask(true);   // destroys floorMask
+    dropG.clearMask(false);      // floorMask already gone; just clears reference
+
+    const arenaRT = this.add.renderTexture(0, 0, worldW, worldH);
+    arenaRT.setDepth(0).setOrigin(0, 0);
+
+    // Stamp in logical depth order — each draw composites on top of the previous
+    arenaRT.draw(voidG);
+    arenaRT.draw(floorG);
+    arenaRT.draw(floorTexG);
+    arenaRT.draw(dropG);
+    arenaRT.draw(wallFrontG);
+    arenaRT.draw(wallCapG);
+    arenaRT.draw(detailG);
+    for (const vg of vigGs) arenaRT.draw(vg);
+
+    // Destroy all live Graphics — the RT now holds their rendered output
+    voidG.destroy();
+    floorG.destroy();
+    floorTexG.destroy();
+    dropG.destroy();
+    wallFrontG.destroy();
+    wallCapG.destroy();
+    detailG.destroy();
+    for (const vg of vigGs) vg.destroy();
+    maskG.destroy();   // source Graphics used to create the geometry mask
 
     // ── DEPTH 7: Ambient particles ───────────────────────────────────────────
     this._initParticles(t.particle);

@@ -18,7 +18,7 @@ export const ARENA = {
 
 // ── Obstacle config ───────────────────────────────────────────────────────────
 export const OBSTACLES = {
-  DENSITY: 0.000011,      // sparse background obstacles per px² of arena floor area
+  DENSITY: 0.000007,      // sparse background obstacles per px² of arena floor area
   ROCK_RADIUS: 34,
   STUMP_RADIUS: 22,
   TREE_TRUNK_RADIUS: 24,
@@ -35,7 +35,7 @@ export const OBSTACLES = {
   CLUSTER_RADIUS_MAX: 270,
   CLUSTER_OBSTACLE_GAP: 52,     // tighter spacing inside a cluster
   CLUSTER_COUNT_MIN: 6,
-  CLUSTER_COUNT_MAX: 14,
+  CLUSTER_COUNT_MAX: 10,
 
   // Theme-specific vertical props (one per ~600 000 px² of floor)
   SPIRE_RADIUS: 22,
