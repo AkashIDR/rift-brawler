@@ -18,7 +18,8 @@ export default class Charger extends BossBase {
     this._isMoving   = false;
     this._takingHit  = false;
     this._idleTweens = [];      // refs to perpetual tweens (stopped on death)
-    this._steamTimer = null;    // repeating timer for enrage steam wisps
+    this._steamTimer    = null;  // repeating timer for enrage fire wisps
+    this._lastMoveAngle = 0;    // world-space angle of most recent movement (radians)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -332,46 +333,102 @@ export default class Charger extends BossBase {
       targets: this.cracksG, alpha: 0.4,
       duration: 180, yoyo: true, repeat: 3, ease: 'Sine.easeInOut',
     });
-    // Start the continuous steam spawner (≈5–6 wisps/sec)
+    // Start the continuous fire-wisp spawner (≈4–5 wisps/sec)
     this._steamTimer = this.scene.time.addEvent({
-      loop: true, delay: 180,
+      loop: true, delay: 220,
       callback: this._spawnSteamWisp, callbackScope: this,
     });
   }
 
-  // One steam wisp — small ellipse that drifts upward and fades out.
+  // One fire/smoke wisp — layered flame teardrop shape that drifts upward
+  // with a sinusoidal wobble, spawned from the rear of the boss when moving.
   // Called repeatedly by _steamTimer while the boss is enraged.
   _spawnSteamWisp() {
     if (!this.alive) return;
-    const angle = Math.random() * Math.PI * 2;
-    const r     = this.size * Phaser.Math.FloatBetween(0.4, 0.95);
-    const wx    = this.x + Math.cos(angle) * r;
-    const wy    = this.y + Math.sin(angle) * r;
+
+    // ── Spawn position ──────────────────────────────────────────────────────
+    // When moving: spawn from the rear hemisphere (opposite movement direction)
+    // so the boss naturally leaves a fire trail behind it.
+    // When stationary: spread around the full body edge.
+    let spawnAngle;
+    if (this._isMoving) {
+      // Rear hemisphere ± 70° of spread
+      spawnAngle = this._lastMoveAngle + Math.PI + Phaser.Math.FloatBetween(-1.22, 1.22);
+    } else {
+      spawnAngle = Math.random() * Math.PI * 2;
+    }
+    const r  = this.size * Phaser.Math.FloatBetween(0.45, 1.0);
+    const wx = this.x + Math.cos(spawnAngle) * r;
+    const wy = this.y + Math.sin(spawnAngle) * r;
+
+    // ── Flame shape ─────────────────────────────────────────────────────────
+    // Four concentric layers, each centered progressively higher and narrower
+    // → creates a teardrop/flame silhouette, wide at base, pointed at tip.
+    const wH  = Phaser.Math.FloatBetween(38, 72);  // total column height
+    const wW  = Phaser.Math.FloatBetween(12, 22);  // base width
+    const jit = Phaser.Math.FloatBetween(-3, 3);    // horizontal jitter on core
 
     const wisp = this.scene.add.graphics();
-    wisp.fillStyle(0xaaddff, 1);   // light cyan-white — matches Electric Blue theme
-    wisp.fillEllipse(
-      0, 0,
-      Phaser.Math.Between(7, 17),
-      Phaser.Math.Between(13, 26)
-    );
+
+    // Outer glow — wide, very transparent, deep orange-red
+    wisp.fillStyle(0xff3300, 0.18);
+    wisp.fillEllipse(0, -wH * 0.30, wW * 1.05, wH * 1.0);
+
+    // Flame body — main visible mass, bright orange
+    wisp.fillStyle(0xff7700, 0.45);
+    wisp.fillEllipse(0, -wH * 0.42, wW * 0.66, wH * 0.80);
+
+    // Hot core — golden-yellow, more opaque
+    wisp.fillStyle(0xffcc00, 0.62);
+    wisp.fillEllipse(jit, -wH * 0.55, wW * 0.32, wH * 0.50);
+
+    // White-hot tip — tiny, near-white
+    wisp.fillStyle(0xffeebb, 0.48);
+    wisp.fillEllipse(jit * 0.5, -wH * 0.66, wW * 0.14, wH * 0.24);
+
     wisp.x = wx;
     wisp.y = wy;
-    wisp.alpha = Phaser.Math.FloatBetween(0.38, 0.62);
+    wisp.rotation = Phaser.Math.FloatBetween(-0.25, 0.25);  // slight lean
+    wisp.alpha    = Phaser.Math.FloatBetween(0.48, 0.78);
     wisp.setDepth(12);
+
+    // ── Wobble — sinusoidal X drift gives organic "flame-in-wind" motion ───
+    // Each wisp gets its own random frequency and amplitude so they don't sync.
+    const startX       = wx;
+    const wobbleSpeed  = Phaser.Math.FloatBetween(3.5, 7.0);
+    const wobbleAmp    = Phaser.Math.FloatBetween(9, 20);
+    const startTime    = this.scene.time.now;
+
+    const wobble = (time) => {
+      if (!wisp.active) { this.scene.events.off('update', wobble); return; }
+      wisp.x = startX + Math.sin((time - startTime) * 0.001 * wobbleSpeed) * wobbleAmp;
+    };
+    this.scene.events.on('update', wobble);
+
+    // ── Rise, expand, and fade ───────────────────────────────────────────────
+    const riseHeight = Phaser.Math.Between(75, 155);
+    const dur        = Phaser.Math.Between(750, 1350);
 
     this.scene.tweens.add({
       targets: wisp,
-      y:      wy - Phaser.Math.Between(55, 125),
-      scaleX: Phaser.Math.FloatBetween(1.2, 2.4),
-      scaleY: Phaser.Math.FloatBetween(0.6, 1.3),
+      y:      wy - riseHeight,
+      scaleX: Phaser.Math.FloatBetween(2.0, 3.8),   // spreads wide as it rises
+      scaleY: Phaser.Math.FloatBetween(0.9, 1.4),
       alpha:  0,
-      duration: Phaser.Math.Between(650, 1250),
+      rotation: wisp.rotation + Phaser.Math.FloatBetween(-0.5, 0.5),
+      duration: dur,
       ease: 'Quad.easeOut',
-      onComplete: () => { if (wisp.active) wisp.destroy(); },
+      onComplete: () => {
+        this.scene.events.off('update', wobble);
+        if (wisp.active) wisp.destroy();
+      },
     });
-    // Ensure cleanup on scene shutdown
-    this.scene.events.once('shutdown', () => { if (wisp.active) wisp.destroy(); });
+
+    // Guaranteed cleanup if scene shuts down before tween completes
+    this.scene.events.once('shutdown', () => {
+      this.scene.events.off('update', wobble);
+      if (wisp.active) wisp.destroy();
+    });
   }
 
   // Death — stop idle tweens, spin-shrink, fade features, then explode.
@@ -862,6 +919,7 @@ export default class Charger extends BossBase {
   // ─────────────────────────────────────────────────────────────────────────
   update(time, delta) {
     const prevX = this.x;
+    const prevY = this.y;
     super.update(time, delta);
     if (!this.alive) return;
 
@@ -876,21 +934,24 @@ export default class Charger extends BossBase {
       }
     }
 
-    // Determine horizontal facing from current movement / charge direction
-    if (this._charging) {
-      // already handled by charge burst tilt
-    } else {
-      const dx = this.x - prevX;
-      if (Math.abs(dx) > 0.5) {
-        const sign = dx >= 0 ? 1 : -1;
-        if (sign !== this._facingDir) {
-          this._facingDir = sign;
-          // Flip the inner container — preserves the outer spawn/enrage tweens
-          this.flipContainer.scaleX = sign;
-        }
-      }
+    const moveDx   = this.x - prevX;
+    const moveDy   = this.y - prevY;
+    const moveDist = Math.hypot(moveDx, moveDy);
+    this._isMoving = moveDist > 0.4;
+
+    // Track movement direction so fire wisps can spawn from the rear of the boss
+    if (this._isMoving) {
+      this._lastMoveAngle = Math.atan2(moveDy, moveDx);
     }
 
-    this._isMoving = Math.abs(this.x - prevX) > 0.4;
+    // Determine horizontal facing from current movement / charge direction
+    if (!this._charging && Math.abs(moveDx) > 0.5) {
+      const sign = moveDx >= 0 ? 1 : -1;
+      if (sign !== this._facingDir) {
+        this._facingDir = sign;
+        // Flip the inner container — preserves the outer spawn/enrage tweens
+        this.flipContainer.scaleX = sign;
+      }
+    }
   }
 }
