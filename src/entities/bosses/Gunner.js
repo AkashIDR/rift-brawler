@@ -51,16 +51,16 @@ export default class Gunner extends BossBase {
     this.bodyG.fillEllipse(-s * 0.72, s * 0.68, s * 0.28, s * 0.44);
     this.bodyG.fillEllipse( s * 0.0,  s * 0.80, s * 0.24, s * 0.40);
     this.bodyG.fillEllipse( s * 0.68, s * 0.65, s * 0.28, s * 0.44);
-    // ── Body shading (light from upper-left) ─────────────────────────────
-    // Shadow — dark tinted blob offset lower-right for depth
+    // ── Body shading — top-lit, symmetric so horizontal flip has no effect ──
+    // Shadow — dark bottom-center, within body bounds
     this.bodyG.fillStyle(0x1a003d, 0.30);
-    this.bodyG.fillEllipse(s * 0.22, s * 0.30, s * 1.65, s * 1.35);
-    // Highlight — soft white zone offset upper-left
+    this.bodyG.fillEllipse(0, s * 0.28, s * 1.50, s * 1.10);
+    // Highlight — soft white upper-center
     this.bodyG.fillStyle(0xffffff, 0.20);
-    this.bodyG.fillEllipse(-s * 0.22, -s * 0.28, s * 1.20, s * 1.05);
-    // Specular — sharp bright point at the lightest corner
+    this.bodyG.fillEllipse(0, -s * 0.28, s * 1.25, s * 0.95);
+    // Specular — small bright point at the very top
     this.bodyG.fillStyle(0xffffff, 0.55);
-    this.bodyG.fillEllipse(-s * 0.36, -s * 0.46, s * 0.52, s * 0.40);
+    this.bodyG.fillEllipse(s * 0.05, -s * 0.45, s * 0.48, s * 0.36);
     // Smug smirk — asymmetric arc (right side curves up more = smug)
     this.bodyG.lineStyle(3, dark, 1);
     this.bodyG.beginPath();
@@ -92,7 +92,7 @@ export default class Gunner extends BossBase {
     this.eyeBaseG.fillStyle(this.accentColor, 1);
     this.eyeBaseG.fillCircle(0, 0, s * 0.19);           // gold iris
     this.eyeBaseG.fillStyle(0xffffff, 0.80);
-    this.eyeBaseG.fillCircle(-s * 0.11, -s * 0.12, s * 0.07); // glassy specular
+    this.eyeBaseG.fillCircle(0, -s * 0.13, s * 0.07);          // glassy specular (top-center)
     this.eyeBaseG.lineStyle(2, 0xaa7700, 0.8);
     this.eyeBaseG.strokeCircle(0, 0, s * 0.30);         // iris ring stroke
     this.mainEyeContainer.add(this.eyeBaseG);
@@ -111,7 +111,7 @@ export default class Gunner extends BossBase {
     this.sideEye1G.fillStyle(0x220044, 1);
     this.sideEye1G.fillCircle(s * 0.02, 0, s * 0.07);
     this.sideEye1G.fillStyle(0xffffff, 0.75);
-    this.sideEye1G.fillCircle(-s * 0.05, -s * 0.05, s * 0.04); // specular
+    this.sideEye1G.fillCircle(0, -s * 0.06, s * 0.04);          // specular (top-center)
     this.sideEye1G.x =  s * 0.52;
     this.sideEye1G.y = -s * 0.08;
     this.flipContainer.add(this.sideEye1G);
@@ -122,7 +122,7 @@ export default class Gunner extends BossBase {
     this.sideEye2G.fillStyle(0x220044, 1);
     this.sideEye2G.fillCircle(s * 0.01, 0, s * 0.05);
     this.sideEye2G.fillStyle(0xffffff, 0.75);
-    this.sideEye2G.fillCircle(-s * 0.03, -s * 0.03, s * 0.03); // specular
+    this.sideEye2G.fillCircle(0, -s * 0.04, s * 0.03);          // specular (top-center)
     this.sideEye2G.x = -s * 0.48;
     this.sideEye2G.y =  s * 0.28;
     this.flipContainer.add(this.sideEye2G);

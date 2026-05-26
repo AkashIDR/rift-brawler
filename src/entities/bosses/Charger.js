@@ -64,16 +64,16 @@ export default class Charger extends BossBase {
     // Ear nubs — comically small
     this.bodyG.fillEllipse(-s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
     this.bodyG.fillEllipse( s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
-    // ── Body shading (light from upper-left) ─────────────────────────────
-    // Shadow — dark navy tint offset lower-right for depth
+    // ── Body shading — top-lit, symmetric so horizontal flip has no effect ──
+    // Shadow — dark bottom-center, within body bounds
     this.bodyG.fillStyle(0x000d26, 0.30);
-    this.bodyG.fillEllipse(s * 0.24, s * 0.26, s * 1.85, s * 1.25);
-    // Highlight — soft white zone offset upper-left
+    this.bodyG.fillEllipse(0, s * 0.24, s * 1.65, s * 1.05);
+    // Highlight — soft white upper-center
     this.bodyG.fillStyle(0xffffff, 0.18);
-    this.bodyG.fillEllipse(-s * 0.24, -s * 0.26, s * 1.35, s * 1.05);
-    // Specular — sharp bright point at the lightest corner
+    this.bodyG.fillEllipse(0, -s * 0.26, s * 1.40, s * 0.90);
+    // Specular — small bright point at the very top
     this.bodyG.fillStyle(0xffffff, 0.52);
-    this.bodyG.fillEllipse(-s * 0.40, -s * 0.44, s * 0.54, s * 0.40);
+    this.bodyG.fillEllipse(s * 0.05, -s * 0.42, s * 0.50, s * 0.36);
     // Angry V brow (dark overlay above eyes)
     this.bodyG.fillStyle(dark, 0.85);
     this.bodyG.fillTriangle(-s * 0.55, -s * 0.55,  0, -s * 0.28,  s * 0.55, -s * 0.55);
@@ -103,7 +103,7 @@ export default class Charger extends BossBase {
     this.eyeBigG.fillStyle(0x000000, 1);
     this.eyeBigG.fillCircle(s * 0.03, 0, s * 0.07);
     this.eyeBigG.fillStyle(0xffffff, 0.80);
-    this.eyeBigG.fillCircle(-s * 0.08, -s * 0.09, s * 0.06); // glassy specular
+    this.eyeBigG.fillCircle(0, -s * 0.10, s * 0.06);          // glassy specular (top-center)
     this.eyeBigG.x = -s * 0.30;
     this.eyeBigG.y = -s * 0.18;
     this.flipContainer.add(this.eyeBigG);
@@ -114,7 +114,7 @@ export default class Charger extends BossBase {
     this.eyeSmallG.fillStyle(0x000000, 1);
     this.eyeSmallG.fillCircle(s * 0.01, 0, s * 0.06);
     this.eyeSmallG.fillStyle(0xffffff, 0.80);
-    this.eyeSmallG.fillCircle(-s * 0.04, -s * 0.05, s * 0.04); // glassy specular
+    this.eyeSmallG.fillCircle(0, -s * 0.06, s * 0.04);          // glassy specular (top-center)
     this.eyeSmallG.x = s * 0.34;
     this.eyeSmallG.y = -s * 0.12;
     this.flipContainer.add(this.eyeSmallG);
