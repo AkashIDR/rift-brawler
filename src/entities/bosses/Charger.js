@@ -2,120 +2,377 @@ import Phaser from 'phaser';
 import BossBase from './BossBase.js';
 import { BOSS_CONFIGS } from '../../config/bossConfig.js';
 
+/**
+ * Charger — chunky comical bulldozer-beast.
+ *
+ * Drawn as 5 layered Phaser Graphics children (body, jaw, two eyes, energy
+ * cracks). Each is drawn ONCE in _buildBody() and never cleared. All animation
+ * comes from Phaser tweens on those children — no per-frame redraws.
+ */
 export default class Charger extends BossBase {
   constructor(scene, x, y, level) {
     super(scene, x, y, BOSS_CONFIGS.charger, level);
-    this._charging       = false;
-    this._orbitAngle     = 0;
-    this._facingAngle    = 0;     // radians: 0=right, π/2=down, ±π=left, -π/2=up
-    this._isMoving       = false;
-    this._takingHit      = false;
-    this._currentAnimKey = null;
+    this._charging   = false;
+    this._orbitAngle = 0;
+    this._facingDir  = 1;       // +1 facing right, -1 facing left (sprite flip)
+    this._isMoving   = false;
+    this._takingHit  = false;
+    this._idleTweens = [];      // refs to perpetual tweens (stopped on death)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Visual setup — sprite-based (all polygon draw methods removed)
+  // Build — runs once at spawn. Creates the 5 layered Graphics children
+  // inside a `flipContainer` (a child of `this.container` so the spawn-tween
+  // and enrage pulse on `this.container` still affect everything).
   // ─────────────────────────────────────────────────────────────────────────
-
   _buildGraphics() {
-    // Shadow — single static ellipse drawn once, no per-frame redraw
-    this.shadowG = this.scene.add.graphics();
-    this.shadowG.fillStyle(0x000000, 0.28);
-    this.shadowG.fillEllipse(0, 0, this.size * 2.6, this.size * 0.55);
-    this.shadowG.y = this.size * 0.45;
-    this.container.add(this.shadowG);
-
-    // Sprite
-    this._registerAnimations();
-    this.sprite = this.scene.add.sprite(0, 0, 'charger_side_idle_0');
-    this.sprite.setOrigin(0.5, 0.75);   // feet sit near the bottom of the frame
-    this.container.add(this.sprite);
+    this._buildBody();
+    this._animIdleStart();
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // _registerAnimations — creates all AnimationManager entries once.
-  // Uses individual texture keys (one PNG per key). Nothing here changes
-  // when real art replaces placeholder textures in BootScene.
-  // ─────────────────────────────────────────────────────────────────────────
-  _registerAnimations() {
-    const defs = [
-      // [view,    anim,     frameCount, fps,  loop ]
-      ['side',  'idle',   2, 4,  true ],
-      ['side',  'walk',   4, 8,  true ],
-      ['side',  'charge', 2, 12, true ],
-      ['side',  'hurt',   1, 8,  false],
-      ['side',  'death',  4, 6,  false],
-      ['front', 'idle',   2, 4,  true ],
-      ['front', 'walk',   4, 8,  true ],
-      ['front', 'charge', 2, 12, true ],
-      ['front', 'hurt',   1, 8,  false],
-      ['front', 'death',  4, 6,  false],
-      ['back',  'idle',   2, 4,  true ],
-      ['back',  'walk',   4, 8,  true ],
-      ['back',  'charge', 2, 12, true ],
-      ['back',  'hurt',   1, 8,  false],
-      ['back',  'death',  4, 6,  false],
+  _buildBody() {
+    const s    = this.size;
+    const dark = 0x0e0200;
+    const bone = 0xf4d0a8;   // off-white teeth
+
+    // Inner container — flipping this one (not the outer one) keeps the
+    // spawn animation and enrage scale pulse untouched.
+    this.flipContainer = this.scene.add.container(0, 0);
+    this.container.add(this.flipContainer);
+
+    // ── Body blob (kidney-bean, with legs, ears, brow, tail stub) ──────────
+    this.bodyG = this.scene.add.graphics();
+    this.bodyG.fillStyle(this.color, 1);
+    // Main mass — wide kidney
+    this.bodyG.fillEllipse(0, 0, s * 2.2, s * 1.5);
+    // Saggy belly bump (lower bulge)
+    this.bodyG.fillEllipse(0, s * 0.30, s * 1.95, s * 0.85);
+    // Four stumpy legs poking out the bottom
+    this.bodyG.fillEllipse(-s * 0.75, s * 0.62, s * 0.38, s * 0.48);
+    this.bodyG.fillEllipse(-s * 0.28, s * 0.72, s * 0.30, s * 0.42);
+    this.bodyG.fillEllipse( s * 0.28, s * 0.72, s * 0.30, s * 0.42);
+    this.bodyG.fillEllipse( s * 0.75, s * 0.62, s * 0.38, s * 0.48);
+    // Tail stub — back-left
+    this.bodyG.fillEllipse(-s * 1.05, -s * 0.05, s * 0.42, s * 0.26);
+    // Ear nubs — comically small
+    this.bodyG.fillEllipse(-s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
+    this.bodyG.fillEllipse( s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
+    // Angry V brow (dark overlay above eyes)
+    this.bodyG.fillStyle(dark, 0.85);
+    this.bodyG.fillTriangle(-s * 0.55, -s * 0.55,  0, -s * 0.28,  s * 0.55, -s * 0.55);
+    this.bodyG.fillTriangle(-s * 0.45, -s * 0.42,  0, -s * 0.20,  s * 0.45, -s * 0.42);
+
+    this.flipContainer.add(this.bodyG);
+
+    // ── Jaw (underbite — separate so it can drop/chomp independently) ─────
+    this.jawG = this.scene.add.graphics();
+    this.jawG.fillStyle(this.color, 1);
+    this.jawG.fillEllipse(0, 0, s * 1.30, s * 0.55);
+    // 3 chunky teeth pointing up
+    this.jawG.fillStyle(bone, 1);
+    this.jawG.fillRoundedRect(-s * 0.46, -s * 0.21, s * 0.20, s * 0.30, s * 0.05);
+    this.jawG.fillRoundedRect(-s * 0.10, -s * 0.24, s * 0.20, s * 0.34, s * 0.05);
+    this.jawG.fillRoundedRect( s * 0.26, -s * 0.21, s * 0.20, s * 0.30, s * 0.05);
+    this.jawG.y = s * 0.50;
+    this._jawBaseY = this.jawG.y;
+    this.flipContainer.add(this.jawG);
+
+    // ── Eyes — asymmetric (big angry left, small confused right) ──────────
+    this.eyeBigG = this.scene.add.graphics();
+    this.eyeBigG.fillStyle(0xffffff, 1);
+    this.eyeBigG.fillCircle(0, 0, s * 0.20);
+    this.eyeBigG.fillStyle(this.accentColor, 1);
+    this.eyeBigG.fillCircle(0, 0, s * 0.12);
+    this.eyeBigG.fillStyle(0x000000, 1);
+    this.eyeBigG.fillCircle(s * 0.03, 0, s * 0.07);
+    this.eyeBigG.x = -s * 0.30;
+    this.eyeBigG.y = -s * 0.18;
+    this.flipContainer.add(this.eyeBigG);
+
+    this.eyeSmallG = this.scene.add.graphics();
+    this.eyeSmallG.fillStyle(0xffffff, 1);
+    this.eyeSmallG.fillCircle(0, 0, s * 0.11);
+    this.eyeSmallG.fillStyle(0x000000, 1);
+    this.eyeSmallG.fillCircle(s * 0.01, 0, s * 0.06);
+    this.eyeSmallG.x = s * 0.34;
+    this.eyeSmallG.y = -s * 0.12;
+    this.flipContainer.add(this.eyeSmallG);
+
+    // ── Energy cracks (zigzag lines + bright cores) ────────────────────────
+    this.cracksG = this.scene.add.graphics();
+    const crackPairs = [
+      [-0.72, -0.18, -0.35, -0.02],
+      [-0.35, -0.02, -0.50,  0.22],
+      [ 0.30,  0.12,  0.58,  0.32],
+      [ 0.50, -0.28,  0.72, -0.05],
+      [-0.10,  0.05,  0.10,  0.20],
     ];
-    for (const [view, anim, count, fps, loop] of defs) {
-      const key = `charger_${view}_${anim}`;
-      if (this.scene.anims.exists(key)) continue;
-      this.scene.anims.create({
-        key,
-        frames: Array.from({ length: count }, (_, i) => ({
-          key: `charger_${view}_${anim}_${i}`,
-        })),
-        frameRate: fps,
-        repeat: loop ? -1 : 0,
-      });
+    this.cracksG.lineStyle(4, this.accentColor, 0.20);
+    for (const [x1, y1, x2, y2] of crackPairs) {
+      this.cracksG.lineBetween(s * x1, s * y1, s * x2, s * y2);
     }
+    this.cracksG.lineStyle(2, this.accentColor, 0.85);
+    for (const [x1, y1, x2, y2] of crackPairs) {
+      this.cracksG.lineBetween(s * x1, s * y1, s * x2, s * y2);
+    }
+    this.cracksG.lineStyle(1, 0xff8800, 1);
+    for (const [x1, y1, x2, y2] of crackPairs) {
+      this.cracksG.lineBetween(s * x1, s * y1, s * x2, s * y2);
+    }
+    this.flipContainer.add(this.cracksG);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // _updateAnimation — picks the correct key each frame and plays only on
-  // change (prevents restarting the animation on every tick).
+  // ANIMATION HELPERS — every tween is created here. No per-frame draw calls.
   // ─────────────────────────────────────────────────────────────────────────
-  _updateAnimation() {
-    const fa  = this._facingAngle;
-    const cos = Math.cos(fa);
-    const sin = Math.sin(fa);
 
-    let view;
-    if (Math.abs(cos) >= Math.abs(sin)) {
-      view = 'side';
-      this.sprite.setFlipX(cos < 0);   // mirror for left-facing
-    } else if (sin > 0) {
-      view = 'front';
-      this.sprite.setFlipX(false);
-    } else {
-      view = 'back';
-      this.sprite.setFlipX(false);
-    }
-
-    let anim;
-    if (!this.alive)           anim = 'death';
-    else if (this._takingHit)  anim = 'hurt';
-    else if (this._charging)   anim = 'charge';
-    else if (this._isMoving)   anim = 'walk';
-    else                       anim = 'idle';
-
-    const key = `charger_${view}_${anim}`;
-    if (this._currentAnimKey !== key) {
-      this.sprite.play(key);
-      this._currentAnimKey = key;
-    }
+  _animIdleStart() {
+    // Breathing wobble — body Y scales up while X scales down (volume preserve)
+    this._idleTweens.push(this.scene.tweens.add({
+      targets: this.bodyG, scaleY: 1.05,
+      duration: 800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+    }));
+    this._idleTweens.push(this.scene.tweens.add({
+      targets: this.bodyG, scaleX: 0.97,
+      duration: 800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+    }));
+    // Jaw bobs gently with the body
+    this._idleTweens.push(this.scene.tweens.add({
+      targets: this.jawG, y: this._jawBaseY + 2,
+      duration: 800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+    }));
+    this._scheduleBlink();
   }
 
-  // Override takeDamage to set the hurt-animation flag for 250 ms.
-  // BossBase still handles HP reduction, enrage check, alpha flash, and death.
+  _scheduleBlink() {
+    if (!this.alive) return;
+    const delay = Phaser.Math.Between(2200, 4500);
+    this.scene.time.delayedCall(delay, () => {
+      this._animBlink();
+      this._scheduleBlink();
+    });
+  }
+
+  _animBlink() {
+    if (!this.alive) return;
+    this.scene.tweens.add({
+      targets: [this.eyeBigG, this.eyeSmallG],
+      scaleY: 0.15,
+      duration: 70, yoyo: true, ease: 'Quad.easeIn',
+    });
+  }
+
+  // Wind-up: squish wide, eyes pop, jaw drops, container recoils backward.
+  _animChargeWindup(chargeAngle) {
+    this.scene.tweens.add({
+      targets: this.bodyG, scaleX: 1.28, scaleY: 0.78,
+      duration: 220, ease: 'Cubic.easeIn',
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeBigG, this.eyeSmallG], scaleX: 1.4, scaleY: 1.4,
+      duration: 220, ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.jawG,
+      scaleX: 1.15, scaleY: 1.25, y: this._jawBaseY + 6,
+      duration: 220, ease: 'Cubic.easeIn',
+    });
+    // Container recoils slightly opposite the charge direction
+    this.scene.tweens.add({
+      targets: this.flipContainer,
+      x: -Math.cos(chargeAngle) * 10,
+      y: -Math.sin(chargeAngle) * 10,
+      duration: 220, ease: 'Cubic.easeIn',
+    });
+  }
+
+  // Burst: snap to a leaning-forward pose, release recoil, slight tilt.
+  _animChargeBurst(chargeAngle) {
+    this.scene.tweens.add({
+      targets: this.bodyG, scaleX: 0.88, scaleY: 1.15,
+      duration: 110, ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeBigG, this.eyeSmallG], scaleX: 1, scaleY: 1,
+      duration: 110, ease: 'Quad.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.jawG,
+      scaleX: 1.05, scaleY: 1.10, y: this._jawBaseY + 2,
+      duration: 110, ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.flipContainer, x: 0, y: 0,
+      duration: 110, ease: 'Quad.easeOut',
+    });
+    // Tilt the whole boss toward charge direction (small — keeps it readable)
+    const horiz = Math.cos(chargeAngle);
+    const tilt = horiz >= 0 ? 0.12 : -0.12;
+    this.scene.tweens.add({
+      targets: this.container, rotation: tilt,
+      duration: 110, ease: 'Quad.easeOut',
+    });
+  }
+
+  // Impact: crush against the impact direction, then elastic settle.
+  _animChargeImpact() {
+    this.scene.tweens.add({
+      targets: this.bodyG, scaleX: 1.18, scaleY: 0.82,
+      duration: 80, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: this.bodyG, scaleX: 1, scaleY: 1,
+          duration: 320, ease: 'Elastic.easeOut',
+        });
+      },
+    });
+    this.scene.tweens.add({
+      targets: this.jawG,
+      scaleX: 1, scaleY: 1, y: this._jawBaseY,
+      duration: 320, ease: 'Elastic.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.container, rotation: 0,
+      duration: 320, ease: 'Elastic.easeOut',
+    });
+  }
+
+  // Spin crash — crouch low, then rapid 2-rotation spin + pulse.
+  _animSpinCrashWindup() {
+    this.scene.tweens.add({
+      targets: this.bodyG, scaleX: 1.2, scaleY: 0.70,
+      duration: 250, ease: 'Cubic.easeIn',
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeBigG, this.eyeSmallG], scaleX: 1.3, scaleY: 1.3,
+      duration: 250, ease: 'Back.easeOut',
+    });
+  }
+
+  _animSpinCrashGo() {
+    const start = this.container.rotation;
+    this.scene.tweens.add({
+      targets: this.container,
+      rotation: start + Math.PI * 4,
+      duration: 360, ease: 'Cubic.easeOut',
+      onComplete: () => {
+        if (this.alive) this.container.rotation = 0;
+      },
+    });
+    this.scene.tweens.add({
+      targets: this.bodyG, scaleX: 1.15, scaleY: 1.15,
+      duration: 180, yoyo: true, ease: 'Sine.easeInOut',
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeBigG, this.eyeSmallG], scaleX: 1, scaleY: 1,
+      duration: 200, delay: 200, ease: 'Quad.easeOut',
+    });
+  }
+
+  // Triple charge windup — same as normal but with a shake to telegraph the
+  // bigger attack coming.
+  _animTripleChargeWindup(chargeAngle) {
+    this._animChargeWindup(chargeAngle);
+    this.scene.tweens.add({
+      targets: this.container, rotation: 0.05,
+      duration: 50, yoyo: true, repeat: 7, ease: 'Sine.easeInOut',
+    });
+  }
+
+  // Hurt flinch — quick scale pop + tiny offset.
+  _animHurt() {
+    if (!this.alive) return;
+    this.scene.tweens.add({
+      targets: this.bodyG, scaleX: 1.18, scaleY: 1.18,
+      duration: 70, yoyo: true, ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.flipContainer, x: Phaser.Math.Between(-5, 5),
+      duration: 70, yoyo: true, ease: 'Sine.easeInOut',
+    });
+  }
+
+  // Enrage burst — energy cracks flash bright.
+  _animEnrageBurst() {
+    if (!this.alive) return;
+    this.scene.tweens.add({
+      targets: this.cracksG, alpha: 0.4,
+      duration: 180, yoyo: true, repeat: 3, ease: 'Sine.easeInOut',
+    });
+  }
+
+  // Death — stop idle tweens, spin-shrink, fade features, then explode.
+  _animDeath(onComplete) {
+    this._idleTweens.forEach(tw => { if (tw && tw.isPlaying()) tw.stop(); });
+    this._idleTweens = [];
+    this.scene.tweens.add({
+      targets: this.container,
+      rotation: this.container.rotation + Math.PI * 3,
+      scaleX: 0, scaleY: 0,
+      duration: 700, ease: 'Cubic.easeIn',
+      onComplete,
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeBigG, this.eyeSmallG, this.jawG],
+      alpha: 0, duration: 360, ease: 'Quad.easeIn',
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // OVERRIDES — wire animation hooks into BossBase lifecycle events
+  // ─────────────────────────────────────────────────────────────────────────
+
   takeDamage(amount) {
     super.takeDamage(amount);
     if (!this.alive) return;
     this._takingHit = true;
+    this._animHurt();
     this.scene.time.delayedCall(250, () => { this._takingHit = false; });
   }
 
+  _triggerEnrage() {
+    super._triggerEnrage();
+    this._animEnrageBurst();
+  }
+
+  // Override _die so the spin-shrink animation runs before the fragment
+  // explosion + container destruction.
+  _die() {
+    if (!this.alive) return;
+    this.alive = false;
+    if (this.shadowG) { this.shadowG.destroy(); this.shadowG = null; }
+
+    this._animDeath(() => {
+      // Fragment explosion (copied from BossBase since the original _die
+      // destroys the container immediately — we want it after the spin-shrink)
+      for (let i = 0; i < 16; i++) {
+        const frag = this.scene.add.graphics();
+        frag.fillStyle(this.color, 1);
+        const sz = Phaser.Math.Between(6, 18);
+        frag.fillRect(-sz / 2, -sz / 2, sz, sz);
+        frag.x = this.x;
+        frag.y = this.y;
+        frag.setDepth(20);
+        const angle = (i / 16) * Math.PI * 2;
+        const dist  = Phaser.Math.Between(50, 150);
+        this.scene.tweens.add({
+          targets: frag,
+          x: this.x + Math.cos(angle) * dist,
+          y: this.y + Math.sin(angle) * dist,
+          alpha: 0, angle: Phaser.Math.Between(-360, 360),
+          duration: Phaser.Math.Between(500, 900),
+          ease: 'Quad.easeOut',
+          onComplete: () => frag.destroy(),
+        });
+      }
+      this.container.destroy(true);
+      if (this.onDeath) this.onDeath();
+    });
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
-  // Attack routing (unchanged)
+  // Attacks — unchanged logic, with _anim* calls injected at the right beats
   // ─────────────────────────────────────────────────────────────────────────
 
   _getAttackPool()    { return ['dashCharge', 'spinCrash']; }
@@ -123,8 +380,8 @@ export default class Charger extends BossBase {
 
   _runAttack(name) {
     switch (name) {
-      case 'dashCharge':   this._attackDashCharge();  break;
-      case 'spinCrash':    this._attackSpinCrash();   break;
+      case 'dashCharge':   this._attackDashCharge();   break;
+      case 'spinCrash':    this._attackSpinCrash();    break;
       case 'tripleCharge': this._attackTripleCharge(); break;
       default: this._endAttack();
     }
@@ -152,11 +409,9 @@ export default class Charger extends BossBase {
     const overshoot = isFirst
       ? Phaser.Math.Between(300, 400)
       : Phaser.Math.Between(100, 200);
-
     const angle = Phaser.Math.Angle.Between(this.x, this.y, playerX, playerY);
     const endX  = playerX + Math.cos(angle) * overshoot;
     const endY  = playerY + Math.sin(angle) * overshoot;
-
     return this._clampPathToArena(playerX, playerY, endX, endY);
   }
 
@@ -164,7 +419,10 @@ export default class Charger extends BossBase {
     const p = this.scene.player;
     if (!p || !p.alive) { this._endAttack(); return; }
 
-    const dest = this._calcChargeDestination(p.x, p.y, true);
+    const dest  = this._calcChargeDestination(p.x, p.y, true);
+    const angle = Phaser.Math.Angle.Between(this.x, this.y, dest.x, dest.y);
+
+    this._animChargeWindup(angle);
     this._drawTelegraphRect(this.x, this.y, dest.x, dest.y, this.size + 16, this._telegraphDuration, 0xff4400);
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
@@ -179,21 +437,24 @@ export default class Charger extends BossBase {
     const speed    = 5600 + this.level * 80;
     const duration = (dist / speed) * 1000 + 200;
 
-    this._charging    = true;
-    this._facingAngle = angle;   // visual faces the charge direction
+    this._charging = true;
+    this._animChargeBurst(angle);
 
     let chargeHitLanded = false;
     let obstaclesHit    = 0;
 
     const afterCharge = () => {
       this._charging = false;
+      this._animChargeImpact();
       if (count >= 3 || !this.alive) {
         this._endAttack();
       } else {
         const pl = this.scene.player;
         if (!pl || !pl.alive) { this._endAttack(); return; }
         const REPEAT_TELEGRAPH_MS = this.level < 10 ? 500 : 300;
-        const dest = this._calcChargeDestination(pl.x, pl.y, false);
+        const dest      = this._calcChargeDestination(pl.x, pl.y, false);
+        const nextAngle = Phaser.Math.Angle.Between(this.x, this.y, dest.x, dest.y);
+        this._animChargeWindup(nextAngle);
         this._drawTelegraphRect(this.x, this.y, dest.x, dest.y, this.size + 16, REPEAT_TELEGRAPH_MS, 0xff4400);
         this.scene.time.delayedCall(REPEAT_TELEGRAPH_MS, () => {
           this._doCharge(dest.x, dest.y, count + 1);
@@ -237,12 +498,15 @@ export default class Charger extends BossBase {
   }
 
   _attackSpinCrash() {
+    this._animSpinCrashWindup();
     this._drawTelegraphZone(this.x, this.y, this.size * 4.4, this._telegraphDuration, 0xff4400);
 
     const bossX = this.x, bossY = this.y;
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
       if (!this.alive) return;
+      this._animSpinCrashGo();
+
       const ring = this.scene.add.graphics();
       ring.x = bossX;
       ring.y = bossY;
@@ -264,13 +528,11 @@ export default class Charger extends BossBase {
             if (obs.broken) return;
             const d = Phaser.Math.Distance.Between(bossX, bossY, obs.x, obs.y);
             if (d > r + 10 || d < r - obs._origBaseRadius - 10) return;
-
             const obsAngle = Math.atan2(obs.y - bossY, obs.x - bossX);
             const blocked  = ringBrokenObs.some(prev => {
               const prevAngle = Math.atan2(prev.y - bossY, prev.x - bossX);
               return Math.abs(Phaser.Math.Angle.Wrap(obsAngle - prevAngle)) < 0.5;
             });
-
             if (!blocked) {
               obs.break();
               ringBrokenObs.push(obs);
@@ -295,64 +557,19 @@ export default class Charger extends BossBase {
   }
 
   /**
-   * Ghost charger used by tripleCharge — a lightweight Graphics silhouette
-   * that fades in during the telegraph, then charges along a side path.
-   * Kept as Graphics (not a sprite) because it is a transient attack effect.
+   * Ghost charger used by tripleCharge — lightweight Graphics silhouette
+   * matching the blob aesthetic. Fades in during telegraph, charges along a
+   * side path, dissolves at end.
    */
   _createGhostCharger(x, y, angle) {
     const g = this.scene.add.graphics();
     const s = this.size;
     g.fillStyle(this.color, 1);
-    // Tail
-    g.fillTriangle(-s * 0.60, -s * 0.02, -s * 0.80, -s * 0.28, -s * 0.96, s * 0.06);
-    // Body
-    g.fillPoints([
-      { x: -s * 0.58, y: -s * 0.18 },
-      { x: -s * 0.20, y: -s * 0.30 },
-      { x:  s * 0.28, y: -s * 0.26 },
-      { x:  s * 0.58, y: -s * 0.06 },
-      { x:  s * 0.44, y:  s * 0.24 },
-      { x:  s * 0.00, y:  s * 0.34 },
-      { x: -s * 0.44, y:  s * 0.26 },
-      { x: -s * 0.64, y:  s * 0.04 },
-    ], true);
-    // Haunch
-    g.fillPoints([
-      { x: -s * 0.34, y: -s * 0.26 },
-      { x: -s * 0.58, y: -s * 0.18 },
-      { x: -s * 0.68, y:  s * 0.04 },
-      { x: -s * 0.52, y:  s * 0.26 },
-      { x: -s * 0.28, y:  s * 0.22 },
-      { x: -s * 0.20, y: -s * 0.06 },
-    ], true);
-    // Shoulder
-    g.fillPoints([
-      { x:  s * 0.28, y: -s * 0.26 },
-      { x:  s * 0.52, y: -s * 0.14 },
-      { x:  s * 0.60, y:  s * 0.10 },
-      { x:  s * 0.44, y:  s * 0.24 },
-      { x:  s * 0.20, y:  s * 0.20 },
-      { x:  s * 0.14, y: -s * 0.04 },
-    ], true);
-    // Head
-    g.fillPoints([
-      { x: s * 0.70, y: -s * 0.28 },
-      { x: s * 0.92, y: -s * 0.30 },
-      { x: s * 1.08, y: -s * 0.16 },
-      { x: s * 1.06, y:  s * 0.04 },
-      { x: s * 0.88, y:  s * 0.12 },
-      { x: s * 0.68, y:  s * 0.02 },
-      { x: s * 0.64, y: -s * 0.14 },
-    ], true);
-    // Snout
-    g.fillStyle(0x0e0200, 1);
-    g.fillPoints([
-      { x: s * 1.06, y:  s * 0.04 },
-      { x: s * 1.30, y: -s * 0.02 },
-      { x: s * 1.38, y:  s * 0.10 },
-      { x: s * 1.26, y:  s * 0.22 },
-      { x: s * 1.04, y:  s * 0.18 },
-    ], true);
+    // Body blob silhouette (no details — it's a ghost)
+    g.fillEllipse(0, 0, s * 2.2, s * 1.5);
+    g.fillEllipse(0, s * 0.30, s * 1.95, s * 0.85);
+    // Jaw bump in front
+    g.fillEllipse(0, s * 0.55, s * 1.3, s * 0.55);
 
     g.x = x;
     g.y = y;
@@ -372,14 +589,15 @@ export default class Charger extends BossBase {
     const speed    = 5600 + this.level * 80;
     const duration = (dist / speed) * 1000 + 200;
 
-    this._charging    = true;
-    this._facingAngle = angle;
+    this._charging = true;
+    this._animChargeBurst(angle);
 
     let hitLanded    = false;
     let obstaclesHit = 0;
 
     const afterCharge = () => {
       this._charging = false;
+      this._animChargeImpact();
       onComplete?.();
     };
 
@@ -496,6 +714,8 @@ export default class Charger extends BossBase {
       this.y + Math.sin(rightAngle) * reach
     );
 
+    this._animTripleChargeWindup(baseAngle);
+
     this._drawTelegraphRect(this.x, this.y, dest0.x, dest0.y, this.size + 16, this._telegraphDuration, 0xff8800);
     this._drawTelegraphRect(this.x, this.y, dest1.x, dest1.y, this.size + 16, this._telegraphDuration, 0xff8800);
     this._drawTelegraphRect(this.x, this.y, dest2.x, dest2.y, this.size + 16, this._telegraphDuration, 0xff8800);
@@ -548,15 +768,14 @@ export default class Charger extends BossBase {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // update — per-frame logic; visual update is now _updateAnimation()
+  // update — orbit when idle, track horizontal facing, no visual redraw
   // ─────────────────────────────────────────────────────────────────────────
   update(time, delta) {
-    const prevX = this.x, prevY = this.y;
-
+    const prevX = this.x;
     super.update(time, delta);
     if (!this.alive) return;
 
-    // Orbit the player when idle — update facing direction from movement
+    // Orbit the player when idle
     if (this._state === 'idle' && !this._charging) {
       const p = this.scene.player;
       if (p && p.alive) {
@@ -564,17 +783,24 @@ export default class Charger extends BossBase {
         const tx = p.x + Math.cos(this._orbitAngle) * 200;
         const ty = p.y + Math.sin(this._orbitAngle) * 200;
         this._moveToward(tx, ty, this.moveSpeed * 0.5, delta / 1000);
-        const dx = tx - this.x, dy = ty - this.y;
-        if (Math.hypot(dx, dy) > 4) {
-          this._facingAngle = Math.atan2(dy, dx);
+      }
+    }
+
+    // Determine horizontal facing from current movement / charge direction
+    if (this._charging) {
+      // already handled by charge burst tilt
+    } else {
+      const dx = this.x - prevX;
+      if (Math.abs(dx) > 0.5) {
+        const sign = dx >= 0 ? 1 : -1;
+        if (sign !== this._facingDir) {
+          this._facingDir = sign;
+          // Flip the inner container — preserves the outer spawn/enrage tweens
+          this.flipContainer.scaleX = sign;
         }
       }
     }
 
-    // Track whether the boss moved this frame (drives walk vs. idle anim)
-    const moved = Math.hypot(this.x - prevX, this.y - prevY);
-    this._isMoving = moved > 0.4;
-
-    this._updateAnimation();
+    this._isMoving = Math.abs(this.x - prevX) > 0.4;
   }
 }
