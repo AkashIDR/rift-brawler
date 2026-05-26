@@ -18,6 +18,7 @@ export default class Charger extends BossBase {
     this._isMoving   = false;
     this._takingHit  = false;
     this._idleTweens = [];      // refs to perpetual tweens (stopped on death)
+    this._steamTimer = null;    // repeating timer for enrage steam wisps
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -31,8 +32,13 @@ export default class Charger extends BossBase {
   }
 
   _buildBody() {
+    // Must be initialized here — BossBase calls _buildGraphics() (and therefore
+    // this method) from *within* super(), before the Charger constructor body
+    // runs and sets this._idleTweens = [].
+    this._idleTweens = [];
+
     const s    = this.size;
-    const dark = 0x0e0200;
+    const dark = 0x000d26;   // very dark navy (matches Electric Blue theme)
     const bone = 0xf4d0a8;   // off-white teeth
 
     // Inner container — flipping this one (not the outer one) keeps the
@@ -120,6 +126,19 @@ export default class Charger extends BossBase {
       this.cracksG.lineBetween(s * x1, s * y1, s * x2, s * y2);
     }
     this.flipContainer.add(this.cracksG);
+
+    // ── Hit flash overlay — solid silhouette, alpha 0 at rest ────────────────
+    // Drawn slightly larger than the body so it covers all sub-shape edges
+    // cleanly, without revealing the layered construction when hit.
+    this.hitFlashG = this.scene.add.graphics();
+    this.hitFlashG.fillStyle(0xff5500, 1);
+    this.hitFlashG.fillEllipse(0, 0, s * 2.4, s * 1.7);
+    this.hitFlashG.fillEllipse(0, s * 0.30, s * 2.1, s * 1.0);
+    this.hitFlashG.fillEllipse(0, s * 0.52, s * 1.45, s * 0.68);  // jaw (matches jawG.y offset)
+    this.hitFlashG.fillEllipse(-s * 0.55, -s * 0.65, s * 0.35, s * 0.28);
+    this.hitFlashG.fillEllipse( s * 0.55, -s * 0.65, s * 0.35, s * 0.28);
+    this.hitFlashG.alpha = 0;
+    this.flipContainer.add(this.hitFlashG);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -162,34 +181,34 @@ export default class Charger extends BossBase {
     });
   }
 
-  // Wind-up: squish wide, eyes pop, jaw drops, container recoils backward.
+  // Wind-up: squish wide, eyes bug out, jaw gapes, container recoils backward.
   _animChargeWindup(chargeAngle) {
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 1.28, scaleY: 0.78,
+      targets: this.bodyG, scaleX: 1.55, scaleY: 0.58,
       duration: 220, ease: 'Cubic.easeIn',
     });
     this.scene.tweens.add({
-      targets: [this.eyeBigG, this.eyeSmallG], scaleX: 1.4, scaleY: 1.4,
+      targets: [this.eyeBigG, this.eyeSmallG], scaleX: 1.85, scaleY: 1.85,
       duration: 220, ease: 'Back.easeOut',
     });
     this.scene.tweens.add({
       targets: this.jawG,
-      scaleX: 1.15, scaleY: 1.25, y: this._jawBaseY + 6,
+      scaleX: 1.15, scaleY: 1.40, y: this._jawBaseY + 8,
       duration: 220, ease: 'Cubic.easeIn',
     });
-    // Container recoils slightly opposite the charge direction
+    // Recoil 16px opposite the charge direction
     this.scene.tweens.add({
       targets: this.flipContainer,
-      x: -Math.cos(chargeAngle) * 10,
-      y: -Math.sin(chargeAngle) * 10,
+      x: -Math.cos(chargeAngle) * 16,
+      y: -Math.sin(chargeAngle) * 16,
       duration: 220, ease: 'Cubic.easeIn',
     });
   }
 
-  // Burst: snap to a leaning-forward pose, release recoil, slight tilt.
+  // Burst: snap to a leaning-forward pose, release recoil, strong tilt + launch shake.
   _animChargeBurst(chargeAngle) {
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 0.88, scaleY: 1.15,
+      targets: this.bodyG, scaleX: 0.80, scaleY: 1.28,
       duration: 110, ease: 'Back.easeOut',
     });
     this.scene.tweens.add({
@@ -205,36 +224,39 @@ export default class Charger extends BossBase {
       targets: this.flipContainer, x: 0, y: 0,
       duration: 110, ease: 'Quad.easeOut',
     });
-    // Tilt the whole boss toward charge direction (small — keeps it readable)
+    // Stronger tilt into the charge direction
     const horiz = Math.cos(chargeAngle);
-    const tilt = horiz >= 0 ? 0.12 : -0.12;
+    const tilt = horiz >= 0 ? 0.22 : -0.22;
     this.scene.tweens.add({
       targets: this.container, rotation: tilt,
       duration: 110, ease: 'Quad.easeOut',
     });
+    // Camera shake on launch — communicates raw power at the moment of release
+    this.scene.cameras.main.shake(80, 0.007);
   }
 
-  // Impact: crush against the impact direction, then elastic settle.
+  // Impact: dramatic crush against the impact direction, then elastic settle.
   _animChargeImpact() {
+    this.scene.cameras.main.shake(100, 0.005);
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 1.18, scaleY: 0.82,
+      targets: this.bodyG, scaleX: 1.45, scaleY: 0.60,
       duration: 80, ease: 'Quad.easeIn',
       onComplete: () => {
         if (!this.alive) return;
         this.scene.tweens.add({
           targets: this.bodyG, scaleX: 1, scaleY: 1,
-          duration: 320, ease: 'Elastic.easeOut',
+          duration: 380, ease: 'Elastic.easeOut',
         });
       },
     });
     this.scene.tweens.add({
       targets: this.jawG,
       scaleX: 1, scaleY: 1, y: this._jawBaseY,
-      duration: 320, ease: 'Elastic.easeOut',
+      duration: 380, ease: 'Elastic.easeOut',
     });
     this.scene.tweens.add({
       targets: this.container, rotation: 0,
-      duration: 320, ease: 'Elastic.easeOut',
+      duration: 380, ease: 'Elastic.easeOut',
     });
   }
 
@@ -280,26 +302,76 @@ export default class Charger extends BossBase {
     });
   }
 
-  // Hurt flinch — quick scale pop + tiny offset.
+  // Hurt flinch — solid orange-red silhouette flash + scale pop.
+  // The overlay covers all sub-shapes so the layered construction stays hidden.
   _animHurt() {
     if (!this.alive) return;
+    // Solid colour flash — no alpha dip on the container
+    this.hitFlashG.setAlpha(0.80);
+    this.scene.tweens.add({
+      targets: this.hitFlashG, alpha: 0,
+      duration: 220, ease: 'Quad.easeOut',
+    });
+    // Body flinch pop
     this.scene.tweens.add({
       targets: this.bodyG, scaleX: 1.18, scaleY: 1.18,
       duration: 70, yoyo: true, ease: 'Back.easeOut',
     });
+    // Tiny random knock
     this.scene.tweens.add({
       targets: this.flipContainer, x: Phaser.Math.Between(-5, 5),
       duration: 70, yoyo: true, ease: 'Sine.easeInOut',
     });
   }
 
-  // Enrage burst — energy cracks flash bright.
+  // Enrage burst — cracks flash + continuous steam aura starts.
   _animEnrageBurst() {
     if (!this.alive) return;
+    // Energy cracks strobe bright
     this.scene.tweens.add({
       targets: this.cracksG, alpha: 0.4,
       duration: 180, yoyo: true, repeat: 3, ease: 'Sine.easeInOut',
     });
+    // Start the continuous steam spawner (≈5–6 wisps/sec)
+    this._steamTimer = this.scene.time.addEvent({
+      loop: true, delay: 180,
+      callback: this._spawnSteamWisp, callbackScope: this,
+    });
+  }
+
+  // One steam wisp — small ellipse that drifts upward and fades out.
+  // Called repeatedly by _steamTimer while the boss is enraged.
+  _spawnSteamWisp() {
+    if (!this.alive) return;
+    const angle = Math.random() * Math.PI * 2;
+    const r     = this.size * Phaser.Math.FloatBetween(0.4, 0.95);
+    const wx    = this.x + Math.cos(angle) * r;
+    const wy    = this.y + Math.sin(angle) * r;
+
+    const wisp = this.scene.add.graphics();
+    wisp.fillStyle(0xaaddff, 1);   // light cyan-white — matches Electric Blue theme
+    wisp.fillEllipse(
+      0, 0,
+      Phaser.Math.Between(7, 17),
+      Phaser.Math.Between(13, 26)
+    );
+    wisp.x = wx;
+    wisp.y = wy;
+    wisp.alpha = Phaser.Math.FloatBetween(0.38, 0.62);
+    wisp.setDepth(12);
+
+    this.scene.tweens.add({
+      targets: wisp,
+      y:      wy - Phaser.Math.Between(55, 125),
+      scaleX: Phaser.Math.FloatBetween(1.2, 2.4),
+      scaleY: Phaser.Math.FloatBetween(0.6, 1.3),
+      alpha:  0,
+      duration: Phaser.Math.Between(650, 1250),
+      ease: 'Quad.easeOut',
+      onComplete: () => { if (wisp.active) wisp.destroy(); },
+    });
+    // Ensure cleanup on scene shutdown
+    this.scene.events.once('shutdown', () => { if (wisp.active) wisp.destroy(); });
   }
 
   // Death — stop idle tweens, spin-shrink, fade features, then explode.
@@ -326,6 +398,9 @@ export default class Charger extends BossBase {
   takeDamage(amount) {
     super.takeDamage(amount);
     if (!this.alive) return;
+    // BossBase sets container.alpha = 0.4 — cancel it immediately; the hitFlashG
+    // overlay handles the visual hit feedback without revealing sub-shapes.
+    this.container.setAlpha(1);
     this._takingHit = true;
     this._animHurt();
     this.scene.time.delayedCall(250, () => { this._takingHit = false; });
@@ -341,6 +416,8 @@ export default class Charger extends BossBase {
   _die() {
     if (!this.alive) return;
     this.alive = false;
+    // Stop steam emitter before any graphics are destroyed
+    if (this._steamTimer) { this._steamTimer.remove(false); this._steamTimer = null; }
     if (this.shadowG) { this.shadowG.destroy(); this.shadowG = null; }
 
     this._animDeath(() => {
@@ -380,10 +457,23 @@ export default class Charger extends BossBase {
 
   _runAttack(name) {
     switch (name) {
-      case 'dashCharge':   this._attackDashCharge();   break;
-      case 'spinCrash':    this._attackSpinCrash();    break;
-      case 'tripleCharge': this._attackTripleCharge(); break;
-      default: this._endAttack();
+      case 'dashCharge':
+        this._attackDashCharge();
+        break;
+      case 'spinCrash': {
+        // Only spin when the player is inside the ring's effective range.
+        // Out-of-range → fall back to dashCharge so the boss stays aggressive.
+        const p = this.scene.player;
+        const inRange = p && p.alive &&
+          Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y) < this.size * 4.2;
+        if (inRange) { this._attackSpinCrash(); } else { this._attackDashCharge(); }
+        break;
+      }
+      case 'tripleCharge':
+        this._attackTripleCharge();
+        break;
+      default:
+        this._endAttack();
     }
   }
 
