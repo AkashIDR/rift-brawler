@@ -57,7 +57,7 @@ export default class Gunner extends BossBase {
     this.bodyG.arc(
       s * 0.12, s * 0.42,
       s * 0.18,
-      Phaser.Math.DegToRad(200), Phaser.Math.DegToRad(340)
+      Phaser.Math.DegToRad(15), Phaser.Math.DegToRad(155)
     );
     this.bodyG.strokePath();
     this.flipContainer.add(this.bodyG);
@@ -748,7 +748,7 @@ export default class Gunner extends BossBase {
       const eyeWorldY = this.y + (-s * 0.14);
       const aimAngle  = Phaser.Math.Angle.Between(eyeWorldX, eyeWorldY, p.x, p.y);
       const maxDrift  = s * 0.08;
-      this.pupilG.x   = Phaser.Math.Linear(this.pupilG.x, Math.cos(aimAngle) * maxDrift, 0.08);
+      this.pupilG.x   = Phaser.Math.Linear(this.pupilG.x, Math.cos(aimAngle) * maxDrift * this._facingDir, 0.08);
       this.pupilG.y   = Phaser.Math.Linear(this.pupilG.y, Math.sin(aimAngle) * maxDrift, 0.08);
     }
   }
