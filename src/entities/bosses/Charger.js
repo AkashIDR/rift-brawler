@@ -66,20 +66,21 @@ export default class Charger extends BossBase {
     this.bodyG.fillEllipse( s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
     // ── Body shading — top-lit, symmetric so horizontal flip has no effect ──
     // Shadow crescent — dark fill then body-color mask shifted up = true crescent shape
+    // Using MAIN body ellipse dims so the crescent lands at the very bottom of the body
     this.bodyG.fillStyle(0x000d26, 0.55);
-    this.bodyG.fillEllipse(0, s * 0.30, s * 1.95, s * 0.85);  // matches belly exactly
+    this.bodyG.fillEllipse(0, 0, s * 2.2, s * 1.5);           // main body dims
     this.bodyG.fillStyle(this.color, 1);
-    this.bodyG.fillEllipse(0, s * 0.02, s * 1.95, s * 0.85);  // mask shifted up by s*0.28
+    this.bodyG.fillEllipse(0, -s * 0.28, s * 2.2, s * 1.5);   // mask shifted up → crescent at very bottom
     // Highlight — soft white upper-center
     this.bodyG.fillStyle(0xffffff, 0.18);
     this.bodyG.fillEllipse(0, -s * 0.26, s * 1.40, s * 0.90);
-    // Specular — small bright point at the very top
-    this.bodyG.fillStyle(0xffffff, 0.52);
-    this.bodyG.fillEllipse(0, -s * 0.62, s * 0.38, s * 0.28); // above brow triangle zone
-    // Angry V brow (dark overlay above eyes)
-    this.bodyG.fillStyle(dark, 0.85);
-    this.bodyG.fillTriangle(-s * 0.55, -s * 0.55,  0, -s * 0.28,  s * 0.55, -s * 0.55);
-    this.bodyG.fillTriangle(-s * 0.45, -s * 0.42,  0, -s * 0.20,  s * 0.45, -s * 0.42);
+    // Specular — small subtle point at the very top (reduced from v4)
+    this.bodyG.fillStyle(0xffffff, 0.30);
+    this.bodyG.fillEllipse(0, -s * 0.62, s * 0.26, s * 0.20); // above brow zone, smaller+dimmer
+    // Angry V brow — two thick inward-slanting lines (reads cleaner than filled triangles)
+    this.bodyG.lineStyle(s * 0.08, dark, 1.0);
+    this.bodyG.lineBetween(-s * 0.48, -s * 0.42, -s * 0.12, -s * 0.30); // left brow slants inward
+    this.bodyG.lineBetween( s * 0.12, -s * 0.30,  s * 0.48, -s * 0.40); // right brow slants inward
 
     this.flipContainer.add(this.bodyG);
 
@@ -87,6 +88,11 @@ export default class Charger extends BossBase {
     this.jawG = this.scene.add.graphics();
     this.jawG.fillStyle(this.color, 1);
     this.jawG.fillEllipse(0, 0, s * 1.30, s * 0.55);
+    // Jaw shadow crescent — same dual-ellipse technique; crescent appears at jaw bottom
+    this.jawG.fillStyle(0x000d26, 0.55);
+    this.jawG.fillEllipse(0, 0, s * 1.30, s * 0.55);          // shadow matches jaw dims exactly
+    this.jawG.fillStyle(this.color, 1);
+    this.jawG.fillEllipse(0, -s * 0.16, s * 1.30, s * 0.55);  // mask shifted up → crescent at jaw bottom
     // 3 chunky teeth pointing up
     this.jawG.fillStyle(bone, 1);
     this.jawG.fillRoundedRect(-s * 0.46, -s * 0.21, s * 0.20, s * 0.30, s * 0.05);

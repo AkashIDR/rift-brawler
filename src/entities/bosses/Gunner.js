@@ -53,10 +53,11 @@ export default class Gunner extends BossBase {
     this.bodyG.fillEllipse( s * 0.68, s * 0.65, s * 0.28, s * 0.44);
     // ── Body shading — top-lit, symmetric so horizontal flip has no effect ──
     // Shadow crescent — dark fill then body-color mask shifted up = true crescent shape
+    // Using MAIN body ellipse dims so the crescent lands at the very bottom of the body
     this.bodyG.fillStyle(0x1a003d, 0.55);
-    this.bodyG.fillEllipse(0, s * 0.18, s * 1.75, s * 0.90);  // matches belly exactly
+    this.bodyG.fillEllipse(0, 0, s * 2.0, s * 1.8);           // main body dims
     this.bodyG.fillStyle(this.color, 1);
-    this.bodyG.fillEllipse(0, -s * 0.10, s * 1.75, s * 0.90); // mask shifted up by s*0.28
+    this.bodyG.fillEllipse(0, -s * 0.32, s * 2.0, s * 1.8);   // mask shifted up → crescent at very bottom
     // Highlight — soft white upper-center
     this.bodyG.fillStyle(0xffffff, 0.20);
     this.bodyG.fillEllipse(0, -s * 0.28, s * 1.25, s * 0.95);
