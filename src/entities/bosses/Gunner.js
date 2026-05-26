@@ -52,9 +52,9 @@ export default class Gunner extends BossBase {
     this.bodyG.fillEllipse( s * 0.0,  s * 0.80, s * 0.24, s * 0.40);
     this.bodyG.fillEllipse( s * 0.68, s * 0.65, s * 0.28, s * 0.44);
     // ── Body shading — top-lit, symmetric so horizontal flip has no effect ──
-    // Shadow — dark bottom-center, within body bounds
-    this.bodyG.fillStyle(0x1a003d, 0.30);
-    this.bodyG.fillEllipse(0, s * 0.28, s * 1.50, s * 1.10);
+    // Shadow — flat crescent at the bottom edge (wide + flat = smile-arc underside)
+    this.bodyG.fillStyle(0x1a003d, 0.32);
+    this.bodyG.fillEllipse(0, s * 0.58, s * 1.60, s * 0.55);
     // Highlight — soft white upper-center
     this.bodyG.fillStyle(0xffffff, 0.20);
     this.bodyG.fillEllipse(0, -s * 0.28, s * 1.25, s * 0.95);

@@ -65,9 +65,9 @@ export default class Charger extends BossBase {
     this.bodyG.fillEllipse(-s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
     this.bodyG.fillEllipse( s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
     // ── Body shading — top-lit, symmetric so horizontal flip has no effect ──
-    // Shadow — dark bottom-center, within body bounds
-    this.bodyG.fillStyle(0x000d26, 0.30);
-    this.bodyG.fillEllipse(0, s * 0.24, s * 1.65, s * 1.05);
+    // Shadow — flat crescent at the bottom edge (wide + flat = smile-arc underside)
+    this.bodyG.fillStyle(0x000d26, 0.32);
+    this.bodyG.fillEllipse(0, s * 0.52, s * 1.65, s * 0.55);
     // Highlight — soft white upper-center
     this.bodyG.fillStyle(0xffffff, 0.18);
     this.bodyG.fillEllipse(0, -s * 0.26, s * 1.40, s * 0.90);
