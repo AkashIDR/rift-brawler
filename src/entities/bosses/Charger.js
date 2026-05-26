@@ -64,6 +64,16 @@ export default class Charger extends BossBase {
     // Ear nubs — comically small
     this.bodyG.fillEllipse(-s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
     this.bodyG.fillEllipse( s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
+    // ── Body shading (light from upper-left) ─────────────────────────────
+    // Shadow — dark navy tint offset lower-right for depth
+    this.bodyG.fillStyle(0x000d26, 0.30);
+    this.bodyG.fillEllipse(s * 0.24, s * 0.26, s * 1.85, s * 1.25);
+    // Highlight — soft white zone offset upper-left
+    this.bodyG.fillStyle(0xffffff, 0.18);
+    this.bodyG.fillEllipse(-s * 0.24, -s * 0.26, s * 1.35, s * 1.05);
+    // Specular — sharp bright point at the lightest corner
+    this.bodyG.fillStyle(0xffffff, 0.52);
+    this.bodyG.fillEllipse(-s * 0.40, -s * 0.44, s * 0.54, s * 0.40);
     // Angry V brow (dark overlay above eyes)
     this.bodyG.fillStyle(dark, 0.85);
     this.bodyG.fillTriangle(-s * 0.55, -s * 0.55,  0, -s * 0.28,  s * 0.55, -s * 0.55);
@@ -92,6 +102,8 @@ export default class Charger extends BossBase {
     this.eyeBigG.fillCircle(0, 0, s * 0.12);
     this.eyeBigG.fillStyle(0x000000, 1);
     this.eyeBigG.fillCircle(s * 0.03, 0, s * 0.07);
+    this.eyeBigG.fillStyle(0xffffff, 0.80);
+    this.eyeBigG.fillCircle(-s * 0.08, -s * 0.09, s * 0.06); // glassy specular
     this.eyeBigG.x = -s * 0.30;
     this.eyeBigG.y = -s * 0.18;
     this.flipContainer.add(this.eyeBigG);
@@ -101,6 +113,8 @@ export default class Charger extends BossBase {
     this.eyeSmallG.fillCircle(0, 0, s * 0.11);
     this.eyeSmallG.fillStyle(0x000000, 1);
     this.eyeSmallG.fillCircle(s * 0.01, 0, s * 0.06);
+    this.eyeSmallG.fillStyle(0xffffff, 0.80);
+    this.eyeSmallG.fillCircle(-s * 0.04, -s * 0.05, s * 0.04); // glassy specular
     this.eyeSmallG.x = s * 0.34;
     this.eyeSmallG.y = -s * 0.12;
     this.flipContainer.add(this.eyeSmallG);
