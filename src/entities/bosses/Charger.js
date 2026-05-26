@@ -232,8 +232,6 @@ export default class Charger extends BossBase {
       targets: this.container, rotation: tilt,
       duration: 110, ease: 'Quad.easeOut',
     });
-    // Camera shake on launch — communicates raw power at the moment of release
-    this.scene.cameras.main.shake(80, 0.007);
   }
 
   // Impact: dramatic crush against the impact direction, then elastic settle.
