@@ -340,19 +340,18 @@ export default class Charger extends BossBase {
     });
   }
 
-  // One fire/smoke wisp — layered flame teardrop shape that drifts upward
-  // with a sinusoidal wobble, spawned from the rear of the boss when moving.
+  // One fire/smoke wisp — 8 segments drawn along a sine-curve path so the
+  // wisp IS wavy by shape, not just by motion. Wide at the base (y=0, nearest
+  // the boss), tapering to a narrow tip as y goes negative (upward on screen).
   // Called repeatedly by _steamTimer while the boss is enraged.
   _spawnSteamWisp() {
     if (!this.alive) return;
 
     // ── Spawn position ──────────────────────────────────────────────────────
-    // When moving: spawn from the rear hemisphere (opposite movement direction)
-    // so the boss naturally leaves a fire trail behind it.
+    // When moving: emit from the rear hemisphere so the boss leaves a fire trail.
     // When stationary: spread around the full body edge.
     let spawnAngle;
     if (this._isMoving) {
-      // Rear hemisphere ± 70° of spread
       spawnAngle = this._lastMoveAngle + Math.PI + Phaser.Math.FloatBetween(-1.22, 1.22);
     } else {
       spawnAngle = Math.random() * Math.PI * 2;
@@ -361,61 +360,73 @@ export default class Charger extends BossBase {
     const wx = this.x + Math.cos(spawnAngle) * r;
     const wy = this.y + Math.sin(spawnAngle) * r;
 
-    // ── Flame shape ─────────────────────────────────────────────────────────
-    // Four concentric layers, each centered progressively higher and narrower
-    // → creates a teardrop/flame silhouette, wide at base, pointed at tip.
-    const wH  = Phaser.Math.FloatBetween(38, 72);  // total column height
-    const wW  = Phaser.Math.FloatBetween(12, 22);  // base width
-    const jit = Phaser.Math.FloatBetween(-3, 3);    // horizontal jitter on core
+    // ── Wisp geometry ────────────────────────────────────────────────────────
+    // Each segment is a small ellipse placed along a sine curve that runs
+    // from y=0 (base, wide, orange) upward to y=-wH (tip, narrow, near-white).
+    // The sine gives the column its natural wispy S-curve shape.
+    const wH        = Phaser.Math.FloatBetween(42, 78);   // total column height
+    const wW        = Phaser.Math.FloatBetween(10, 18);   // base width
+    const sineAmp   = wW * Phaser.Math.FloatBetween(0.6, 1.4);  // how far the curve swings
+    const sineCycles = Phaser.Math.FloatBetween(0.8, 1.6); // how many S-bends along height
+    const sinePhase = Math.random() * Math.PI * 2;         // random start phase → unique shape
+    const NUM_SEGS  = 8;
 
     const wisp = this.scene.add.graphics();
 
-    // Outer glow — wide, very transparent, deep orange-red
-    wisp.fillStyle(0xff3300, 0.18);
-    wisp.fillEllipse(0, -wH * 0.30, wW * 1.05, wH * 1.0);
+    for (let i = 0; i < NUM_SEGS; i++) {
+      const t    = i / (NUM_SEGS - 1);               // 0 = base, 1 = tip
+      const segY = -t * wH;                          // upward (negative = up in Phaser)
+      const segX = Math.sin(sinePhase + t * Math.PI * sineCycles * 2) * sineAmp;
+      const segW = wW * (1 - t * 0.82);              // tapers from full width to 18%
+      const segH = segW * 1.55;                      // each blob slightly taller than wide
 
-    // Flame body — main visible mass, bright orange
-    wisp.fillStyle(0xff7700, 0.45);
-    wisp.fillEllipse(0, -wH * 0.42, wW * 0.66, wH * 0.80);
+      // Alpha: ramp up quickly from base, hold through middle, fade toward tip
+      let alpha;
+      if (t < 0.12)      alpha = (t / 0.12) * 0.55;
+      else if (t < 0.70) alpha = 0.55;
+      else               alpha = (1 - t) / 0.30 * 0.55;
 
-    // Hot core — golden-yellow, more opaque
-    wisp.fillStyle(0xffcc00, 0.62);
-    wisp.fillEllipse(jit, -wH * 0.55, wW * 0.32, wH * 0.50);
+      // Colour: deep orange at base → bright orange → golden → cream-white tip
+      let color;
+      if (t < 0.25)      color = 0xff3300;
+      else if (t < 0.52) color = 0xff7700;
+      else if (t < 0.78) color = 0xffbb00;
+      else               color = 0xfff0cc;
 
-    // White-hot tip — tiny, near-white
-    wisp.fillStyle(0xffeebb, 0.48);
-    wisp.fillEllipse(jit * 0.5, -wH * 0.66, wW * 0.14, wH * 0.24);
+      wisp.fillStyle(color, alpha);
+      wisp.fillEllipse(segX, segY, segW, segH);
+    }
 
     wisp.x = wx;
     wisp.y = wy;
-    wisp.rotation = Phaser.Math.FloatBetween(-0.25, 0.25);  // slight lean
-    wisp.alpha    = Phaser.Math.FloatBetween(0.48, 0.78);
+    wisp.alpha = Phaser.Math.FloatBetween(0.55, 0.85);
     wisp.setDepth(12);
 
-    // ── Wobble — sinusoidal X drift gives organic "flame-in-wind" motion ───
-    // Each wisp gets its own random frequency and amplitude so they don't sync.
-    const startX       = wx;
-    const wobbleSpeed  = Phaser.Math.FloatBetween(3.5, 7.0);
-    const wobbleAmp    = Phaser.Math.FloatBetween(9, 20);
-    const startTime    = this.scene.time.now;
+    // ── Overall drift wobble ─────────────────────────────────────────────────
+    // The wisp's own shape is already wavy; this adds gentle organic swaying of
+    // the whole column as it rises — different frequency per wisp.
+    const startX     = wx;
+    const wobbleSpd  = Phaser.Math.FloatBetween(1.8, 4.0);
+    const wobbleAmp  = Phaser.Math.FloatBetween(5, 13);
+    const startTime  = this.scene.time.now;
 
     const wobble = (time) => {
       if (!wisp.active) { this.scene.events.off('update', wobble); return; }
-      wisp.x = startX + Math.sin((time - startTime) * 0.001 * wobbleSpeed) * wobbleAmp;
+      wisp.x = startX + Math.sin((time - startTime) * 0.001 * wobbleSpd) * wobbleAmp;
     };
     this.scene.events.on('update', wobble);
 
-    // ── Rise, expand, and fade ───────────────────────────────────────────────
-    const riseHeight = Phaser.Math.Between(75, 155);
-    const dur        = Phaser.Math.Between(750, 1350);
+    // ── Rise and fade ────────────────────────────────────────────────────────
+    // scaleX stays near 1 — the shape itself handles the visual, not stretching.
+    const riseHeight = Phaser.Math.Between(80, 160);
+    const dur        = Phaser.Math.Between(900, 1550);
 
     this.scene.tweens.add({
       targets: wisp,
       y:      wy - riseHeight,
-      scaleX: Phaser.Math.FloatBetween(2.0, 3.8),   // spreads wide as it rises
-      scaleY: Phaser.Math.FloatBetween(0.9, 1.4),
+      scaleX: Phaser.Math.FloatBetween(1.1, 1.6),  // subtle expansion only
+      scaleY: Phaser.Math.FloatBetween(1.0, 1.25),
       alpha:  0,
-      rotation: wisp.rotation + Phaser.Math.FloatBetween(-0.5, 0.5),
       duration: dur,
       ease: 'Quad.easeOut',
       onComplete: () => {
@@ -424,7 +435,7 @@ export default class Charger extends BossBase {
       },
     });
 
-    // Guaranteed cleanup if scene shuts down before tween completes
+    // Guaranteed cleanup on scene shutdown
     this.scene.events.once('shutdown', () => {
       this.scene.events.off('update', wobble);
       if (wisp.active) wisp.destroy();
