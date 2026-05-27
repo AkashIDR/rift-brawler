@@ -65,12 +65,12 @@ export default class Charger extends BossBase {
     this.bodyG.fillEllipse(-s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
     this.bodyG.fillEllipse( s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
     // ── Body shading — top-lit, symmetric so horizontal flip has no effect ──
-    // Shadow crescent — dark fill then body-color mask shifted up = true crescent shape
-    // Using MAIN body ellipse dims so the crescent lands at the very bottom of the body
-    this.bodyG.fillStyle(0x000d26, 0.55);
-    this.bodyG.fillEllipse(0, 0, s * 2.2, s * 1.5);           // main body dims
-    this.bodyG.fillStyle(this.color, 1);
-    this.bodyG.fillEllipse(0, -s * 0.28, s * 2.2, s * 1.5);   // mask shifted up → crescent at very bottom
+    // Shadow — two contained ellipses build up darkness at the bottom interior (no masking)
+    // Both ellipses stay within the main body's painted pixels — no size bloat
+    this.bodyG.fillStyle(0x000d26, 0.30);
+    this.bodyG.fillEllipse(0, s * 0.30, s * 1.70, s * 0.60);  // broad soft shadow zone
+    this.bodyG.fillStyle(0x000d26, 0.35);
+    this.bodyG.fillEllipse(0, s * 0.44, s * 1.30, s * 0.38);  // deep core near bottom edge
     // Highlight — soft white upper-center
     this.bodyG.fillStyle(0xffffff, 0.18);
     this.bodyG.fillEllipse(0, -s * 0.26, s * 1.40, s * 0.90);
@@ -88,11 +88,9 @@ export default class Charger extends BossBase {
     this.jawG = this.scene.add.graphics();
     this.jawG.fillStyle(this.color, 1);
     this.jawG.fillEllipse(0, 0, s * 1.30, s * 0.55);
-    // Jaw shadow crescent — same dual-ellipse technique; crescent appears at jaw bottom
-    this.jawG.fillStyle(0x000d26, 0.55);
-    this.jawG.fillEllipse(0, 0, s * 1.30, s * 0.55);          // shadow matches jaw dims exactly
-    this.jawG.fillStyle(this.color, 1);
-    this.jawG.fillEllipse(0, -s * 0.16, s * 1.30, s * 0.55);  // mask shifted up → crescent at jaw bottom
+    // Jaw shadow — single contained ellipse at bottom of jaw interior
+    this.jawG.fillStyle(0x000d26, 0.45);
+    this.jawG.fillEllipse(0, s * 0.10, s * 1.00, s * 0.25);   // bottom shadow, stays within jaw
     // 3 chunky teeth pointing up
     this.jawG.fillStyle(bone, 1);
     this.jawG.fillRoundedRect(-s * 0.46, -s * 0.21, s * 0.20, s * 0.30, s * 0.05);
