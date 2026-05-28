@@ -205,7 +205,7 @@ export default class Gunner extends BossBase {
   _buildSpecularSprite() {
     const s   = this.size;
     const key = `gunner-specular-${s}`;
-    const dim = Math.ceil(s * 1.0);   // square canvas — glow fits within s*0.42 radius
+    const dim = Math.ceil(s * 2.0);   // big enough for s*0.72 glow radius with room to spare
 
     if (!this.scene.textures.exists(key)) {
       const tex = this.scene.textures.createCanvas(key, dim, dim);
@@ -214,7 +214,8 @@ export default class Gunner extends BossBase {
       const cy  = dim / 2;
 
       // Plain circular gradient — square canvas, no transform needed; renders circular
-      const spec = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 0.42);
+      // Radius s*0.72 → visible ring width = (0.72-0.30)*s ≈ 14px around the eye sclera
+      const spec = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 0.72);
       spec.addColorStop(0.00, 'rgba(255, 255, 255, 0.85)');
       spec.addColorStop(0.50, 'rgba(255, 255, 255, 0.25)');
       spec.addColorStop(1.00, 'rgba(255, 255, 255, 0)');
@@ -226,7 +227,7 @@ export default class Gunner extends BossBase {
     const sprite = this.scene.add.sprite(0, 0, key);
     sprite.setOrigin(0.5, 0.5);
     sprite.x = -s * 0.10;   // eye horizontal offset
-    sprite.y = -s * 0.04;   // slightly below eye center so halo rings the eye
+    sprite.y = -s * 0.14;   // exact eye center (mainEyeContainer y position)
     return sprite;
   }
 
