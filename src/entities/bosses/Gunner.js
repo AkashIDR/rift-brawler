@@ -174,8 +174,8 @@ export default class Gunner extends BossBase {
       // ── 3. Specular highlight — centered on the main eye, making it the
       //       physically highest / most luminous point of the body ──────────
       const spec = ctx.createRadialGradient(
-        cx - s * 0.10, cy - s * 0.14, 0,              // main eye position in canvas coords
-        cx - s * 0.10, cy - s * 0.14, s * 0.35        // slightly wider than before
+        cx - s * 0.10, cy - s * 0.04, 0,              // below eye center so halo wraps the eye
+        cx - s * 0.10, cy - s * 0.04, s * 0.42        // +20% radius so halo is visible around the eye
       );
       spec.addColorStop(0.00, 'rgba(255, 255, 255, 0.85)');
       spec.addColorStop(0.50, 'rgba(255, 255, 255, 0.25)');
