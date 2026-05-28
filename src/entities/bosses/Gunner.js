@@ -171,17 +171,21 @@ export default class Gunner extends BossBase {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, cw, ch);
 
-      // ── 3. Specular highlight — centered on the main eye, making it the
-      //       physically highest / most luminous point of the body ──────────
-      const spec = ctx.createRadialGradient(
-        cx - s * 0.10, cy - s * 0.04, 0,              // below eye center so halo wraps the eye
-        cx - s * 0.10, cy - s * 0.04, s * 0.42        // +20% radius so halo is visible around the eye
-      );
+      // ── 3. Specular highlight — circular bump centered at the main eye ──────
+      // The body ellipse is wider than tall (rx=s*1.0, ry=s*0.9, aspect≈1.11).
+      // A plain circular radialGradient clipped by that body appears oval
+      // (stretched horizontally). Fix: compress the canvas X axis by the inverse
+      // aspect ratio before drawing, so the result reads as circular.
+      ctx.save();
+      ctx.translate(cx - s * 0.10, cy - s * 0.04);  // move origin to eye position
+      ctx.scale(0.90, 1.0);                           // compress X by 1/1.11 ≈ 0.90
+      const spec = ctx.createRadialGradient(0, 0, 0, 0, 0, s * 0.42);
       spec.addColorStop(0.00, 'rgba(255, 255, 255, 0.85)');
       spec.addColorStop(0.50, 'rgba(255, 255, 255, 0.25)');
       spec.addColorStop(1.00, 'rgba(255, 255, 255, 0)');
       ctx.fillStyle = spec;
-      ctx.fillRect(0, 0, cw, ch);
+      ctx.fillRect(-cw * 1.5, -ch, cw * 3, ch * 2);  // generously cover full canvas
+      ctx.restore();
 
       // ── 4. Smirk arc — drawn over the gradient as a feature ──
       ctx.strokeStyle = toHex(0x3d1558);
