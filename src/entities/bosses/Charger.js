@@ -38,67 +38,22 @@ export default class Charger extends BossBase {
     // runs and sets this._idleTweens = [].
     this._idleTweens = [];
 
-    const s    = this.size;
-    const dark = 0x000d26;   // very dark navy (matches Electric Blue theme)
-    const bone = 0xf4d0a8;   // off-white teeth
+    const s = this.size;
 
     // Inner container — flipping this one (not the outer one) keeps the
     // spawn animation and enrage scale pulse untouched.
     this.flipContainer = this.scene.add.container(0, 0);
     this.container.add(this.flipContainer);
 
-    // ── Body blob (kidney-bean, with legs, ears, brow, tail stub) ──────────
-    this.bodyG = this.scene.add.graphics();
-    this.bodyG.fillStyle(this.color, 1);
-    // Main mass — wide kidney
-    this.bodyG.fillEllipse(0, 0, s * 2.2, s * 1.5);
-    // Saggy belly bump (lower bulge)
-    this.bodyG.fillEllipse(0, s * 0.30, s * 1.95, s * 0.85);
-    // Four stumpy legs poking out the bottom
-    this.bodyG.fillEllipse(-s * 0.75, s * 0.62, s * 0.38, s * 0.48);
-    this.bodyG.fillEllipse(-s * 0.28, s * 0.72, s * 0.30, s * 0.42);
-    this.bodyG.fillEllipse( s * 0.28, s * 0.72, s * 0.30, s * 0.42);
-    this.bodyG.fillEllipse( s * 0.75, s * 0.62, s * 0.38, s * 0.48);
-    // Tail stub — back-left
-    this.bodyG.fillEllipse(-s * 1.05, -s * 0.05, s * 0.42, s * 0.26);
-    // Ear nubs — comically small
-    this.bodyG.fillEllipse(-s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
-    this.bodyG.fillEllipse( s * 0.55, -s * 0.65, s * 0.30, s * 0.22);
-    // ── Body shading — top-lit, symmetric so horizontal flip has no effect ──
-    // Shadow — two contained ellipses build up darkness at the bottom interior (no masking)
-    // Both ellipses stay within the main body's painted pixels — no size bloat
-    this.bodyG.fillStyle(0x000d26, 0.30);
-    this.bodyG.fillEllipse(0, s * 0.30, s * 1.70, s * 0.60);  // broad soft shadow zone
-    this.bodyG.fillStyle(0x000d26, 0.35);
-    this.bodyG.fillEllipse(0, s * 0.44, s * 1.30, s * 0.38);  // deep core near bottom edge
-    // Highlight — soft white upper-center
-    this.bodyG.fillStyle(0xffffff, 0.18);
-    this.bodyG.fillEllipse(0, -s * 0.26, s * 1.40, s * 0.90);
-    // Specular — small subtle point at the very top (reduced from v4)
-    this.bodyG.fillStyle(0xffffff, 0.30);
-    this.bodyG.fillEllipse(0, -s * 0.62, s * 0.26, s * 0.20); // above brow zone, smaller+dimmer
-    // Angry V brow — two thick inward-slanting lines (reads cleaner than filled triangles)
-    this.bodyG.lineStyle(s * 0.08, dark, 1.0);
-    this.bodyG.lineBetween(-s * 0.48, -s * 0.42, -s * 0.12, -s * 0.30); // left brow slants inward
-    this.bodyG.lineBetween( s * 0.12, -s * 0.30,  s * 0.48, -s * 0.40); // right brow slants inward
+    // ── Body sprite (canvas gradient) ────────────────────────────────────────
+    this.bodyS = this._buildBodySprite();
+    this.flipContainer.add(this.bodyS);
 
-    this.flipContainer.add(this.bodyG);
-
-    // ── Jaw (underbite — separate so it can drop/chomp independently) ─────
-    this.jawG = this.scene.add.graphics();
-    this.jawG.fillStyle(this.color, 1);
-    this.jawG.fillEllipse(0, 0, s * 1.30, s * 0.55);
-    // Jaw shadow — single contained ellipse at bottom of jaw interior
-    this.jawG.fillStyle(0x000d26, 0.45);
-    this.jawG.fillEllipse(0, s * 0.10, s * 1.00, s * 0.25);   // bottom shadow, stays within jaw
-    // 3 chunky teeth pointing up
-    this.jawG.fillStyle(bone, 1);
-    this.jawG.fillRoundedRect(-s * 0.46, -s * 0.21, s * 0.20, s * 0.30, s * 0.05);
-    this.jawG.fillRoundedRect(-s * 0.10, -s * 0.24, s * 0.20, s * 0.34, s * 0.05);
-    this.jawG.fillRoundedRect( s * 0.26, -s * 0.21, s * 0.20, s * 0.30, s * 0.05);
-    this.jawG.y = s * 0.50;
-    this._jawBaseY = this.jawG.y;
-    this.flipContainer.add(this.jawG);
+    // ── Jaw sprite (canvas gradient + teeth) ─────────────────────────────────
+    this.jawS = this._buildJawSprite();
+    this.jawS.y = s * 0.50;
+    this._jawBaseY = this.jawS.y;
+    this.flipContainer.add(this.jawS);
 
     // ── Eyes — asymmetric (big angry left, small confused right) ──────────
     this.eyeBigG = this.scene.add.graphics();
@@ -148,18 +103,145 @@ export default class Charger extends BossBase {
     }
     this.flipContainer.add(this.cracksG);
 
-    // ── Hit flash overlay — solid silhouette, alpha 0 at rest ────────────────
-    // Drawn slightly larger than the body so it covers all sub-shape edges
-    // cleanly, without revealing the layered construction when hit.
-    this.hitFlashG = this.scene.add.graphics();
-    this.hitFlashG.fillStyle(0xff5500, 1);
-    this.hitFlashG.fillEllipse(0, 0, s * 2.4, s * 1.7);
-    this.hitFlashG.fillEllipse(0, s * 0.30, s * 2.1, s * 1.0);
-    this.hitFlashG.fillEllipse(0, s * 0.52, s * 1.45, s * 0.68);  // jaw (matches jawG.y offset)
-    this.hitFlashG.fillEllipse(-s * 0.55, -s * 0.65, s * 0.35, s * 0.28);
-    this.hitFlashG.fillEllipse( s * 0.55, -s * 0.65, s * 0.35, s * 0.28);
-    this.hitFlashG.alpha = 0;
-    this.flipContainer.add(this.hitFlashG);
+    // ── Hit flash overlay sprites (pixel-perfect tintFill, alpha 0 at rest) ──
+    this.hitFlashBodyS = this.scene.add.sprite(0, 0, `charger-body-${s}`);
+    this.hitFlashBodyS.setOrigin(0.5, 0.5);
+    this.hitFlashBodyS.setTintFill(0xff5500);
+    this.hitFlashBodyS.alpha = 0;
+    this.flipContainer.add(this.hitFlashBodyS);
+
+    this.hitFlashJawS = this.scene.add.sprite(0, 0, `charger-jaw-${s}`);
+    this.hitFlashJawS.setOrigin(0.5, 0.5);
+    this.hitFlashJawS.setTintFill(0xff5500);
+    this.hitFlashJawS.y = s * 0.50;
+    this.hitFlashJawS.alpha = 0;
+    this.flipContainer.add(this.hitFlashJawS);
+  }
+
+  _buildBodySprite() {
+    const s   = this.size;
+    const key = `charger-body-${s}`;
+    const cw  = Math.ceil(s * 2.8);
+    const ch  = Math.ceil(s * 2.2);
+
+    if (!this.scene.textures.exists(key)) {
+      const tex = this.scene.textures.createCanvas(key, cw, ch);
+      const ctx = tex.getContext();
+      const cx  = cw / 2;
+      const cy  = ch / 2;
+      const colorCSS = '#' + this.color.toString(16).padStart(6, '0');
+
+      // Helper: fill a single ellipse at (cx+ex, cy+ey) with half-radii rx/ry
+      const fillEll = (ex, ey, rx, ry) => {
+        ctx.beginPath();
+        ctx.ellipse(cx + ex, cy + ey, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      };
+
+      // 1. Body silhouette in body colour
+      ctx.fillStyle = colorCSS;
+      fillEll(0,          0,        s * 1.10,  s * 0.75);  // main mass
+      fillEll(0,          s * 0.30, s * 0.975, s * 0.425); // belly bump
+      fillEll(-s * 0.75,  s * 0.62, s * 0.19,  s * 0.24);  // left outer leg
+      fillEll(-s * 0.28,  s * 0.72, s * 0.15,  s * 0.21);  // left inner leg
+      fillEll( s * 0.28,  s * 0.72, s * 0.15,  s * 0.21);  // right inner leg
+      fillEll( s * 0.75,  s * 0.62, s * 0.19,  s * 0.24);  // right outer leg
+      fillEll(-s * 1.05, -s * 0.05, s * 0.21,  s * 0.13);  // tail stub
+      fillEll(-s * 0.55, -s * 0.65, s * 0.15,  s * 0.11);  // left ear nub
+      fillEll( s * 0.55, -s * 0.65, s * 0.15,  s * 0.11);  // right ear nub
+
+      // 2. source-atop — gradient stays within silhouette
+      ctx.globalCompositeOperation = 'source-atop';
+
+      // 3. Top-to-bottom radial gradient: bright crown → dark base
+      const grad = ctx.createRadialGradient(
+        cx, cy - s * 0.55, 0,
+        cx, cy + s * 0.30, s * 1.50
+      );
+      grad.addColorStop(0.00, 'rgba(255, 255, 255, 0.40)');
+      grad.addColorStop(0.30, 'rgba(255, 255, 255, 0)');
+      grad.addColorStop(0.65, 'rgba(0, 13, 38, 0.25)');
+      grad.addColorStop(1.00, 'rgba(0, 13, 38, 0.65)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      // 4. Angry V brow lines (source-atop — clipped to body silhouette)
+      ctx.strokeStyle = '#000d26';
+      ctx.lineWidth   = s * 0.08;
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.48, cy - s * 0.42);
+      ctx.lineTo(cx - s * 0.12, cy - s * 0.30);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 0.12, cy - s * 0.30);
+      ctx.lineTo(cx + s * 0.48, cy - s * 0.40);
+      ctx.stroke();
+
+      // 5. Restore composite mode
+      ctx.globalCompositeOperation = 'source-over';
+      tex.refresh();
+    }
+
+    const sprite = this.scene.add.sprite(0, 0, key);
+    sprite.setOrigin(0.5, 0.5);
+    return sprite;
+  }
+
+  _buildJawSprite() {
+    const s   = this.size;
+    const key = `charger-jaw-${s}`;
+    const jcw = Math.ceil(s * 1.6);
+    const jch = Math.ceil(s * 0.9);
+
+    if (!this.scene.textures.exists(key)) {
+      const tex = this.scene.textures.createCanvas(key, jcw, jch);
+      const ctx = tex.getContext();
+      const jcx = jcw / 2;
+      const jcy = jch / 2;
+      const colorCSS = '#' + this.color.toString(16).padStart(6, '0');
+
+      // 1. Jaw base ellipse in body colour
+      ctx.fillStyle = colorCSS;
+      ctx.beginPath();
+      ctx.ellipse(jcx, jcy, s * 0.65, s * 0.275, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. source-atop — gradient within jaw silhouette
+      ctx.globalCompositeOperation = 'source-atop';
+
+      // 3. Jaw gradient: soft top highlight → dark bottom
+      const grad = ctx.createRadialGradient(
+        jcx, jcy - s * 0.12, 0,
+        jcx, jcy + s * 0.10, s * 0.40
+      );
+      grad.addColorStop(0.00, 'rgba(255, 255, 255, 0.25)');
+      grad.addColorStop(0.50, 'rgba(0, 13, 38, 0.20)');
+      grad.addColorStop(1.00, 'rgba(0, 13, 38, 0.55)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, jcw, jch);
+
+      // 4. Restore before drawing teeth (teeth go on top of gradient)
+      ctx.globalCompositeOperation = 'source-over';
+
+      // 5. Three chunky teeth in bone colour, pointing upward
+      ctx.fillStyle = '#f4d0a8';
+      ctx.beginPath();
+      ctx.roundRect(jcx - s * 0.46, jcy - s * 0.21, s * 0.20, s * 0.30, s * 0.05);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(jcx - s * 0.10, jcy - s * 0.24, s * 0.20, s * 0.34, s * 0.05);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(jcx + s * 0.26,  jcy - s * 0.21, s * 0.20, s * 0.30, s * 0.05);
+      ctx.fill();
+
+      tex.refresh();
+    }
+
+    const sprite = this.scene.add.sprite(0, 0, key);
+    sprite.setOrigin(0.5, 0.5);
+    return sprite;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -169,16 +251,16 @@ export default class Charger extends BossBase {
   _animIdleStart() {
     // Breathing wobble — body Y scales up while X scales down (volume preserve)
     this._idleTweens.push(this.scene.tweens.add({
-      targets: this.bodyG, scaleY: 1.05,
+      targets: this.bodyS, scaleY: 1.05,
       duration: 800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
     }));
     this._idleTweens.push(this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 0.97,
+      targets: this.bodyS, scaleX: 0.97,
       duration: 800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
     }));
     // Jaw bobs gently with the body
     this._idleTweens.push(this.scene.tweens.add({
-      targets: this.jawG, y: this._jawBaseY + 2,
+      targets: this.jawS, y: this._jawBaseY + 2,
       duration: 800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
     }));
     this._scheduleBlink();
@@ -205,7 +287,7 @@ export default class Charger extends BossBase {
   // Wind-up: squish wide, eyes bug out, jaw gapes, container recoils backward.
   _animChargeWindup(chargeAngle) {
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 1.55, scaleY: 0.58,
+      targets: this.bodyS, scaleX: 1.55, scaleY: 0.58,
       duration: 220, ease: 'Cubic.easeIn',
     });
     this.scene.tweens.add({
@@ -213,7 +295,7 @@ export default class Charger extends BossBase {
       duration: 220, ease: 'Back.easeOut',
     });
     this.scene.tweens.add({
-      targets: this.jawG,
+      targets: this.jawS,
       scaleX: 1.15, scaleY: 1.40, y: this._jawBaseY + 8,
       duration: 220, ease: 'Cubic.easeIn',
     });
@@ -229,7 +311,7 @@ export default class Charger extends BossBase {
   // Burst: snap to a leaning-forward pose, release recoil, strong tilt + launch shake.
   _animChargeBurst(chargeAngle) {
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 0.80, scaleY: 1.28,
+      targets: this.bodyS, scaleX: 0.80, scaleY: 1.28,
       duration: 110, ease: 'Back.easeOut',
     });
     this.scene.tweens.add({
@@ -237,7 +319,7 @@ export default class Charger extends BossBase {
       duration: 110, ease: 'Quad.easeOut',
     });
     this.scene.tweens.add({
-      targets: this.jawG,
+      targets: this.jawS,
       scaleX: 1.05, scaleY: 1.10, y: this._jawBaseY + 2,
       duration: 110, ease: 'Back.easeOut',
     });
@@ -258,18 +340,18 @@ export default class Charger extends BossBase {
   _animChargeImpact() {
     this.scene.cameras.main.shake(100, 0.005);
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 1.45, scaleY: 0.60,
+      targets: this.bodyS, scaleX: 1.45, scaleY: 0.60,
       duration: 80, ease: 'Quad.easeIn',
       onComplete: () => {
         if (!this.alive) return;
         this.scene.tweens.add({
-          targets: this.bodyG, scaleX: 1, scaleY: 1,
+          targets: this.bodyS, scaleX: 1, scaleY: 1,
           duration: 380, ease: 'Elastic.easeOut',
         });
       },
     });
     this.scene.tweens.add({
-      targets: this.jawG,
+      targets: this.jawS,
       scaleX: 1, scaleY: 1, y: this._jawBaseY,
       duration: 380, ease: 'Elastic.easeOut',
     });
@@ -282,7 +364,7 @@ export default class Charger extends BossBase {
   // Spin crash — crouch low, then rapid 2-rotation spin + pulse.
   _animSpinCrashWindup() {
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 1.2, scaleY: 0.70,
+      targets: this.bodyS, scaleX: 1.2, scaleY: 0.70,
       duration: 250, ease: 'Cubic.easeIn',
     });
     this.scene.tweens.add({
@@ -302,7 +384,7 @@ export default class Charger extends BossBase {
       },
     });
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 1.15, scaleY: 1.15,
+      targets: this.bodyS, scaleX: 1.15, scaleY: 1.15,
       duration: 180, yoyo: true, ease: 'Sine.easeInOut',
     });
     this.scene.tweens.add({
@@ -322,18 +404,22 @@ export default class Charger extends BossBase {
   }
 
   // Hurt flinch — solid orange-red silhouette flash + scale pop.
-  // The overlay covers all sub-shapes so the layered construction stays hidden.
   _animHurt() {
     if (!this.alive) return;
-    // Solid colour flash — no alpha dip on the container
-    this.hitFlashG.setAlpha(0.80);
+    // Solid colour flash on both body and jaw sprites
+    this.hitFlashBodyS.setAlpha(0.80);
+    this.hitFlashJawS.setAlpha(0.80);
     this.scene.tweens.add({
-      targets: this.hitFlashG, alpha: 0,
+      targets: this.hitFlashBodyS, alpha: 0,
+      duration: 220, ease: 'Quad.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.hitFlashJawS, alpha: 0,
       duration: 220, ease: 'Quad.easeOut',
     });
     // Body flinch pop
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 1.18, scaleY: 1.18,
+      targets: this.bodyS, scaleX: 1.18, scaleY: 1.18,
       duration: 70, yoyo: true, ease: 'Back.easeOut',
     });
     // Tiny random knock
@@ -472,7 +558,7 @@ export default class Charger extends BossBase {
       onComplete,
     });
     this.scene.tweens.add({
-      targets: [this.eyeBigG, this.eyeSmallG, this.jawG],
+      targets: [this.eyeBigG, this.eyeSmallG, this.jawS],
       alpha: 0, duration: 360, ease: 'Quad.easeIn',
     });
   }
