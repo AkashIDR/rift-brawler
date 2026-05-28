@@ -161,14 +161,16 @@ export default class Gunner extends BossBase {
       // ── 2. Gradient overlay — only affects existing (body) pixels ──
       ctx.globalCompositeOperation = 'source-atop';
 
+      // Shadow-only gradient — no white highlight so the eye specular is the
+      // sole source of brightness, making the eye the unambiguous elevated peak.
       const grad = ctx.createRadialGradient(
-        cx,            cy - s * 0.70, 0,              // inner: top-of-head, above the eye
-        cx,            cy + s * 0.30, s * 1.35        // outer: large, biased downward
+        cx,            cy - s * 0.20, 0,              // inner: just above centre, transparent
+        cx,            cy + s * 0.20, s * 1.30        // outer: slightly below centre
       );
-      grad.addColorStop(0.00, 'rgba(255, 255, 255, 0.45)');
-      grad.addColorStop(0.30, 'rgba(255, 255, 255, 0)');
-      grad.addColorStop(0.65, 'rgba(20,  0,  40, 0.25)');
-      grad.addColorStop(1.00, 'rgba(20,  0,  40, 0.65)');
+      grad.addColorStop(0.00, 'rgba(20,  0,  40, 0)');    // transparent — body colour shows
+      grad.addColorStop(0.40, 'rgba(20,  0,  40, 0)');    // still transparent through upper body
+      grad.addColorStop(0.70, 'rgba(20,  0,  40, 0.35)'); // shadow builds
+      grad.addColorStop(1.00, 'rgba(20,  0,  40, 0.70)'); // dark bottom/edges
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, cw, ch);
 
