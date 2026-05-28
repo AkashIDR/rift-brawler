@@ -32,48 +32,20 @@ export default class Gunner extends BossBase {
     // super(), before the Gunner constructor body sets this._idleTweens = [].
     this._idleTweens = [];
 
-    const s    = this.size;
-    const dark = 0x3d1558;   // very dark purple
+    const s = this.size;
 
     // Inner container — flipping this (not the outer one) leaves the BossBase
     // spawn-tween and enrage scale-pulse on this.container untouched.
     this.flipContainer = this.scene.add.container(0, 0);
     this.container.add(this.flipContainer);
 
-    // ── Body blob + smirk + tentacle stubs ──────────────────────────────
-    this.bodyG = this.scene.add.graphics();
-    this.bodyG.fillStyle(this.color, 1);
-    // Main round blob
-    this.bodyG.fillEllipse(0, 0, s * 2.0, s * 1.8);
-    // Saggy belly bump
-    this.bodyG.fillEllipse(0, s * 0.18, s * 1.75, s * 0.9);
-    // Three tentacle stubs poking out at the bottom
-    this.bodyG.fillEllipse(-s * 0.72, s * 0.68, s * 0.28, s * 0.44);
-    this.bodyG.fillEllipse( s * 0.0,  s * 0.80, s * 0.24, s * 0.40);
-    this.bodyG.fillEllipse( s * 0.68, s * 0.65, s * 0.28, s * 0.44);
-    // ── Body shading — top-lit, symmetric so horizontal flip has no effect ──
-    // Shadow — two contained ellipses build up darkness at the bottom interior (no masking)
-    // Both ellipses stay within the main body's painted pixels — no size bloat
-    this.bodyG.fillStyle(0x1a003d, 0.30);
-    this.bodyG.fillEllipse(0, s * 0.38, s * 1.60, s * 0.70);  // broad soft shadow zone
-    this.bodyG.fillStyle(0x1a003d, 0.35);
-    this.bodyG.fillEllipse(0, s * 0.55, s * 1.20, s * 0.45);  // deep core near bottom edge
-    // Highlight — soft white upper-center
-    this.bodyG.fillStyle(0xffffff, 0.20);
-    this.bodyG.fillEllipse(0, -s * 0.28, s * 1.25, s * 0.95);
-    // Specular — small bright point at the very top
-    this.bodyG.fillStyle(0xffffff, 0.55);
-    this.bodyG.fillEllipse(s * 0.05, -s * 0.45, s * 0.48, s * 0.36);
-    // Smug smirk — asymmetric arc (right side curves up more = smug)
-    this.bodyG.lineStyle(3, dark, 1);
-    this.bodyG.beginPath();
-    this.bodyG.arc(
-      s * 0.12, s * 0.42,
-      s * 0.18,
-      Phaser.Math.DegToRad(15), Phaser.Math.DegToRad(155)
-    );
-    this.bodyG.strokePath();
-    this.flipContainer.add(this.bodyG);
+    // ── Body sprite — canvas-rendered with true radial gradient + specular ──
+    // True per-pixel gradient (createRadialGradient + source-atop composite) gives
+    // the smooth glossy 3D-ball look that stacked semi-transparent ellipses cannot.
+    // Rendered once into a CanvasTexture at first spawn, reused for subsequent
+    // Gunners of the same size.
+    this.bodyS = this._buildBodySprite();
+    this.flipContainer.add(this.bodyS);
 
     // ── Charge rings — drawn once at alpha=0; pulsed during attacks ──────
     this.chargeRingsG = this.scene.add.graphics();
@@ -130,18 +102,103 @@ export default class Gunner extends BossBase {
     this.sideEye2G.y =  s * 0.28;
     this.flipContainer.add(this.sideEye2G);
 
-    // ── Hit flash overlay — solid purple silhouette, alpha=0 at rest ──────
-    // Slightly oversized so it covers all sub-shape edges when flashed,
-    // without revealing the layered construction through semi-transparency.
-    this.hitFlashG = this.scene.add.graphics();
-    this.hitFlashG.fillStyle(0xcc44ff, 1);
-    this.hitFlashG.fillEllipse(0, 0, s * 2.1, s * 1.9);
-    this.hitFlashG.fillEllipse(0, s * 0.18, s * 1.85, s * 1.0);
-    this.hitFlashG.fillEllipse(-s * 0.72, s * 0.68, s * 0.32, s * 0.50);
-    this.hitFlashG.fillEllipse( s * 0.0,  s * 0.80, s * 0.28, s * 0.46);
-    this.hitFlashG.fillEllipse( s * 0.68, s * 0.65, s * 0.32, s * 0.50);
-    this.hitFlashG.alpha = 0;
-    this.flipContainer.add(this.hitFlashG);
+    // ── Hit flash overlay — same body silhouette via setTintFill, alpha=0 at rest ──
+    // Reuses the body sprite's texture for a pixel-perfect silhouette match.
+    // setTintFill replaces all non-transparent pixels with a single colour, so
+    // the gradient and smirk disappear during the flash (same intent as before).
+    this.hitFlashS = this.scene.add.sprite(0, 0, this.bodyS.texture.key);
+    this.hitFlashS.setOrigin(0.5, 0.5);
+    this.hitFlashS.setTintFill(0xcc44ff);
+    this.hitFlashS.alpha = 0;
+    this.flipContainer.add(this.hitFlashS);
+  }
+
+  /**
+   * Build (or fetch from cache) the gradient-shaded body sprite.
+   *
+   * Procedure:
+   *   1. Paint the full body silhouette (main blob + belly + 3 tentacle stubs)
+   *      in the base body colour onto an offscreen canvas
+   *   2. Switch to `source-atop` composite mode — subsequent draws only affect
+   *      pixels that already exist (i.e. they stay inside the silhouette)
+   *   3. Paint a large radial gradient: bright at top-centre → transparent
+   *      mid-body → dark at lower edge. This gives the smooth top-lit gradient
+   *      that ellipse-stacking can't produce.
+   *   4. Paint a small specular highlight gradient (bright white spot at top)
+   *   5. Stroke the smirk arc as a feature on top
+   *   6. Refresh the Phaser CanvasTexture so the GPU sees the result
+   */
+  _buildBodySprite() {
+    const s   = this.size;
+    const key = `gunner-body-${s}`;
+    // Canvas: tight bounding box with a small padding so anti-aliased edges
+    // are not clipped. Main blob is s*2.0 wide, tentacle stubs reach y ≈ s*1.0.
+    const cw  = Math.ceil(s * 2.4);
+    const ch  = Math.ceil(s * 2.4);
+
+    if (!this.scene.textures.exists(key)) {
+      const tex = this.scene.textures.createCanvas(key, cw, ch);
+      const ctx = tex.getContext();
+      const cx  = cw / 2;
+      const cy  = ch / 2;
+
+      const toHex = (c) => '#' + c.toString(16).padStart(6, '0');
+      const ell   = (ex, ey, rx, ry) => {
+        ctx.beginPath();
+        ctx.ellipse(cx + ex, cy + ey, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      };
+
+      // ── 1. Body silhouette in base colour ──
+      ctx.fillStyle = toHex(this.color);
+      ell(0,           0,         s * 1.00, s * 0.90);   // main blob
+      ell(0,           s * 0.18,  s * 0.875, s * 0.45);  // saggy belly
+      ell(-s * 0.72,   s * 0.68,  s * 0.14, s * 0.22);   // tentacle L
+      ell( 0,          s * 0.80,  s * 0.12, s * 0.20);   // tentacle M
+      ell( s * 0.72,   s * 0.68,  s * 0.14, s * 0.22);   // tentacle R
+
+      // ── 2. Gradient overlay — only affects existing (body) pixels ──
+      ctx.globalCompositeOperation = 'source-atop';
+
+      const grad = ctx.createRadialGradient(
+        cx,            cy - s * 0.65, 0,              // inner: top-centre light source
+        cx,            cy + s * 0.30, s * 1.35        // outer: large, biased downward
+      );
+      grad.addColorStop(0.00, 'rgba(255, 255, 255, 0.45)');
+      grad.addColorStop(0.30, 'rgba(255, 255, 255, 0)');
+      grad.addColorStop(0.65, 'rgba(20,  0,  40, 0.25)');
+      grad.addColorStop(1.00, 'rgba(20,  0,  40, 0.65)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, cw, ch);
+
+      // ── 3. Specular highlight — small glossy white spot near the top ──
+      const spec = ctx.createRadialGradient(
+        cx,            cy - s * 0.55, 0,
+        cx,            cy - s * 0.55, s * 0.30
+      );
+      spec.addColorStop(0.00, 'rgba(255, 255, 255, 0.85)');
+      spec.addColorStop(0.50, 'rgba(255, 255, 255, 0.25)');
+      spec.addColorStop(1.00, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = spec;
+      ctx.fillRect(0, 0, cw, ch);
+
+      // ── 4. Smirk arc — drawn over the gradient as a feature ──
+      ctx.strokeStyle = toHex(0x3d1558);
+      ctx.lineWidth   = 3;
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      // 15° → 155° passes through 90° (downward in Y-down canvas) = smile
+      ctx.arc(cx + s * 0.12, cy + s * 0.42, s * 0.18,
+              Phaser.Math.DegToRad(15), Phaser.Math.DegToRad(155));
+      ctx.stroke();
+
+      ctx.globalCompositeOperation = 'source-over';
+      tex.refresh();
+    }
+
+    const sprite = this.scene.add.sprite(0, 0, key);
+    sprite.setOrigin(0.5, 0.5);
+    return sprite;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -151,11 +208,11 @@ export default class Gunner extends BossBase {
   _animIdleStart() {
     // Gentle floating bob
     this._idleTweens.push(this.scene.tweens.add({
-      targets: this.bodyG, scaleY: 1.04,
+      targets: this.bodyS, scaleY: 1.04,
       duration: 700, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
     }));
     this._idleTweens.push(this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 0.97,
+      targets: this.bodyS, scaleX: 0.97,
       duration: 700, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
     }));
     // Charge rings barely visible at rest
@@ -196,7 +253,7 @@ export default class Gunner extends BossBase {
       duration: 200, ease: 'Quad.easeOut',
     });
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 0.94, scaleY: 1.06,
+      targets: this.bodyS, scaleX: 0.94, scaleY: 1.06,
       duration: 200, ease: 'Quad.easeIn',
     });
   }
@@ -211,7 +268,7 @@ export default class Gunner extends BossBase {
       duration: 350, ease: 'Quad.easeOut',
     });
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 1, scaleY: 1,
+      targets: this.bodyS, scaleX: 1, scaleY: 1,
       duration: 250, ease: 'Elastic.easeOut',
     });
     this.scene.tweens.add({
@@ -314,13 +371,13 @@ export default class Gunner extends BossBase {
   _animHurt() {
     if (!this.alive) return;
     // Solid colour flash — no alpha dip on container so sub-shapes stay hidden
-    this.hitFlashG.setAlpha(0.80);
+    this.hitFlashS.setAlpha(0.80);
     this.scene.tweens.add({
-      targets: this.hitFlashG, alpha: 0,
+      targets: this.hitFlashS, alpha: 0,
       duration: 220, ease: 'Quad.easeOut',
     });
     this.scene.tweens.add({
-      targets: this.bodyG, scaleX: 1.18, scaleY: 1.18,
+      targets: this.bodyS, scaleX: 1.18, scaleY: 1.18,
       duration: 70, yoyo: true, ease: 'Back.easeOut',
     });
     this.scene.tweens.add({
@@ -461,7 +518,7 @@ export default class Gunner extends BossBase {
     super.takeDamage(amount);
     if (!this.alive) return;
     // BossBase sets container.alpha = 0.4 — cancel immediately so the
-    // hitFlashG overlay handles feedback without revealing sub-shapes.
+    // hitFlashS overlay handles feedback without revealing sub-shapes.
     this.container.setAlpha(1);
     this._animHurt();
   }
