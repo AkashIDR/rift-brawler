@@ -161,7 +161,7 @@ export default class Gunner extends BossBase {
       ctx.globalCompositeOperation = 'source-atop';
 
       const grad = ctx.createRadialGradient(
-        cx,            cy - s * 0.65, 0,              // inner: top-centre light source
+        cx - s * 0.08, cy - s * 0.50, 0,              // inner: biased left+toward eye
         cx,            cy + s * 0.30, s * 1.35        // outer: large, biased downward
       );
       grad.addColorStop(0.00, 'rgba(255, 255, 255, 0.45)');
@@ -171,10 +171,11 @@ export default class Gunner extends BossBase {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, cw, ch);
 
-      // ── 3. Specular highlight — small glossy white spot near the top ──
+      // ── 3. Specular highlight — centered on the main eye, making it the
+      //       physically highest / most luminous point of the body ──────────
       const spec = ctx.createRadialGradient(
-        cx,            cy - s * 0.55, 0,
-        cx,            cy - s * 0.55, s * 0.30
+        cx - s * 0.10, cy - s * 0.14, 0,              // main eye position in canvas coords
+        cx - s * 0.10, cy - s * 0.14, s * 0.35        // slightly wider than before
       );
       spec.addColorStop(0.00, 'rgba(255, 255, 255, 0.85)');
       spec.addColorStop(0.50, 'rgba(255, 255, 255, 0.25)');
