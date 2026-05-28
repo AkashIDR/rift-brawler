@@ -162,7 +162,7 @@ export default class Gunner extends BossBase {
       ctx.globalCompositeOperation = 'source-atop';
 
       const grad = ctx.createRadialGradient(
-        cx - s * 0.08, cy - s * 0.50, 0,              // inner: biased left+toward eye
+        cx,            cy - s * 0.70, 0,              // inner: top-of-head, above the eye
         cx,            cy + s * 0.30, s * 1.35        // outer: large, biased downward
       );
       grad.addColorStop(0.00, 'rgba(255, 255, 255, 0.45)');
@@ -216,7 +216,7 @@ export default class Gunner extends BossBase {
       // Plain circular gradient — square canvas, no transform needed; renders circular
       // Radius s*0.72 → visible ring width = (0.72-0.30)*s ≈ 14px around the eye sclera
       const spec = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 0.72);
-      spec.addColorStop(0.00, 'rgba(255, 255, 255, 0.85)');
+      spec.addColorStop(0.00, 'rgba(255, 255, 255, 0.65)');
       spec.addColorStop(0.50, 'rgba(255, 255, 255, 0.25)');
       spec.addColorStop(1.00, 'rgba(255, 255, 255, 0)');
       ctx.fillStyle = spec;
