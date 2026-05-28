@@ -39,13 +39,14 @@ export default class Gunner extends BossBase {
     this.flipContainer = this.scene.add.container(0, 0);
     this.container.add(this.flipContainer);
 
-    // ── Body sprite — canvas-rendered with true radial gradient + specular ──
-    // True per-pixel gradient (createRadialGradient + source-atop composite) gives
-    // the smooth glossy 3D-ball look that stacked semi-transparent ellipses cannot.
-    // Rendered once into a CanvasTexture at first spawn, reused for subsequent
-    // Gunners of the same size.
+    // ── Body sprite — canvas-rendered with true radial gradient ─────────────
     this.bodyS = this._buildBodySprite();
     this.flipContainer.add(this.bodyS);
+
+    // ── Specular glow — separate sprite so body idle scale-tweens can't
+    //    distort it from circular to oval at runtime ───────────────────────
+    this.specularS = this._buildSpecularSprite();
+    this.flipContainer.add(this.specularS);
 
     // ── Charge rings — drawn once at alpha=0; pulsed during attacks ──────
     this.chargeRingsG = this.scene.add.graphics();
@@ -171,21 +172,9 @@ export default class Gunner extends BossBase {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, cw, ch);
 
-      // ── 3. Specular highlight — circular bump centered at the main eye ──────
-      // The body ellipse is wider than tall (rx=s*1.0, ry=s*0.9, aspect≈1.11).
-      // A plain circular radialGradient clipped by that body appears oval
-      // (stretched horizontally). Fix: compress the canvas X axis by the inverse
-      // aspect ratio before drawing, so the result reads as circular.
-      ctx.save();
-      ctx.translate(cx - s * 0.10, cy - s * 0.04);  // move origin to eye position
-      ctx.scale(0.90, 1.0);                           // compress X by 1/1.11 ≈ 0.90
-      const spec = ctx.createRadialGradient(0, 0, 0, 0, 0, s * 0.42);
-      spec.addColorStop(0.00, 'rgba(255, 255, 255, 0.85)');
-      spec.addColorStop(0.50, 'rgba(255, 255, 255, 0.25)');
-      spec.addColorStop(1.00, 'rgba(255, 255, 255, 0)');
-      ctx.fillStyle = spec;
-      ctx.fillRect(-cw * 1.5, -ch, cw * 3, ch * 2);  // generously cover full canvas
-      ctx.restore();
+      // Specular is NOT baked here — it lives on a separate sprite (specularS)
+      // so that the body's idle scale-bob tweens (scaleX: 0.97, scaleY: 1.04)
+      // cannot distort it from circular into an oval at runtime.
 
       // ── 4. Smirk arc — drawn over the gradient as a feature ──
       ctx.strokeStyle = toHex(0x3d1558);
@@ -203,6 +192,41 @@ export default class Gunner extends BossBase {
 
     const sprite = this.scene.add.sprite(0, 0, key);
     sprite.setOrigin(0.5, 0.5);
+    return sprite;
+  }
+
+  /**
+   * Separate specular glow sprite — NOT inside the body texture.
+   *
+   * Keeping it separate means the body's idle bob tweens (scaleX 0.97, scaleY 1.04)
+   * cannot distort it. A circular gradient on a square canvas stays circular on
+   * screen regardless of how the body sprite is animated.
+   */
+  _buildSpecularSprite() {
+    const s   = this.size;
+    const key = `gunner-specular-${s}`;
+    const dim = Math.ceil(s * 1.0);   // square canvas — glow fits within s*0.42 radius
+
+    if (!this.scene.textures.exists(key)) {
+      const tex = this.scene.textures.createCanvas(key, dim, dim);
+      const ctx = tex.getContext();
+      const cx  = dim / 2;
+      const cy  = dim / 2;
+
+      // Plain circular gradient — square canvas, no transform needed; renders circular
+      const spec = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 0.42);
+      spec.addColorStop(0.00, 'rgba(255, 255, 255, 0.85)');
+      spec.addColorStop(0.50, 'rgba(255, 255, 255, 0.25)');
+      spec.addColorStop(1.00, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = spec;
+      ctx.fillRect(0, 0, dim, dim);
+      tex.refresh();
+    }
+
+    const sprite = this.scene.add.sprite(0, 0, key);
+    sprite.setOrigin(0.5, 0.5);
+    sprite.x = -s * 0.10;   // eye horizontal offset
+    sprite.y = -s * 0.04;   // slightly below eye center so halo rings the eye
     return sprite;
   }
 
