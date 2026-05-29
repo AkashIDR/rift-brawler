@@ -5,71 +5,453 @@ import { BOSS_CONFIGS } from '../../config/bossConfig.js';
 export default class Stomper extends BossBase {
   constructor(scene, x, y, level) {
     super(scene, x, y, BOSS_CONFIGS.stomper, level);
-    this._bobPhase = 0;
+    this._idleTweens = [];
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // BODY CONSTRUCTION
+  // ─────────────────────────────────────────────────────────────────────────
 
   _buildGraphics() {
-    this.g = this.scene.add.graphics();
-    this.container.add(this.g);
-    this._redraw(0);
+    this._buildBody();
+    this._animIdleStart();
   }
 
-  _redraw(squish = 0) {
-    this.g.clear();
+  _buildBody() {
+    // _idleTweens must be initialised here — BossBase calls _buildGraphics()
+    // from within super(), before the Stomper constructor body runs.
+    this._idleTweens = [];
     const s = this.size;
-    const sq = squish; // squish on stomp (positive = shorter/wider)
 
-    // Shadow
-    this.g.fillStyle(0x000000, 0.2);
-    this.g.fillEllipse(5, s - 6 + sq, s * 2.2, 14 + sq * 2);
+    this.flipContainer = this.scene.add.container(0, 0);
+    this.container.add(this.flipContainer);
 
-    // Rocky crown spikes
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2;
-      const r1 = s * 1.05, r2 = s * 1.4;
-      const ax = Math.cos(a) * r1, ay = Math.sin(a) * r1;
-      const bx = Math.cos(a + 0.3) * r2, by = Math.sin(a + 0.3) * r2;
-      const cx2 = Math.cos(a + 0.6) * r1, cy2 = Math.sin(a + 0.6) * r1;
-      this.g.fillStyle(0x1a6b40, 1);
-      this.g.fillTriangle(ax, ay - sq * 0.3, bx, by - sq * 0.3, cx2, cy2 - sq * 0.3);
-    }
+    // ── Body sprite (baked canvas gradient) ──────────────────────────────
+    this.bodyS = this._buildBodySprite();
+    this.flipContainer.add(this.bodyS);
 
-    // Main body (circle, slightly squished on stomp)
-    this.g.fillStyle(this.color, 1);
-    this.g.fillEllipse(0, sq * 0.3, s * 2, s * 2 - sq * 0.6);
-    this.g.lineStyle(4, 0x145a32, 1);
-    this.g.strokeEllipse(0, sq * 0.3, s * 2, s * 2 - sq * 0.6);
+    // ── Eyes — wide rectangular, symmetrical (brutish blank stare) ───────
+    this.eyeLeftG  = this._buildEye(s);
+    this.eyeRightG = this._buildEye(s);
+    this.eyeLeftG.x  = -s * 0.28;
+    this.eyeRightG.x =  s * 0.28;
+    this.eyeLeftG.y  = this.eyeRightG.y = -s * 0.16;
+    this.flipContainer.add(this.eyeLeftG);
+    this.flipContainer.add(this.eyeRightG);
 
-    // Rock texture patches
-    this.g.fillStyle(0x1e8449, 1);
-    this.g.fillRoundedRect(-s * 0.5, -s * 0.4, s * 0.4, s * 0.3, 3);
-    this.g.fillRoundedRect(s * 0.1, -s * 0.2, s * 0.35, s * 0.25, 3);
+    // ── Lower jaw — y-translates downward to open the mouth ───────────────
+    // Origin at local y=0 (upper-lip hinge); jaw content extends downward.
+    // At rest the jaw sits just below the baked upper teeth row.
+    this._jawRestY = s * 0.22;
+    this.lowerJawG = this.scene.add.graphics();
+    this.lowerJawG.x = 0;
+    this.lowerJawG.y = this._jawRestY;
+    // Dark gum bar
+    this.lowerJawG.fillStyle(0x0a1f0a, 1);
+    this.lowerJawG.fillRoundedRect(-s * 0.42, 0, s * 0.84, s * 0.18, s * 0.04);
+    // Four bottom teeth pointing upward (drawn above y=0)
+    this.lowerJawG.fillStyle(0xd4c49a, 1);
+    this.lowerJawG.fillRoundedRect(-s * 0.36, -s * 0.14, s * 0.16, s * 0.15, s * 0.03);
+    this.lowerJawG.fillRoundedRect(-s * 0.13, -s * 0.17, s * 0.16, s * 0.18, s * 0.03);
+    this.lowerJawG.fillRoundedRect( s * 0.10, -s * 0.17, s * 0.16, s * 0.18, s * 0.03);
+    this.lowerJawG.fillRoundedRect( s * 0.32, -s * 0.14, s * 0.16, s * 0.15, s * 0.03);
+    this.flipContainer.add(this.lowerJawG);
 
-    // Face: two small angry eyes + furrowed brow
-    this.g.fillStyle(0xffff00, 1);
-    this.g.fillRect(-s * 0.35, -s * 0.15, s * 0.25, s * 0.18);
-    this.g.fillRect(s * 0.1, -s * 0.15, s * 0.25, s * 0.18);
-    // Brow
-    this.g.lineStyle(4, 0x0a3d20, 1);
-    this.g.lineBetween(-s * 0.4, -s * 0.28, -s * 0.1, -s * 0.2);
-    this.g.lineBetween(s * 0.4, -s * 0.28, s * 0.1, -s * 0.2);
-
-    if (this.enraged) {
-      this.g.lineStyle(4, 0x00ff77, 0.4);
-      this.g.strokeCircle(0, 0, s + 8);
-    }
+    // ── Hit flash overlay ─────────────────────────────────────────────────
+    this.hitFlashBodyS = this.scene.add.sprite(0, 0, `stomper-body-${s}`);
+    this.hitFlashBodyS.setOrigin(0.5, 0.5);
+    this.hitFlashBodyS.setTintFill(0xff4400);
+    this.hitFlashBodyS.alpha = 0;
+    this.flipContainer.add(this.hitFlashBodyS);
   }
 
-  _getAttackPool() { return ['bigStomp', 'quakeLine']; }
+  _buildEye(s) {
+    const g = this.scene.add.graphics();
+    // White sclera
+    g.fillStyle(0xffffff, 1);
+    g.fillRect(-s * 0.20, -s * 0.12, s * 0.40, s * 0.22);
+    // Yellow-green iris
+    g.fillStyle(0xccff00, 1);
+    g.fillRect(-s * 0.14, -s * 0.10, s * 0.28, s * 0.18);
+    // Vertical slit pupil
+    g.fillStyle(0x111111, 1);
+    g.fillRect(-s * 0.06, -s * 0.10, s * 0.12, s * 0.18);
+    // Glassy specular
+    g.fillStyle(0xffffff, 0.80);
+    g.fillCircle(-s * 0.08, -s * 0.07, s * 0.05);
+    return g;
+  }
+
+  _buildBodySprite() {
+    const s   = this.size;
+    const key = `stomper-body-${s}`;
+    const cw  = Math.ceil(s * 3.2);
+    const ch  = Math.ceil(s * 2.8);
+
+    if (!this.scene.textures.exists(key)) {
+      const tex = this.scene.textures.createCanvas(key, cw, ch);
+      const ctx = tex.getContext();
+      const cx  = cw / 2;
+      const cy  = ch / 2;
+      const colorCSS = '#' + this.color.toString(16).padStart(6, '0');
+
+      const fillEll = (ex, ey, rx, ry) => {
+        ctx.beginPath();
+        ctx.ellipse(cx + ex, cy + ey, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      };
+
+      // 1. Body silhouette — main mass, belly, four thick legs
+      ctx.fillStyle = colorCSS;
+      fillEll(0,          0,        s * 1.20, s * 0.85);  // main mass (wide squat)
+      fillEll(0,          s * 0.38, s * 1.05, s * 0.52);  // belly bulge
+      fillEll(-s * 0.72,  s * 0.68, s * 0.40, s * 0.44);  // left outer leg
+      fillEll(-s * 0.28,  s * 0.75, s * 0.30, s * 0.38);  // left inner leg
+      fillEll( s * 0.28,  s * 0.75, s * 0.30, s * 0.38);  // right inner leg
+      fillEll( s * 0.72,  s * 0.68, s * 0.40, s * 0.44);  // right outer leg
+
+      // 2. Three crown horns (darker green, baked before gradient so they're lit too)
+      ctx.fillStyle = '#1a5c32';
+      // Central horn (straight up)
+      ctx.save();
+      ctx.translate(cx, cy - s * 0.84);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s * 0.07, s * 0.19, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      // Left flanking horn (angled out-left ~18°)
+      ctx.save();
+      ctx.translate(cx - s * 0.44, cy - s * 0.72);
+      ctx.rotate(-Math.PI / 10);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s * 0.06, s * 0.15, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      // Right flanking horn (angled out-right ~18°)
+      ctx.save();
+      ctx.translate(cx + s * 0.44, cy - s * 0.72);
+      ctx.rotate(Math.PI / 10);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, s * 0.06, s * 0.15, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // 3. Gradient — source-atop clips to silhouette pixels only
+      ctx.globalCompositeOperation = 'source-atop';
+
+      const ar = 1.41;   // body width/height ratio (s*1.20 / s*0.85)
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(ar, 1.0);
+      const grad = ctx.createRadialGradient(0, -s * 0.50, 0, 0, -s * 0.28, s * 0.92);
+      grad.addColorStop(0.00, 'rgba(180, 255, 80, 0.52)');  // lime-green sunlit crown
+      grad.addColorStop(0.30, 'rgba(100, 210, 40, 0.14)');  // medium green fade
+      grad.addColorStop(0.60, 'rgba(0, 0, 0, 0)');           // transparent mid
+      grad.addColorStop(1.00, 'rgba(0, 15, 0, 0.65)');       // very dark earth-shadow
+      ctx.fillStyle = grad;
+      ctx.fillRect(-cw, -ch, cw * 2, ch * 2);
+      ctx.restore();
+
+      // 4. Angry V-brow lines (still source-atop)
+      ctx.strokeStyle = '#0a3d20';
+      ctx.lineWidth   = s * 0.09;
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.52, cy - s * 0.44);
+      ctx.lineTo(cx - s * 0.10, cy - s * 0.28);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 0.10, cy - s * 0.28);
+      ctx.lineTo(cx + s * 0.52, cy - s * 0.44);
+      ctx.stroke();
+
+      // 5. Restore, then draw baked upper teeth row
+      ctx.globalCompositeOperation = 'source-over';
+
+      // Upper teeth — four bone-coloured rects hanging from the upper lip
+      ctx.fillStyle = '#d4c49a';
+      const toothY = cy + s * 0.12;
+      const teeth  = [-s * 0.30, -s * 0.10, s * 0.10, s * 0.30];
+      for (const tx of teeth) {
+        ctx.beginPath();
+        ctx.roundRect(cx + tx - s * 0.07, toothY, s * 0.14, s * 0.16, s * 0.03);
+        ctx.fill();
+      }
+
+      tex.refresh();
+    }
+
+    const sprite = this.scene.add.sprite(0, 0, key);
+    sprite.setOrigin(0.5, 0.5);
+    return sprite;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ANIMATION HELPERS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  _animIdleStart() {
+    // Heavy breathing — slow, weighted scale pulse
+    this._idleTweens.push(this.scene.tweens.add({
+      targets: this.bodyS, scaleY: 1.04,
+      duration: 1400, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+    }));
+    this._idleTweens.push(this.scene.tweens.add({
+      targets: this.bodyS, scaleX: 0.98,
+      duration: 1400, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+    }));
+    // Lazy jaw grind
+    this._idleTweens.push(this.scene.tweens.add({
+      targets: this.lowerJawG, y: this._jawRestY + this.size * 0.10,
+      duration: 2200, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+    }));
+    this._scheduleBlink();
+  }
+
+  _scheduleBlink() {
+    if (!this.alive) return;
+    const delay = Phaser.Math.Between(2800, 5500);
+    this.scene.time.delayedCall(delay, () => {
+      this._animBlink();
+      this._scheduleBlink();
+    });
+  }
+
+  _animBlink() {
+    if (!this.alive) return;
+    this.scene.tweens.add({
+      targets: [this.eyeLeftG, this.eyeRightG],
+      scaleY: 0.10,
+      duration: 80, yoyo: true, ease: 'Quad.easeIn',
+    });
+  }
+
+  // Stomp windup — body crouches low (wide flat pancake), jaw drops
+  _animStompWindup() {
+    const s = this.size;
+    this.scene.tweens.add({
+      targets: this.bodyS, scaleX: 1.45, scaleY: 0.58,
+      duration: 180, ease: 'Cubic.easeIn',
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeLeftG, this.eyeRightG], scaleY: 0.40,
+      duration: 180, ease: 'Cubic.easeIn',
+    });
+    this.scene.tweens.add({
+      targets: this.lowerJawG, y: this._jawRestY + s * 0.25,
+      duration: 180, ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.flipContainer, y: 8,
+      duration: 180, ease: 'Cubic.easeIn',
+    });
+  }
+
+  // Stomp impact — elastic bounce back to rest
+  _animStompImpact() {
+    this.scene.tweens.add({
+      targets: this.bodyS, scaleX: 1, scaleY: 1,
+      duration: 400, ease: 'Elastic.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeLeftG, this.eyeRightG], scaleY: 1,
+      duration: 400, ease: 'Elastic.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.lowerJawG, y: this._jawRestY,
+      duration: 400, ease: 'Elastic.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.flipContainer, y: 0,
+      duration: 400, ease: 'Elastic.easeOut',
+    });
+  }
+
+  // Leap windup — body stretches tall (gathering tension)
+  _animLeapWindup() {
+    const s = this.size;
+    this.scene.tweens.add({
+      targets: this.bodyS, scaleX: 0.78, scaleY: 1.30,
+      duration: 250, ease: 'Cubic.easeIn',
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeLeftG, this.eyeRightG], scaleX: 1.20, scaleY: 1.20,
+      duration: 250, ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.lowerJawG, y: this._jawRestY + s * 0.32,
+      duration: 250, ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.flipContainer, y: -10,
+      duration: 250, ease: 'Cubic.easeIn',
+    });
+  }
+
+  // Leap landing — massive impact squish then elastic recovery
+  _animLeapLanding() {
+    const s = this.size;
+    // Phase 1: slam squish (fast)
+    this.scene.tweens.add({
+      targets: this.bodyS, scaleX: 1.55, scaleY: 0.45,
+      duration: 100, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: this.bodyS, scaleX: 1, scaleY: 1,
+          duration: 420, ease: 'Elastic.easeOut',
+        });
+      },
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeLeftG, this.eyeRightG], scaleX: 1, scaleY: 0.30,
+      duration: 100, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: [this.eyeLeftG, this.eyeRightG], scaleX: 1, scaleY: 1,
+          duration: 420, ease: 'Elastic.easeOut',
+        });
+      },
+    });
+    this.scene.tweens.add({
+      targets: this.lowerJawG, y: this._jawRestY + s * 0.15,
+      duration: 100, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: this.lowerJawG, y: this._jawRestY,
+          duration: 420, ease: 'Elastic.easeOut',
+        });
+      },
+    });
+    this.scene.tweens.add({
+      targets: this.flipContainer, y: 10,
+      duration: 100, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: this.flipContainer, y: 0,
+          duration: 420, ease: 'Elastic.easeOut',
+        });
+      },
+    });
+  }
+
+  // Hurt flinch — solid colour flash + scale pop
+  _animHurt() {
+    if (!this.alive) return;
+    this.hitFlashBodyS.setAlpha(0.80);
+    this.scene.tweens.add({
+      targets: this.hitFlashBodyS, alpha: 0,
+      duration: 200, ease: 'Quad.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.bodyS, scaleX: 1.14, scaleY: 1.14,
+      duration: 70, yoyo: true, ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.flipContainer, x: Phaser.Math.Between(-5, 5),
+      duration: 70, yoyo: true, ease: 'Sine.easeInOut',
+    });
+  }
+
+  // Enrage burst — pulsing teal ring appears outside body
+  _animEnrageBurst() {
+    if (!this.alive) return;
+    // Ring added to outer container so it doesn't squish with flipContainer
+    this.enrageRingG = this.scene.add.graphics();
+    this.enrageRingG.lineStyle(4, this.accentColor, 0.55);
+    this.enrageRingG.strokeCircle(0, 0, this.size + 10);
+    this.container.add(this.enrageRingG);
+    this.scene.tweens.add({
+      targets: this.enrageRingG, alpha: 0.20,
+      duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+    this.scene.events.once('shutdown', () => {
+      if (this.enrageRingG?.active) this.enrageRingG.destroy();
+    });
+  }
+
+  // Death — stop idle tweens, spin-shrink, fade features, then explode
+  _animDeath(onComplete) {
+    this._idleTweens.forEach(tw => { if (tw && tw.isPlaying()) tw.stop(); });
+    this._idleTweens = [];
+    this.scene.tweens.add({
+      targets: this.container,
+      rotation: this.container.rotation + Math.PI * 3,
+      scaleX: 0, scaleY: 0,
+      duration: 700, ease: 'Cubic.easeIn',
+      onComplete,
+    });
+    this.scene.tweens.add({
+      targets: [this.eyeLeftG, this.eyeRightG, this.lowerJawG],
+      alpha: 0, duration: 360, ease: 'Quad.easeIn',
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // OVERRIDES
+  // ─────────────────────────────────────────────────────────────────────────
+
+  takeDamage(amount) {
+    super.takeDamage(amount);
+    if (!this.alive) return;
+    this.container.setAlpha(1);
+    this._animHurt();
+  }
+
+  _triggerEnrage() {
+    super._triggerEnrage();
+    this._animEnrageBurst();
+  }
+
+  _die() {
+    if (!this.alive) return;
+    this.alive = false;
+    if (this.enrageRingG) { this.enrageRingG.destroy(); this.enrageRingG = null; }
+    if (this.shadowG) { this.shadowG.destroy(); this.shadowG = null; }
+
+    this._animDeath(() => {
+      for (let i = 0; i < 16; i++) {
+        const frag = this.scene.add.graphics();
+        frag.fillStyle(this.color, 1);
+        const sz = Phaser.Math.Between(6, 18);
+        frag.fillRect(-sz / 2, -sz / 2, sz, sz);
+        frag.x = this.x;
+        frag.y = this.y;
+        frag.setDepth(20);
+        const angle = (i / 16) * Math.PI * 2;
+        const dist  = Phaser.Math.Between(50, 150);
+        this.scene.tweens.add({
+          targets: frag,
+          x: this.x + Math.cos(angle) * dist,
+          y: this.y + Math.sin(angle) * dist,
+          alpha: 0, angle: Phaser.Math.Between(-360, 360),
+          duration: Phaser.Math.Between(500, 900),
+          ease: 'Quad.easeOut',
+          onComplete: () => frag.destroy(),
+        });
+      }
+      this.container.destroy(true);
+      if (this.onDeath) this.onDeath();
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ATTACKS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  _getAttackPool()    { return ['bigStomp', 'quakeLine']; }
   _getEnrageAttacks() { return ['tremorField', 'leapSlam']; }
 
   _runAttack(name) {
     switch (name) {
-      case 'bigStomp': this._attackBigStomp(); break;
-      case 'quakeLine': this._attackQuakeLine(); break;
+      case 'bigStomp':    this._attackBigStomp();    break;
+      case 'quakeLine':   this._attackQuakeLine();   break;
       case 'tremorField': this._attackTremorField(); break;
-      case 'leapSlam': this._attackLeapSlam(); break;
-      default: this._endAttack();
+      case 'leapSlam':    this._attackLeapSlam();    break;
+      default:            this._endAttack();
     }
   }
 
@@ -79,27 +461,20 @@ export default class Stomper extends BossBase {
 
     const radius = this.size * 2.53;
 
-    // Only commit if the player is actually within stomp range.
-    // If not, slip back to idle immediately (no cooldown) so the boss
-    // keeps walking toward the player instead of standing frozen.
     if (Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y) > radius) {
       this._state = 'idle';
       this._stateTimer = 300;
       return;
     }
 
+    this._animStompWindup();
     this._drawTelegraphZone(this.x, this.y, radius, this._telegraphDuration, 0x00ff77);
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
       if (!this.alive) return;
-      // Squish animation
-      this.scene.tweens.addCounter({
-        from: 0, to: 18, duration: 120, yoyo: true,
-        onUpdate: (tw) => this._redraw(tw.getValue())
-      });
+      this._animStompImpact();
       this.scene.cameras.main.shake(250, 0.0042);
 
-      // Break all obstacles inside the stomp radius
       this.scene.obstacles?.forEach(obs => {
         if (!obs.broken &&
             Phaser.Math.Distance.Between(this.x, this.y, obs.x, obs.y) < radius + obs.baseRadius)
@@ -181,7 +556,6 @@ export default class Stomper extends BossBase {
         pts.push({ x: sx + cos * t * lineLen + px * jitter, y: sy + sin * t * lineLen + py * jitter });
       }
 
-      // Glow layers for main crack
       [{ w: 24, a: 0.12, c: 0x00ff77 }, { w: 10, a: 0.45, c: 0x00ff77 }, { w: 2.5, a: 0.95, c: 0xaaffcc }]
         .forEach(({ w, a, c }) => {
           g.lineStyle(w, c, a);
@@ -202,7 +576,6 @@ export default class Stomper extends BossBase {
         g.lineStyle(7, 0x00ff77, 0.28); g.lineBetween(bx, by, bex, bey);
         g.lineStyle(2, 0xaaffcc, 0.75); g.lineBetween(bx, by, bex, bey);
 
-        // Occasional secondary split off the branch
         if (Math.random() < 0.5) {
           const bLen2 = bLen * 0.5;
           const bAng2 = bAng + (Math.random() - 0.5) * 0.6;
@@ -211,11 +584,9 @@ export default class Stomper extends BossBase {
         }
       }
 
-      // Linger then fade
       this.scene.tweens.add({ targets: g, alpha: 0, duration: 350, delay: 950, onComplete: () => g.destroy() });
       this.scene.events.once('shutdown', () => { if (g.active) g.destroy(); });
 
-      // Hit detection — 200px wide (halfWidth = 100)
       const dx = ex - sx, dy = ey - sy;
       const lenSq = dx * dx + dy * dy;
 
@@ -250,8 +621,6 @@ export default class Stomper extends BossBase {
     const count = this.enraged ? 6 : 4;
     const zones = [];
 
-    // Scatter zones within 320px of the player — all guaranteed on-screen.
-    // Min distance 60px from player center so they're never spawned underfoot.
     const SCATTER_MAX = 320;
     const SCATTER_MIN = 60;
 
@@ -274,7 +643,6 @@ export default class Stomper extends BossBase {
       this.scene.cameras.main.shake(300, 0.0036);
       const p = this.scene.player;
       zones.forEach(z => {
-        // Break obstacles inside this tremor zone
         this.scene.obstacles?.forEach(obs => {
           if (!obs.broken &&
               Phaser.Math.Distance.Between(obs.x, obs.y, z.x, z.y) < z.r + obs.baseRadius)
@@ -286,7 +654,6 @@ export default class Stomper extends BossBase {
             p.takeDamage(this.damage * 0.7);
         }
 
-        // Staggered seismic rings — 3 rings per zone, each thicker as it expands outward
         for (let ri = 0; ri < 3; ri++) {
           const ring = this.scene.add.graphics();
           ring.setDepth(7);
@@ -314,18 +681,16 @@ export default class Stomper extends BossBase {
     const p = this.scene.player;
     if (!p || !p.alive) { this._endAttack(); return; }
 
-    // Telegraph at player's current position
     this._drawTelegraphZone(p.x, p.y, 100, this._telegraphDuration, 0x00ff77);
+    this._animLeapWindup();
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
       if (!this.alive) return;
 
-      // Capture positions at leap start — arc is committed here
       const startX = this.x, startY = this.y;
       const targetX = p.x, targetY = p.y;
-      const ARC_HEIGHT = 200; // peak height above the midpoint
+      const ARC_HEIGHT = 200;
 
-      // Parabolic arc leap — addCounter drives the position manually
       this.scene.tweens.addCounter({
         from: 0, to: 1, duration: 420, ease: 'Sine.easeIn',
         onUpdate: (tw) => {
@@ -338,15 +703,10 @@ export default class Stomper extends BossBase {
         onComplete: () => {
           const slamRadius = 120;
           this.scene.cameras.main.shake(350, 0.0054);
-          this.scene.tweens.addCounter({
-            from: 0, to: 20, duration: 150, yoyo: true,
-            onUpdate: (tw) => this._redraw(tw.getValue()),
-          });
+          this._animLeapLanding();
 
-          // Crater visual
           this._spawnCrater(this.x, this.y, slamRadius);
 
-          // Break obstacles inside the slam radius
           this.scene.obstacles?.forEach(obs => {
             if (!obs.broken &&
                 Phaser.Math.Distance.Between(this.x, this.y, obs.x, obs.y) < slamRadius + obs.baseRadius)
@@ -357,6 +717,7 @@ export default class Stomper extends BossBase {
             if (Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y) < slamRadius)
               p.takeDamage(this.damage * 1.2);
           }
+
           this._endAttack();
         },
       });
@@ -364,30 +725,17 @@ export default class Stomper extends BossBase {
   }
 
   _spawnCrater(cx, cy, radius) {
-    // Position the graphics object at the crater center so scale/tween
-    // always transforms around (cx, cy) — never around world origin.
     const g = this.scene.add.graphics();
     g.x = cx; g.y = cy;
     g.setDepth(6);
     g.setScale(0);
 
-    // Layer 1 — pit floor: near-black fill gives the hole its darkness
     g.fillStyle(0x0f0705, 0.95); g.fillCircle(0, 0, radius);
-
-    // Layer 2 — inner floor: slightly lighter brown so the pit reads as
-    // having depth (darker outer walls, slightly lighter flat bottom)
     g.fillStyle(0x1e100a, 0.75); g.fillCircle(0, 0, radius * 0.68);
-
-    // Layer 3 — thick raised rim: displaced earth pushed up by the impact
     g.lineStyle(14, 0x5c3618, 1.0); g.strokeCircle(0, 0, radius);
-
-    // Layer 4 — rim highlight: lighter edge along the top of the rim
     g.lineStyle(2.5, 0x8a5a30, 0.70); g.strokeCircle(0, 0, radius);
-
-    // Layer 5 — outer disturbed earth ring: loose dirt scattered just outside
     g.lineStyle(5, 0x3d2010, 0.55); g.strokeCircle(0, 0, radius + 11);
 
-    // Layer 6 — 7 radial cracks from inner wall outward past the rim
     for (let i = 0; i < 7; i++) {
       const a  = (i / 7) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
       const r1 = radius * 0.30;
@@ -396,11 +744,9 @@ export default class Stomper extends BossBase {
       g.lineStyle(2, 0x5c3d28, 0.80); g.lineBetween(Math.cos(a) * r1, Math.sin(a) * r1, Math.cos(a) * r2, Math.sin(a) * r2);
     }
 
-    // Stamp open with slight overshoot — scaleY 0.82 gives top-down depth ellipse
     this.scene.tweens.add({ targets: g, scaleX: 1, scaleY: 0.82, duration: 90, ease: 'Back.easeOut' });
     this.scene.tweens.add({ targets: g, alpha: 0, duration: 400, delay: 900, onComplete: () => g.destroy() });
 
-    // Debris chunks — alternating dirt and rock colors, fly outward and spin
     for (let i = 0; i < 9; i++) {
       const a    = (i / 9) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
       const frag = this.scene.add.graphics();
@@ -426,12 +772,14 @@ export default class Stomper extends BossBase {
     this.scene.events.once('shutdown', () => { if (g.active) g.destroy(); });
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // UPDATE LOOP — movement only; no per-frame redraw
+  // ─────────────────────────────────────────────────────────────────────────
+
   update(time, delta) {
     super.update(time, delta);
     if (!this.alive) return;
-    this._bobPhase += delta / 1000;
 
-    // Slow plod toward player
     const p = this.scene.player;
     if (p && p.alive && this._state === 'idle') {
       const dist = Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y);
@@ -439,9 +787,5 @@ export default class Stomper extends BossBase {
         this._moveToward(p.x, p.y, this.moveSpeed, delta / 1000);
       }
     }
-
-    const bob = this._state === 'idle' ? Math.sin(this._bobPhase * 1.5) * 2 : 0;
-    this.container.y = this.y + bob;
-    this._redraw(0);
   }
 }
