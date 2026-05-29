@@ -529,6 +529,69 @@ export default class Stomper extends BossBase {
     });
   }
 
+  // QuakeLine windup — the arm on the attack side raises back, body leans away
+  // (recoiling before the punch). Facing left → left arm raises; right → right arm.
+  _animQuakeLineWindup(angle) {
+    const punchingLeft = Math.cos(angle) < 0;
+    const punchArm  = punchingLeft ? this.armLeftG  : this.armRightG;
+    const restArm   = punchingLeft ? this.armRightG : this.armLeftG;
+    // Punching arm raises back/up; rest arm pulls back slightly
+    this.scene.tweens.add({
+      targets: punchArm, rotation: -0.70,
+      duration: 200, ease: 'Cubic.easeIn',
+    });
+    this.scene.tweens.add({
+      targets: restArm, rotation: punchingLeft ? 0.20 : -0.20,
+      duration: 200, ease: 'Cubic.easeIn',
+    });
+    // Body leans slightly backward (opposite of attack direction)
+    this.scene.tweens.add({
+      targets: this.flipContainer,
+      x: Math.cos(angle) * -10,
+      duration: 200, ease: 'Cubic.easeIn',
+    });
+  }
+
+  // QuakeLine fire — punching arm slams forward into ground, body snaps back
+  _animQuakeLineFire(angle) {
+    const punchingLeft = Math.cos(angle) < 0;
+    const punchArm  = punchingLeft ? this.armLeftG  : this.armRightG;
+    const restArm   = punchingLeft ? this.armRightG : this.armLeftG;
+    // Punching arm slams down hard (forward + down rotation)
+    this.scene.tweens.add({
+      targets: punchArm, rotation: 0.55,
+      duration: 70, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: punchArm, rotation: 0,
+          duration: 380, ease: 'Elastic.easeOut',
+        });
+      },
+    });
+    // Rest arm returns to neutral
+    this.scene.tweens.add({
+      targets: restArm, rotation: 0,
+      duration: 380, ease: 'Elastic.easeOut',
+    });
+    // Body snaps back upright + brief squish on impact
+    this.scene.tweens.add({
+      targets: this.flipContainer, x: 0,
+      duration: 380, ease: 'Elastic.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: this.bodyS, scaleX: 1.20, scaleY: 0.82,
+      duration: 70, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: this.bodyS, scaleX: 1, scaleY: 1,
+          duration: 380, ease: 'Elastic.easeOut',
+        });
+      },
+    });
+  }
+
   // Hurt flinch — solid colour flash + scale pop + arm twitch
   _animHurt() {
     if (!this.alive) return;
@@ -556,20 +619,94 @@ export default class Stomper extends BossBase {
     });
   }
 
-  // Enrage burst — pulsing teal ring appears outside body
+  // Enrage burst — continuous earth-wisp particle spawner (same architecture as
+  // Charger's _spawnSteamWisp but recoloured for the Stomper's stone/earth theme:
+  // dark earth base → mossy green → teal accent → pale green-white tip).
   _animEnrageBurst() {
     if (!this.alive) return;
-    // Ring added to outer container so it doesn't squish with flipContainer
-    this.enrageRingG = this.scene.add.graphics();
-    this.enrageRingG.lineStyle(4, this.accentColor, 0.55);
-    this.enrageRingG.strokeCircle(0, 0, this.size + 10);
-    this.container.add(this.enrageRingG);
-    this.scene.tweens.add({
-      targets: this.enrageRingG, alpha: 0.20,
-      duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    this._wispTimer = this.scene.time.addEvent({
+      loop: true, delay: 230,
+      callback: this._spawnEarthWisp, callbackScope: this,
     });
+  }
+
+  _spawnEarthWisp() {
+    if (!this.alive) return;
+
+    // Spawn around the body edge
+    const spawnAngle = Math.random() * Math.PI * 2;
+    const r  = this.size * Phaser.Math.FloatBetween(0.50, 1.05);
+    const wx = this.x + Math.cos(spawnAngle) * r;
+    const wy = this.y + Math.sin(spawnAngle) * r;
+
+    const wH        = Phaser.Math.FloatBetween(38, 72);
+    const wW        = Phaser.Math.FloatBetween(9, 16);
+    const sineAmp   = wW * Phaser.Math.FloatBetween(0.5, 1.3);
+    const sineCycles = Phaser.Math.FloatBetween(0.7, 1.5);
+    const sinePhase = Math.random() * Math.PI * 2;
+    const NUM_SEGS  = 8;
+
+    const wisp = this.scene.add.graphics();
+
+    for (let i = 0; i < NUM_SEGS; i++) {
+      const t    = i / (NUM_SEGS - 1);
+      const segY = -t * wH;
+      const segX = Math.sin(sinePhase + t * Math.PI * sineCycles * 2) * sineAmp;
+      const segW = wW * (1 - t * 0.82);
+      const segH = segW * 1.55;
+
+      let alpha;
+      if (t < 0.12)      alpha = (t / 0.12) * 0.55;
+      else if (t < 0.70) alpha = 0.55;
+      else               alpha = (1 - t) / 0.30 * 0.55;
+
+      // Earth palette: dark soil → mossy green → teal accent → pale green-white
+      let color;
+      if (t < 0.25)      color = 0x1a3d0a;   // dark earth base
+      else if (t < 0.52) color = 0x3a8c1a;   // mossy green mid
+      else if (t < 0.78) color = this.accentColor;  // teal accent (0x1abc9c)
+      else               color = 0xaaffcc;   // pale green-white tip
+
+      wisp.fillStyle(color, alpha);
+      wisp.fillEllipse(segX, segY, segW, segH);
+    }
+
+    wisp.x = wx;
+    wisp.y = wy;
+    wisp.alpha = Phaser.Math.FloatBetween(0.50, 0.80);
+    wisp.setDepth(12);
+
+    const startX    = wx;
+    const wobbleSpd = Phaser.Math.FloatBetween(1.6, 3.8);
+    const wobbleAmp = Phaser.Math.FloatBetween(4, 12);
+    const startTime = this.scene.time.now;
+
+    const wobble = (time) => {
+      if (!wisp.active) { this.scene.events.off('update', wobble); return; }
+      wisp.x = startX + Math.sin((time - startTime) * 0.001 * wobbleSpd) * wobbleAmp;
+    };
+    this.scene.events.on('update', wobble);
+
+    const riseHeight = Phaser.Math.Between(70, 140);
+    const dur        = Phaser.Math.Between(850, 1400);
+
+    this.scene.tweens.add({
+      targets: wisp,
+      y: wy - riseHeight,
+      scaleX: Phaser.Math.FloatBetween(1.0, 1.5),
+      scaleY: Phaser.Math.FloatBetween(0.9, 1.2),
+      alpha: 0,
+      duration: dur,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.scene.events.off('update', wobble);
+        if (wisp.active) wisp.destroy();
+      },
+    });
+
     this.scene.events.once('shutdown', () => {
-      if (this.enrageRingG?.active) this.enrageRingG.destroy();
+      this.scene.events.off('update', wobble);
+      if (wisp.active) wisp.destroy();
     });
   }
 
@@ -609,7 +746,7 @@ export default class Stomper extends BossBase {
   _die() {
     if (!this.alive) return;
     this.alive = false;
-    if (this.enrageRingG) { this.enrageRingG.destroy(); this.enrageRingG = null; }
+    if (this._wispTimer) { this._wispTimer.remove(false); this._wispTimer = null; }
     if (this.shadowG) { this.shadowG.destroy(); this.shadowG = null; }
 
     this._animDeath(() => {
@@ -733,11 +870,15 @@ export default class Stomper extends BossBase {
     const ex = sx + Math.cos(angle) * lineLen;
     const ey = sy + Math.sin(angle) * lineLen;
 
+    // Windup — dominant arm (toward player) raises back, body recoils
+    this._animQuakeLineWindup(angle);
+
     // Honest rectangle telegraph — shows full 200px width
     this._drawTelegraphRect(sx, sy, ex, ey, halfWidth, this._telegraphDuration, 0x00ff77);
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
       if (!this.alive) return;
+      this._animQuakeLineFire(angle);
       this.scene.cameras.main.shake(180, 0.0027);
 
       // Fissure crack visual — jagged main crack + branching fissures
