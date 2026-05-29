@@ -26,35 +26,45 @@ export default class Stomper extends BossBase {
     this.flipContainer = this.scene.add.container(0, 0);
     this.container.add(this.flipContainer);
 
-    // ── Body sprite (baked canvas gradient) ──────────────────────────────
+    // ── Body sprite (baked faceted stone golem) ──────────────────────────
     this.bodyS = this._buildBodySprite();
     this.flipContainer.add(this.bodyS);
 
-    // ── Eyes — wide rectangular, symmetrical (brutish blank stare) ───────
+    // ── Eyes — deep-set amber glowing orbs ───────────────────────────────
     this.eyeLeftG  = this._buildEye(s);
     this.eyeRightG = this._buildEye(s);
-    this.eyeLeftG.x  = -s * 0.28;
-    this.eyeRightG.x =  s * 0.28;
-    this.eyeLeftG.y  = this.eyeRightG.y = -s * 0.16;
+    this.eyeLeftG.x  = -s * 0.30;
+    this.eyeRightG.x =  s * 0.30;
+    this.eyeLeftG.y  = this.eyeRightG.y = -s * 0.26;
     this.flipContainer.add(this.eyeLeftG);
     this.flipContainer.add(this.eyeRightG);
 
-    // ── Lower jaw — y-translates downward to open the mouth ───────────────
-    // Origin at local y=0 (upper-lip hinge); jaw content extends downward.
-    // At rest the jaw sits just below the baked upper teeth row.
-    this._jawRestY = s * 0.22;
+    // ── Lower jaw — upward stone teeth + chin, translates down to open ────
+    // Teeth are authored in the SAME body-space coords as the baked cavity /
+    // upper teeth so the two rows interlock around the shared maw cavity.
+    // _jawRestY = 0 → drawn coords are absolute body-space; opening tweens
+    // translate lowerJawG.y downward to reveal the dark throat.
+    this._jawRestY = 0;
     this.lowerJawG = this.scene.add.graphics();
     this.lowerJawG.x = 0;
     this.lowerJawG.y = this._jawRestY;
-    // Dark gum bar
+    // Chin bar — dark angular rim along the bottom of the maw (y 0.46→0.58)
     this.lowerJawG.fillStyle(0x0a1f0a, 1);
-    this.lowerJawG.fillRoundedRect(-s * 0.42, 0, s * 0.84, s * 0.18, s * 0.04);
-    // Four bottom teeth pointing upward (drawn above y=0)
-    this.lowerJawG.fillStyle(0xd4c49a, 1);
-    this.lowerJawG.fillRoundedRect(-s * 0.36, -s * 0.14, s * 0.16, s * 0.15, s * 0.03);
-    this.lowerJawG.fillRoundedRect(-s * 0.13, -s * 0.17, s * 0.16, s * 0.18, s * 0.03);
-    this.lowerJawG.fillRoundedRect( s * 0.10, -s * 0.17, s * 0.16, s * 0.18, s * 0.03);
-    this.lowerJawG.fillRoundedRect( s * 0.32, -s * 0.14, s * 0.16, s * 0.15, s * 0.03);
+    this.lowerJawG.fillPoints([
+      { x: -s * 0.42, y: s * 0.46 }, { x: s * 0.42, y: s * 0.46 },
+      { x: s * 0.34, y: s * 0.60 }, { x: -s * 0.34, y: s * 0.60 },
+    ], true);
+    // Lower teeth — 3 upward triangles, base on bottom rim (y 0.50), tips up
+    // to y≈0.24, offset between the 4 upper teeth so they interlock.
+    this.lowerJawG.fillStyle(0xcfc19a, 1);
+    const lower = [-0.24, 0.0, 0.24];
+    for (const tx of lower) {
+      this.lowerJawG.fillTriangle(
+        s * (tx - 0.10), s * 0.50,
+        s * (tx + 0.10), s * 0.50,
+        s * tx,          s * 0.24,
+      );
+    }
     this.flipContainer.add(this.lowerJawG);
 
     // ── Hit flash overlay ─────────────────────────────────────────────────
@@ -66,27 +76,21 @@ export default class Stomper extends BossBase {
   }
 
   _buildEye(s) {
+    // Amber glowing orb — concentric circles fading out to read as a glow set
+    // into the dark baked eye socket.
     const g = this.scene.add.graphics();
-    // White sclera
-    g.fillStyle(0xffffff, 1);
-    g.fillRect(-s * 0.20, -s * 0.12, s * 0.40, s * 0.22);
-    // Yellow-green iris
-    g.fillStyle(0xccff00, 1);
-    g.fillRect(-s * 0.14, -s * 0.10, s * 0.28, s * 0.18);
-    // Vertical slit pupil
-    g.fillStyle(0x111111, 1);
-    g.fillRect(-s * 0.06, -s * 0.10, s * 0.12, s * 0.18);
-    // Glassy specular
-    g.fillStyle(0xffffff, 0.80);
-    g.fillCircle(-s * 0.08, -s * 0.07, s * 0.05);
+    g.fillStyle(0xff9500, 0.22); g.fillCircle(0, 0, s * 0.17);   // outer glow
+    g.fillStyle(0xffb020, 0.55); g.fillCircle(0, 0, s * 0.11);   // mid glow
+    g.fillStyle(0xffd060, 1.00); g.fillCircle(0, 0, s * 0.07);   // amber core
+    g.fillStyle(0xfff2c0, 1.00); g.fillCircle(0, 0, s * 0.035);  // white-hot center
     return g;
   }
 
   _buildBodySprite() {
     const s   = this.size;
     const key = `stomper-body-${s}`;
-    const cw  = Math.ceil(s * 3.2);
-    const ch  = Math.ceil(s * 2.8);
+    const cw  = Math.ceil(s * 3.9);
+    const ch  = Math.ceil(s * 2.9);
 
     if (!this.scene.textures.exists(key)) {
       const tex = this.scene.textures.createCanvas(key, cw, ch);
@@ -95,86 +99,138 @@ export default class Stomper extends BossBase {
       const cy  = ch / 2;
       const colorCSS = '#' + this.color.toString(16).padStart(6, '0');
 
-      const fillEll = (ex, ey, rx, ry) => {
+      // Angular polygon helper — pts are [ex, ey] in body-space s-units.
+      const poly = (pts) => {
         ctx.beginPath();
-        ctx.ellipse(cx + ex, cy + ey, rx, ry, 0, 0, Math.PI * 2);
+        ctx.moveTo(cx + pts[0][0] * s, cy + pts[0][1] * s);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(cx + pts[i][0] * s, cy + pts[i][1] * s);
+        ctx.closePath();
         ctx.fill();
       };
+      // Mirror a point set across x (for the right-side chunks)
+      const mirror = (pts) => pts.map(([x, y]) => [-x, y]);
 
-      // 1. Body silhouette — main mass, belly, four thick legs
+      // Arm-boulder polygon (left side); mirror for right.
+      const armL = [
+        [-1.50, 0.18], [-1.12, 0.06], [-0.78, 0.34],
+        [-0.74, 0.80], [-1.00, 1.14], [-1.50, 1.10], [-1.66, 0.62],
+      ];
+      // Torso — chunky angular boulder, flat-faceted crown, widening at bottom.
+      const torso = [
+        [-0.85, -0.70], [-0.55, -0.95], [-0.25, -1.02], [0.30, -1.00],
+        [0.60, -0.90], [0.92, -0.60], [1.05, -0.10], [0.95, 0.45],
+        [0.62, 0.85], [0.25, 0.95], [-0.25, 0.95], [-0.62, 0.85],
+        [-0.98, 0.45], [-1.05, -0.10],
+      ];
+      // Feet — small angular toe trapezoids (left); mirror for right.
+      const footL = [[-0.50, 0.90], [-0.18, 0.90], [-0.15, 1.16], [-0.52, 1.16]];
+
+      // 1. Silhouette — arms behind, then torso, then feet (all base colour)
       ctx.fillStyle = colorCSS;
-      fillEll(0,          0,        s * 1.20, s * 0.85);  // main mass (wide squat)
-      fillEll(0,          s * 0.38, s * 1.05, s * 0.52);  // belly bulge
-      fillEll(-s * 0.72,  s * 0.68, s * 0.40, s * 0.44);  // left outer leg
-      fillEll(-s * 0.28,  s * 0.75, s * 0.30, s * 0.38);  // left inner leg
-      fillEll( s * 0.28,  s * 0.75, s * 0.30, s * 0.38);  // right inner leg
-      fillEll( s * 0.72,  s * 0.68, s * 0.40, s * 0.44);  // right outer leg
+      poly(armL);
+      poly(mirror(armL));
+      poly(torso);
+      poly(footL);
+      poly(mirror(footL));
 
-      // 2. Three crown horns (darker green, baked before gradient so they're lit too)
-      ctx.fillStyle = '#1a5c32';
-      // Central horn (straight up)
-      ctx.save();
-      ctx.translate(cx, cy - s * 0.84);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, s * 0.07, s * 0.19, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      // Left flanking horn (angled out-left ~18°)
-      ctx.save();
-      ctx.translate(cx - s * 0.44, cy - s * 0.72);
-      ctx.rotate(-Math.PI / 10);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, s * 0.06, s * 0.15, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      // Right flanking horn (angled out-right ~18°)
-      ctx.save();
-      ctx.translate(cx + s * 0.44, cy - s * 0.72);
-      ctx.rotate(Math.PI / 10);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, s * 0.06, s * 0.15, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // 3. Gradient — source-atop clips to silhouette pixels only
+      // 2. Gradient — source-atop clips to silhouette pixels only
       ctx.globalCompositeOperation = 'source-atop';
 
-      const ar = 1.41;   // body width/height ratio (s*1.20 / s*0.85)
+      const ar = 1.30;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(ar, 1.0);
-      const grad = ctx.createRadialGradient(0, -s * 0.50, 0, 0, -s * 0.28, s * 0.92);
-      grad.addColorStop(0.00, 'rgba(180, 255, 80, 0.52)');  // lime-green sunlit crown
-      grad.addColorStop(0.30, 'rgba(100, 210, 40, 0.14)');  // medium green fade
-      grad.addColorStop(0.60, 'rgba(0, 0, 0, 0)');           // transparent mid
-      grad.addColorStop(1.00, 'rgba(0, 15, 0, 0.65)');       // very dark earth-shadow
+      const grad = ctx.createRadialGradient(0, -s * 0.55, 0, 0, -s * 0.30, s * 1.00);
+      grad.addColorStop(0.00, 'rgba(180, 255, 90, 0.50)');  // lime sunlit crown
+      grad.addColorStop(0.32, 'rgba(90, 190, 50, 0.12)');
+      grad.addColorStop(0.60, 'rgba(0, 0, 0, 0)');           // body colour shows
+      grad.addColorStop(1.00, 'rgba(0, 18, 0, 0.68)');       // dark earth shadow
       ctx.fillStyle = grad;
       ctx.fillRect(-cw, -ch, cw * 2, ch * 2);
       ctx.restore();
 
-      // 4. Angry V-brow lines (still source-atop)
-      ctx.strokeStyle = '#0a3d20';
-      ctx.lineWidth   = s * 0.09;
+      // 3. Facet shading — planar light/dark stone faces (still source-atop)
+      ctx.fillStyle = 'rgba(0, 20, 0, 0.22)';   // dark planes (lower / right)
+      poly([[0.30, 0.10], [1.05, -0.10], [0.95, 0.45], [0.62, 0.85], [0.25, 0.95]]); // torso lower-right
+      poly([[-0.78, 0.34], [-0.74, 0.80], [-1.00, 1.14], [-1.50, 1.10]]);            // left arm underside
+      poly([[1.50, 0.18], [1.66, 0.62], [1.50, 1.10], [1.00, 1.14], [0.74, 0.80]]);  // right arm right-face
+      ctx.fillStyle = 'rgba(190, 255, 130, 0.16)'; // light planes (upper-left)
+      poly([[-0.85, -0.70], [-0.25, -1.02], [-0.10, -0.40], [-0.70, -0.20]]);        // torso crown-left
+      poly([[-1.50, 0.18], [-1.12, 0.06], [-0.86, 0.30], [-1.30, 0.50]]);            // left arm top
+
+      // 4. Seam cracks — dark straight strokes between rock slabs
+      ctx.strokeStyle = 'rgba(0, 20, 0, 0.5)';
+      ctx.lineWidth   = s * 0.05;
       ctx.lineCap     = 'round';
-      ctx.beginPath();
-      ctx.moveTo(cx - s * 0.52, cy - s * 0.44);
-      ctx.lineTo(cx - s * 0.10, cy - s * 0.28);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx + s * 0.10, cy - s * 0.28);
-      ctx.lineTo(cx + s * 0.52, cy - s * 0.44);
-      ctx.stroke();
-
-      // 5. Restore, then draw baked upper teeth row
-      ctx.globalCompositeOperation = 'source-over';
-
-      // Upper teeth — four bone-coloured rects hanging from the upper lip
-      ctx.fillStyle = '#d4c49a';
-      const toothY = cy + s * 0.12;
-      const teeth  = [-s * 0.30, -s * 0.10, s * 0.10, s * 0.30];
-      for (const tx of teeth) {
+      const seam = (ax, ay, bx, by) => {
         ctx.beginPath();
-        ctx.roundRect(cx + tx - s * 0.07, toothY, s * 0.14, s * 0.16, s * 0.03);
+        ctx.moveTo(cx + ax * s, cy + ay * s);
+        ctx.lineTo(cx + bx * s, cy + by * s);
+        ctx.stroke();
+      };
+      seam(-1.02, 0.05, -0.74, 0.42);   // left arm / torso seam
+      seam(1.02, 0.05, 0.74, 0.42);     // right arm / torso seam
+      seam(-0.55, -0.55, 0.10, -0.30);  // diagonal torso seam
+
+      // 5. Moss patches — brighter green clipped to the crown
+      ctx.fillStyle = 'rgba(120, 200, 70, 0.55)';
+      poly([[-0.55, -0.95], [-0.05, -1.00], [0.10, -0.78], [-0.45, -0.72]]); // crown centre-left
+      poly([[0.10, -0.98], [0.55, -0.92], [0.60, -0.70], [0.18, -0.74]]);    // crown centre-right
+      poly([[-1.48, 0.20], [-1.10, 0.08], [-0.92, 0.28], [-1.32, 0.42]]);    // left arm top moss
+      poly([[1.10, 0.08], [1.48, 0.20], [1.32, 0.42], [0.92, 0.28]]);        // right arm top moss
+
+      // 6. Heavy stone brow ridge (dark V) + recessed eye sockets
+      ctx.strokeStyle = 'rgba(8, 40, 15, 1)';
+      ctx.lineWidth   = s * 0.13;
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.56, cy - s * 0.46);
+      ctx.lineTo(cx - s * 0.08, cy - s * 0.34);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 0.08, cy - s * 0.34);
+      ctx.lineTo(cx + s * 0.56, cy - s * 0.46);
+      ctx.stroke();
+      // Dark recessed sockets behind the glowing eyes
+      ctx.fillStyle = 'rgba(0, 15, 0, 0.55)';
+      poly([[-0.46, -0.34], [-0.14, -0.34], [-0.16, -0.10], [-0.46, -0.12]]);
+      poly([[0.14, -0.34], [0.46, -0.34], [0.46, -0.12], [0.16, -0.10]]);
+
+      // 7. Maw cavity + upper teeth (source-over) — co-designed with lower row
+      ctx.globalCompositeOperation = 'source-over';
+      // Dark throat cavity (angular trapezoid)
+      ctx.fillStyle = '#050a05';
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.46, cy + s * 0.08);
+      ctx.lineTo(cx + s * 0.46, cy + s * 0.08);
+      ctx.lineTo(cx + s * 0.40, cy + s * 0.55);
+      ctx.lineTo(cx - s * 0.40, cy + s * 0.55);
+      ctx.closePath();
+      ctx.fill();
+      // Upper teeth — 4 downward angular triangles from the top rim
+      ctx.fillStyle = '#cfc19a';
+      const upper = [-0.36, -0.12, 0.12, 0.36];
+      for (const tx of upper) {
+        ctx.beginPath();
+        ctx.moveTo(cx + (tx - 0.07) * s, cy + 0.08 * s);
+        ctx.lineTo(cx + (tx + 0.07) * s, cy + 0.08 * s);
+        ctx.lineTo(cx + tx * s,          cy + 0.30 * s);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // 8. Grass blades — thin green triangles poking up above the crown
+      ctx.fillStyle = '#6abf3c';
+      const blades = [
+        [-0.45, -0.78, -0.40, -1.10], [-0.20, -0.95, -0.12, -1.28],
+        [0.05, -0.98, 0.10, -1.30], [0.30, -0.94, 0.40, -1.22],
+        [0.50, -0.82, 0.58, -1.06],
+      ];
+      for (const [bx, by, tx, ty] of blades) {
+        ctx.beginPath();
+        ctx.moveTo(cx + (bx - 0.06) * s, cy + by * s);
+        ctx.lineTo(cx + (bx + 0.06) * s, cy + by * s);
+        ctx.lineTo(cx + tx * s,          cy + ty * s);
+        ctx.closePath();
         ctx.fill();
       }
 
@@ -202,7 +258,7 @@ export default class Stomper extends BossBase {
     }));
     // Lazy jaw grind
     this._idleTweens.push(this.scene.tweens.add({
-      targets: this.lowerJawG, y: this._jawRestY + this.size * 0.10,
+      targets: this.lowerJawG, y: this._jawRestY + this.size * 0.12,
       duration: 2200, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
     }));
     this._scheduleBlink();
