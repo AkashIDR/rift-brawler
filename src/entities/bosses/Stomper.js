@@ -27,15 +27,15 @@ export default class Stomper extends BossBase {
     this.flipContainer = this.scene.add.container(0, 0);
     this.container.add(this.flipContainer);
 
-    // ── Arm-boulders — live Graphics so they can animate independently ────
-    // Positioned at shoulder attachment points; polygon drawn in local coords
-    // (body-space armL vertices shifted by +0.90, -0.50 to center the pivot).
-    const armLocalPts = [
-      [-0.60, -0.32], [-0.22, -0.44], [0.12, -0.16],
-      [ 0.16,  0.30], [-0.10,  0.64], [-0.60,  0.60], [-0.76, 0.12],
-    ];
-    this.armLeftG  = this._buildArmGraphic(s, armLocalPts, false);
-    this.armRightG = this._buildArmGraphic(s, armLocalPts, true);
+    // ── Arm-boulders — baked canvas sprites with gradient shading ────────
+    // Each arm is a canvas texture (same gradient technique as the body) so
+    // it gets proper 3D volume. Left arm uses the texture as-is; right arm
+    // mirrors with scaleX = -1 (gradient also mirrors correctly since both
+    // arms are lit from the same above-center light source). Pivot is at the
+    // shoulder attachment point set via setOrigin in _buildArmSprite.
+    this.armLeftG  = this._buildArmSprite();   // "G" suffix kept for anim compat
+    this.armRightG = this._buildArmSprite();
+    this.armRightG.scaleX = -1;               // mirror for right side
     this.armLeftG.x  = -s * 0.90;  this.armLeftG.y  = s * 0.50;
     this.armRightG.x =  s * 0.90;  this.armRightG.y = s * 0.50;
     // Arms go in BEFORE bodyS so they render behind the torso
@@ -100,28 +100,85 @@ export default class Stomper extends BossBase {
     return g;
   }
 
-  _buildArmGraphic(s, pts, mirrorX) {
-    // Live Graphics arm-boulder. pts are the LEFT arm's local coords; mirrorX
-    // flips x to produce the right arm. Pivot at (0,0) = shoulder attachment.
-    const g = this.scene.add.graphics();
-    const p = mirrorX ? pts.map(([x, y]) => [-x, y]) : pts;
-    const toPt = ([x, y]) => ({ x: x * s, y: y * s });
-    // Base fill in body color
-    g.fillStyle(this.color, 1);
-    g.fillPoints(p.map(toPt), true);
-    // Dark underside / right-side tint (the shadow plane)
-    g.fillStyle(0x000000, 0.22);
-    const dark = mirrorX
-      ? [[ 0.16, 0.30], [-0.10, 0.64], [-0.60, 0.60], [-0.76, 0.12]]
-      : [[-0.16, 0.30], [ 0.10, 0.64], [ 0.60, 0.60], [ 0.76, 0.12]];
-    g.fillPoints(dark.map(toPt), true);
-    // Moss dab on the sunlit top face
-    g.fillStyle(0x78c846, 0.50);
-    const moss = mirrorX
-      ? [[ 0.12, -0.16], [-0.22, -0.44], [-0.50, -0.28], [-0.20, 0.05]]
-      : [[-0.12, -0.16], [ 0.22, -0.44], [ 0.50, -0.28], [ 0.20, 0.05]];
-    g.fillPoints(moss.map(toPt), true);
-    return g;
+  _buildArmSprite() {
+    // Baked canvas sprite for one arm-boulder. Left-arm orientation; the right
+    // arm reuses the same texture with scaleX = -1 (gradient mirrors correctly
+    // because both arms are lit from the same above-center light source).
+    //
+    // Arm local coords — shoulder attachment at (0,0), arm extends left/down:
+    const armPts = [
+      [-0.60, -0.32], [-0.22, -0.44], [0.12, -0.16],
+      [ 0.16,  0.30], [-0.10,  0.64], [-0.60,  0.60], [-0.76, 0.12],
+    ];
+    const s   = this.size;
+    const key = `stomper-arm-${s}`;
+
+    // Canvas sized to the arm polygon bounding box + padding.
+    // ox/oy = where the shoulder (0,0) sits inside the canvas.
+    const pad = 0.15;
+    const cw  = Math.ceil((0.76 + 0.16 + pad * 2) * s);   // 1.22 * s
+    const ch  = Math.ceil((0.44 + 0.64 + pad * 2) * s);   // 1.38 * s
+    const ox  = Math.round((0.76 + pad) * s);              // ≈ 0.91 * s
+    const oy  = Math.round((0.44 + pad) * s);              // ≈ 0.59 * s
+
+    if (!this.scene.textures.exists(key)) {
+      const tex = this.scene.textures.createCanvas(key, cw, ch);
+      const ctx = tex.getContext();
+      const colorCSS = '#' + this.color.toString(16).padStart(6, '0');
+
+      const tx = (x) => ox + x * s;
+      const ty = (y) => oy + y * s;
+
+      // 1. Arm silhouette in base color
+      ctx.fillStyle = colorCSS;
+      ctx.beginPath();
+      ctx.moveTo(tx(armPts[0][0]), ty(armPts[0][1]));
+      for (let i = 1; i < armPts.length; i++) ctx.lineTo(tx(armPts[i][0]), ty(armPts[i][1]));
+      ctx.closePath();
+      ctx.fill();
+
+      // 2. Gradient — source-atop clips to arm silhouette.
+      // Same elliptical radial technique as the body, adapted to arm shape.
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.save();
+      ctx.translate(ox, oy);   // work in shoulder-local space
+      const grad = ctx.createRadialGradient(
+        s * (-0.08), s * (-0.30), 0,        // focal: upper-left sunlit face
+        s * (-0.08), s * (-0.08), s * 0.80  // outer: covers full arm shape
+      );
+      grad.addColorStop(0.00, 'rgba(180, 255, 90, 0.50)');  // lime sunlit crown
+      grad.addColorStop(0.35, 'rgba(90, 190, 50, 0.12)');
+      grad.addColorStop(0.60, 'rgba(0, 0, 0, 0)');           // body color shows
+      grad.addColorStop(1.00, 'rgba(0, 18, 0, 0.68)');       // dark earth shadow
+      ctx.fillStyle = grad;
+      ctx.fillRect(-ox, -oy, cw, ch);
+      ctx.restore();
+
+      // 3. Dark shadow facet on lower/inner face (still source-atop)
+      ctx.fillStyle = 'rgba(0, 20, 0, 0.28)';
+      const shadow = [[0.16, 0.30], [-0.10, 0.64], [-0.60, 0.60], [-0.76, 0.12]];
+      ctx.beginPath();
+      ctx.moveTo(tx(shadow[0][0]), ty(shadow[0][1]));
+      for (let i = 1; i < shadow.length; i++) ctx.lineTo(tx(shadow[i][0]), ty(shadow[i][1]));
+      ctx.closePath();
+      ctx.fill();
+
+      // 4. Moss dab on the sunlit upper face
+      ctx.fillStyle = 'rgba(120, 200, 70, 0.55)';
+      const moss = [[-0.22, -0.44], [0.12, -0.16], [0.04, 0.04], [-0.36, -0.08]];
+      ctx.beginPath();
+      ctx.moveTo(tx(moss[0][0]), ty(moss[0][1]));
+      for (let i = 1; i < moss.length; i++) ctx.lineTo(tx(moss[i][0]), ty(moss[i][1]));
+      ctx.closePath();
+      ctx.fill();
+
+      tex.refresh();
+    }
+
+    const sprite = this.scene.add.sprite(0, 0, key);
+    // Origin at shoulder point so rotation/flip pivots there
+    sprite.setOrigin(ox / cw, oy / ch);
+    return sprite;
   }
 
   _buildBodySprite() {
