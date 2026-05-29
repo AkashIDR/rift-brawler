@@ -812,26 +812,18 @@ export default class Charger extends BossBase {
    * side path, dissolves at end.
    */
   _createGhostCharger(x, y, angle) {
-    const g = this.scene.add.graphics();
-    const s = this.size;
-
-    // Full body silhouette in electric cyan — translucent ghost echo of the Charger.
-    // All ellipses in accentColor so the shape reads clearly at 0.35 alpha,
-    // matching the Electric Blue palette instead of rendering as a dark blob.
-    g.fillStyle(this.accentColor, 1);
-    g.fillEllipse(0,          0,         s * 2.20, s * 1.50);  // main mass
-    g.fillEllipse(0,          s * 0.30,  s * 1.95, s * 0.85);  // belly bump
-    g.fillEllipse(-s * 0.75,  s * 0.62,  s * 0.38, s * 0.48);  // left outer leg
-    g.fillEllipse(-s * 0.28,  s * 0.72,  s * 0.30, s * 0.42);  // left inner leg
-    g.fillEllipse( s * 0.28,  s * 0.72,  s * 0.30, s * 0.42);  // right inner leg
-    g.fillEllipse( s * 0.75,  s * 0.62,  s * 0.38, s * 0.48);  // right outer leg
-    g.fillEllipse(-s * 1.05, -s * 0.05,  s * 0.42, s * 0.26);  // tail stub
-    g.fillEllipse(-s * 0.55, -s * 0.65,  s * 0.30, s * 0.22);  // left ear nub
-    g.fillEllipse( s * 0.55, -s * 0.65,  s * 0.30, s * 0.22);  // right ear nub
-
+    // Reuse the baked canvas texture so the ghost has the exact same silhouette
+    // shape as the real Charger (no stacked-ellipse artefacts).
+    // setTintFill replaces all visible pixels with accentColor → solid cyan ghost.
+    // scaleX flip (not angle rotation) matches how the real Charger faces left/right,
+    // preventing the upside-down problem caused by rotating by the full charge angle.
+    const key = `charger-body-${this.size}`;
+    const g = this.scene.add.sprite(0, 0, key);
+    g.setOrigin(0.5, 0.5);
+    g.setTintFill(this.accentColor);
     g.x = x;
     g.y = y;
-    g.angle = Phaser.Math.RadToDeg(angle);
+    g.scaleX = Math.cos(angle) >= 0 ? 1 : -1;
     g.alpha = 0;
     g.setDepth(9);
 
@@ -902,7 +894,7 @@ export default class Charger extends BossBase {
     const speed    = 5600 + this.level * 80;
     const duration = (dist / speed) * 1000 + 200;
 
-    ghost.angle = Phaser.Math.RadToDeg(angle);
+    ghost.scaleX = Math.cos(angle) >= 0 ? 1 : -1;  // face charge direction, no rotation
 
     let hitLanded    = false;
     let obstaclesHit = 0;
