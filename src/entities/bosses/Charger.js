@@ -247,12 +247,14 @@ export default class Charger extends BossBase {
       targets: this.bodyS, scaleX: 0.97,
       duration: 800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
     }));
-    // Mouth chomp — cavity scales from centre; teeth track edges via onUpdate
-    this._idleTweens.push(this.scene.tweens.add({
+    // Mouth chomp — cavity scales from centre; teeth track edges via onUpdate.
+    // Stored so _animEnrageBurst can boost timeScale for the enraged version.
+    this._mouthChompTween = this.scene.tweens.add({
       targets: this.mouthCavityG, scaleY: 0.25,
-      duration: 900, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+      duration: 1600, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
       onUpdate: () => this._updateTeethPositions(),
-    }));
+    });
+    this._idleTweens.push(this._mouthChompTween);
     this._scheduleBlink();
   }
 
@@ -411,7 +413,7 @@ export default class Charger extends BossBase {
     });
   }
 
-  // Enrage burst — cracks flash + continuous steam aura starts.
+  // Enrage burst — cracks flash + mouth speeds up + continuous steam aura starts.
   _animEnrageBurst() {
     if (!this.alive) return;
     // Energy cracks strobe bright
@@ -419,17 +421,20 @@ export default class Charger extends BossBase {
       targets: this.cracksG, alpha: 0.4,
       duration: 180, yoyo: true, repeat: 3, ease: 'Sine.easeInOut',
     });
-    // Start the continuous fire-wisp spawner (≈4–5 wisps/sec)
+    // Speed up mouth chomp for enraged agitation
+    if (this._mouthChompTween) this._mouthChompTween.timeScale = 2.2;
+    // Start the continuous energy-wisp spawner (≈4–5 wisps/sec)
     this._steamTimer = this.scene.time.addEvent({
       loop: true, delay: 220,
       callback: this._spawnSteamWisp, callbackScope: this,
     });
   }
 
-  // One fire/smoke wisp — 8 segments drawn along a sine-curve path so the
-  // wisp IS wavy by shape, not just by motion. Wide at the base (y=0, nearest
-  // the boss), tapering to a narrow tip as y goes negative (upward on screen).
-  // Called repeatedly by _steamTimer while the boss is enraged.
+  // One energy wisp — 8 segments drawn along a sine-curve path so the wisp IS
+  // wavy by shape, not just by motion. Wide at the base (y=0, nearest the boss),
+  // tapering to a narrow tip as y goes negative (upward on screen). Colours run
+  // deep navy → mid blue → electric cyan → pale blue-white, matching the Charger
+  // palette. Called repeatedly by _steamTimer while the boss is enraged.
   _spawnSteamWisp() {
     if (!this.alive) return;
 
@@ -472,12 +477,13 @@ export default class Charger extends BossBase {
       else if (t < 0.70) alpha = 0.55;
       else               alpha = (1 - t) / 0.30 * 0.55;
 
-      // Colour: deep orange at base → bright orange → golden → cream-white tip
+      // Colour: deep navy at base → mid blue → electric cyan → pale blue-white tip
+      // Matches the Charger's body colour (0x001a4d) and accent (0x00ccff) palette.
       let color;
-      if (t < 0.25)      color = 0xff3300;
-      else if (t < 0.52) color = 0xff7700;
-      else if (t < 0.78) color = 0xffbb00;
-      else               color = 0xfff0cc;
+      if (t < 0.25)      color = 0x001a4d;
+      else if (t < 0.52) color = 0x0044aa;
+      else if (t < 0.78) color = 0x00ccff;
+      else               color = 0xccf0ff;
 
       wisp.fillStyle(color, alpha);
       wisp.fillEllipse(segX, segY, segW, segH);
