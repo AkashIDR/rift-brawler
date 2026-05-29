@@ -814,12 +814,24 @@ export default class Charger extends BossBase {
   _createGhostCharger(x, y, angle) {
     const g = this.scene.add.graphics();
     const s = this.size;
+
+    // Full body silhouette — matches the current Charger shape exactly
+    // (same ellipses as _buildBodySprite, diameters = 2× the canvas radii)
     g.fillStyle(this.color, 1);
-    // Body blob silhouette (no details — it's a ghost)
-    g.fillEllipse(0, 0, s * 2.2, s * 1.5);
-    g.fillEllipse(0, s * 0.30, s * 1.95, s * 0.85);
-    // Jaw bump in front
-    g.fillEllipse(0, s * 0.55, s * 1.3, s * 0.55);
+    g.fillEllipse(0,          0,         s * 2.20, s * 1.50);  // main mass
+    g.fillEllipse(0,          s * 0.30,  s * 1.95, s * 0.85);  // belly bump
+    g.fillEllipse(-s * 0.75,  s * 0.62,  s * 0.38, s * 0.48);  // left outer leg
+    g.fillEllipse(-s * 0.28,  s * 0.72,  s * 0.30, s * 0.42);  // left inner leg
+    g.fillEllipse( s * 0.28,  s * 0.72,  s * 0.30, s * 0.42);  // right inner leg
+    g.fillEllipse( s * 0.75,  s * 0.62,  s * 0.38, s * 0.48);  // right outer leg
+    g.fillEllipse(-s * 1.05, -s * 0.05,  s * 0.42, s * 0.26);  // tail stub
+    g.fillEllipse(-s * 0.55, -s * 0.65,  s * 0.30, s * 0.22);  // left ear nub
+    g.fillEllipse( s * 0.55, -s * 0.65,  s * 0.30, s * 0.22);  // right ear nub
+
+    // Cyan electric rim on the main body — makes the ghost read as an echo
+    // of the upgraded Charger rather than a plain dark blob
+    g.lineStyle(s * 0.06, this.accentColor, 0.70);
+    g.strokeEllipse(0, 0, s * 2.20, s * 1.50);
 
     g.x = x;
     g.y = y;
