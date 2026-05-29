@@ -1022,14 +1022,34 @@ export default class Stomper extends BossBase {
     const p = this.scene.player;
     if (!p || !p.alive) { this._endAttack(); return; }
 
-    this._drawTelegraphZone(p.x, p.y, 100, this._telegraphDuration, 0x00ff77);
+    // Tracking zone — follows the player every frame so they know they are
+    // being actively targeted. Position locks the moment the jump fires.
+    const zone = this._drawTelegraphZone(p.x, p.y, 100, this._telegraphDuration, 0x00ff77);
+    let targetX = p.x, targetY = p.y;
+
+    const track = () => {
+      if (!zone.active || !p.alive) return;
+      zone.x = p.x;
+      zone.y = p.y;
+      targetX = p.x;
+      targetY = p.y;
+    };
+    this.scene.events.on('update', track);
+
+    // Remove listener on scene shutdown to prevent orphaned callbacks
+    const cleanup = () => this.scene.events.off('update', track);
+    this.scene.events.once('shutdown', cleanup);
+
     this._animLeapWindup();
 
     this.scene.time.delayedCall(this._telegraphDuration, () => {
+      // Lock target — zone destroyed by its own tween; tracker removed here
+      this.scene.events.off('update', track);
+      this.scene.events.off('shutdown', cleanup);
+
       if (!this.alive) return;
 
       const startX = this.x, startY = this.y;
-      const targetX = p.x, targetY = p.y;
       const ARC_HEIGHT = 200;
 
       this.scene.tweens.addCounter({
