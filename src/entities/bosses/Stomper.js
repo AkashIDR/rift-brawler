@@ -6,6 +6,7 @@ export default class Stomper extends BossBase {
   constructor(scene, x, y, level) {
     super(scene, x, y, BOSS_CONFIGS.stomper, level);
     this._idleTweens = [];
+    this._bobPhase = 0;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -26,7 +27,22 @@ export default class Stomper extends BossBase {
     this.flipContainer = this.scene.add.container(0, 0);
     this.container.add(this.flipContainer);
 
-    // ── Body sprite (baked faceted stone golem) ──────────────────────────
+    // ── Arm-boulders — live Graphics so they can animate independently ────
+    // Positioned at shoulder attachment points; polygon drawn in local coords
+    // (body-space armL vertices shifted by +0.90, -0.50 to center the pivot).
+    const armLocalPts = [
+      [-0.60, -0.32], [-0.22, -0.44], [0.12, -0.16],
+      [ 0.16,  0.30], [-0.10,  0.64], [-0.60,  0.60], [-0.76, 0.12],
+    ];
+    this.armLeftG  = this._buildArmGraphic(s, armLocalPts, false);
+    this.armRightG = this._buildArmGraphic(s, armLocalPts, true);
+    this.armLeftG.x  = -s * 0.90;  this.armLeftG.y  = s * 0.50;
+    this.armRightG.x =  s * 0.90;  this.armRightG.y = s * 0.50;
+    // Arms go in BEFORE bodyS so they render behind the torso
+    this.flipContainer.add(this.armLeftG);
+    this.flipContainer.add(this.armRightG);
+
+    // ── Body sprite (baked faceted stone golem — torso + feet only) ──────
     this.bodyS = this._buildBodySprite();
     this.flipContainer.add(this.bodyS);
 
@@ -40,22 +56,20 @@ export default class Stomper extends BossBase {
     this.flipContainer.add(this.eyeRightG);
 
     // ── Lower jaw — upward stone teeth + chin, translates down to open ────
-    // Teeth are authored in the SAME body-space coords as the baked cavity /
-    // upper teeth so the two rows interlock around the shared maw cavity.
-    // _jawRestY = 0 → drawn coords are absolute body-space; opening tweens
-    // translate lowerJawG.y downward to reveal the dark throat.
+    // Coords are in absolute body-space so they interlock with the baked
+    // upper teeth. Opening tweens translate lowerJawG.y downward.
     this._jawRestY = 0;
     this.lowerJawG = this.scene.add.graphics();
     this.lowerJawG.x = 0;
     this.lowerJawG.y = this._jawRestY;
-    // Chin bar — dark angular rim along the bottom of the maw (y 0.46→0.58)
+    // Chin bar — sits BELOW the baked cavity (which ends at y≈0.55)
     this.lowerJawG.fillStyle(0x0a1f0a, 1);
     this.lowerJawG.fillPoints([
-      { x: -s * 0.42, y: s * 0.46 }, { x: s * 0.42, y: s * 0.46 },
-      { x: s * 0.34, y: s * 0.60 }, { x: -s * 0.34, y: s * 0.60 },
+      { x: -s * 0.42, y: s * 0.54 }, { x: s * 0.42, y: s * 0.54 },
+      { x: s * 0.34, y: s * 0.68 }, { x: -s * 0.34, y: s * 0.68 },
     ], true);
-    // Lower teeth — 3 upward triangles, base on bottom rim (y 0.50), tips up
-    // to y≈0.24, offset between the 4 upper teeth so they interlock.
+    // Lower teeth — 3 upward triangles, bases at y=0.50, tips at y=0.24
+    // (offset between the 4 upper teeth so the rows interlock like a zipper)
     this.lowerJawG.fillStyle(0xcfc19a, 1);
     const lower = [-0.24, 0.0, 0.24];
     for (const tx of lower) {
@@ -86,6 +100,30 @@ export default class Stomper extends BossBase {
     return g;
   }
 
+  _buildArmGraphic(s, pts, mirrorX) {
+    // Live Graphics arm-boulder. pts are the LEFT arm's local coords; mirrorX
+    // flips x to produce the right arm. Pivot at (0,0) = shoulder attachment.
+    const g = this.scene.add.graphics();
+    const p = mirrorX ? pts.map(([x, y]) => [-x, y]) : pts;
+    const toPt = ([x, y]) => ({ x: x * s, y: y * s });
+    // Base fill in body color
+    g.fillStyle(this.color, 1);
+    g.fillPoints(p.map(toPt), true);
+    // Dark underside / right-side tint (the shadow plane)
+    g.fillStyle(0x000000, 0.22);
+    const dark = mirrorX
+      ? [[ 0.16, 0.30], [-0.10, 0.64], [-0.60, 0.60], [-0.76, 0.12]]
+      : [[-0.16, 0.30], [ 0.10, 0.64], [ 0.60, 0.60], [ 0.76, 0.12]];
+    g.fillPoints(dark.map(toPt), true);
+    // Moss dab on the sunlit top face
+    g.fillStyle(0x78c846, 0.50);
+    const moss = mirrorX
+      ? [[ 0.12, -0.16], [-0.22, -0.44], [-0.50, -0.28], [-0.20, 0.05]]
+      : [[-0.12, -0.16], [ 0.22, -0.44], [ 0.50, -0.28], [ 0.20, 0.05]];
+    g.fillPoints(moss.map(toPt), true);
+    return g;
+  }
+
   _buildBodySprite() {
     const s   = this.size;
     const key = `stomper-body-${s}`;
@@ -107,15 +145,11 @@ export default class Stomper extends BossBase {
         ctx.closePath();
         ctx.fill();
       };
-      // Mirror a point set across x (for the right-side chunks)
+      // Mirror a point set across x
       const mirror = (pts) => pts.map(([x, y]) => [-x, y]);
 
-      // Arm-boulder polygon (left side); mirror for right.
-      const armL = [
-        [-1.50, 0.18], [-1.12, 0.06], [-0.78, 0.34],
-        [-0.74, 0.80], [-1.00, 1.14], [-1.50, 1.10], [-1.66, 0.62],
-      ];
       // Torso — chunky angular boulder, flat-faceted crown, widening at bottom.
+      // (Arm-boulders are now live Graphics in _buildBody, not baked here.)
       const torso = [
         [-0.85, -0.70], [-0.55, -0.95], [-0.25, -1.02], [0.30, -1.00],
         [0.60, -0.90], [0.92, -0.60], [1.05, -0.10], [0.95, 0.45],
@@ -125,10 +159,8 @@ export default class Stomper extends BossBase {
       // Feet — small angular toe trapezoids (left); mirror for right.
       const footL = [[-0.50, 0.90], [-0.18, 0.90], [-0.15, 1.16], [-0.52, 1.16]];
 
-      // 1. Silhouette — arms behind, then torso, then feet (all base colour)
+      // 1. Silhouette — torso + feet only (arms are live elements)
       ctx.fillStyle = colorCSS;
-      poly(armL);
-      poly(mirror(armL));
       poly(torso);
       poly(footL);
       poly(mirror(footL));
@@ -149,35 +181,25 @@ export default class Stomper extends BossBase {
       ctx.fillRect(-cw, -ch, cw * 2, ch * 2);
       ctx.restore();
 
-      // 3. Facet shading — planar light/dark stone faces (still source-atop)
-      ctx.fillStyle = 'rgba(0, 20, 0, 0.22)';   // dark planes (lower / right)
+      // 3. Facet shading — dark shadow planes only (torso only; arms handled in live Graphics)
+      // Light facets removed — they caused a hard-edge artifact on the crown.
+      // The gradient already provides the top-lit crown highlight.
+      ctx.fillStyle = 'rgba(0, 20, 0, 0.22)';
       poly([[0.30, 0.10], [1.05, -0.10], [0.95, 0.45], [0.62, 0.85], [0.25, 0.95]]); // torso lower-right
-      poly([[-0.78, 0.34], [-0.74, 0.80], [-1.00, 1.14], [-1.50, 1.10]]);            // left arm underside
-      poly([[1.50, 0.18], [1.66, 0.62], [1.50, 1.10], [1.00, 1.14], [0.74, 0.80]]);  // right arm right-face
-      ctx.fillStyle = 'rgba(190, 255, 130, 0.16)'; // light planes (upper-left)
-      poly([[-0.85, -0.70], [-0.25, -1.02], [-0.10, -0.40], [-0.70, -0.20]]);        // torso crown-left
-      poly([[-1.50, 0.18], [-1.12, 0.06], [-0.86, 0.30], [-1.30, 0.50]]);            // left arm top
 
-      // 4. Seam cracks — dark straight strokes between rock slabs
+      // 4. Seam crack — one diagonal across the torso body
       ctx.strokeStyle = 'rgba(0, 20, 0, 0.5)';
       ctx.lineWidth   = s * 0.05;
       ctx.lineCap     = 'round';
-      const seam = (ax, ay, bx, by) => {
-        ctx.beginPath();
-        ctx.moveTo(cx + ax * s, cy + ay * s);
-        ctx.lineTo(cx + bx * s, cy + by * s);
-        ctx.stroke();
-      };
-      seam(-1.02, 0.05, -0.74, 0.42);   // left arm / torso seam
-      seam(1.02, 0.05, 0.74, 0.42);     // right arm / torso seam
-      seam(-0.55, -0.55, 0.10, -0.30);  // diagonal torso seam
+      ctx.beginPath();
+      ctx.moveTo(cx - s * 0.55, cy - s * 0.55);
+      ctx.lineTo(cx + s * 0.10, cy - s * 0.30);
+      ctx.stroke();
 
-      // 5. Moss patches — brighter green clipped to the crown
+      // 5. Moss patches on the crown (source-atop — clipped to torso silhouette)
       ctx.fillStyle = 'rgba(120, 200, 70, 0.55)';
       poly([[-0.55, -0.95], [-0.05, -1.00], [0.10, -0.78], [-0.45, -0.72]]); // crown centre-left
       poly([[0.10, -0.98], [0.55, -0.92], [0.60, -0.70], [0.18, -0.74]]);    // crown centre-right
-      poly([[-1.48, 0.20], [-1.10, 0.08], [-0.92, 0.28], [-1.32, 0.42]]);    // left arm top moss
-      poly([[1.10, 0.08], [1.48, 0.20], [1.32, 0.42], [0.92, 0.28]]);        // right arm top moss
 
       // 6. Heavy stone brow ridge (dark V) + recessed eye sockets
       ctx.strokeStyle = 'rgba(8, 40, 15, 1)';
@@ -261,6 +283,15 @@ export default class Stomper extends BossBase {
       targets: this.lowerJawG, y: this._jawRestY + this.size * 0.12,
       duration: 2200, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
     }));
+    // Slow gorilla arm sway — alternating forward/back with 900ms phase offset
+    this._idleTweens.push(this.scene.tweens.add({
+      targets: this.armLeftG, rotation: 0.12,
+      duration: 1800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+    }));
+    this._idleTweens.push(this.scene.tweens.add({
+      targets: this.armRightG, rotation: -0.12,
+      duration: 1800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1, delay: 900,
+    }));
     this._scheduleBlink();
   }
 
@@ -282,7 +313,7 @@ export default class Stomper extends BossBase {
     });
   }
 
-  // Stomp windup — body crouches low (wide flat pancake), jaw drops
+  // Stomp windup — body crouches low (wide flat pancake), arms raise to pound
   _animStompWindup() {
     const s = this.size;
     this.scene.tweens.add({
@@ -301,9 +332,14 @@ export default class Stomper extends BossBase {
       targets: this.flipContainer, y: 8,
       duration: 180, ease: 'Cubic.easeIn',
     });
+    // Arms raise up/back — gorilla about to pound
+    this.scene.tweens.add({
+      targets: [this.armLeftG, this.armRightG], rotation: -0.65,
+      duration: 180, ease: 'Cubic.easeIn',
+    });
   }
 
-  // Stomp impact — elastic bounce back to rest
+  // Stomp impact — elastic bounce back; arms slam forward then return
   _animStompImpact() {
     this.scene.tweens.add({
       targets: this.bodyS, scaleX: 1, scaleY: 1,
@@ -321,9 +357,21 @@ export default class Stomper extends BossBase {
       targets: this.flipContainer, y: 0,
       duration: 400, ease: 'Elastic.easeOut',
     });
+    // Arms slam forward then elastic back to neutral
+    this.scene.tweens.add({
+      targets: [this.armLeftG, this.armRightG], rotation: 0.35,
+      duration: 80, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: [this.armLeftG, this.armRightG], rotation: 0,
+          duration: 400, ease: 'Elastic.easeOut',
+        });
+      },
+    });
   }
 
-  // Leap windup — body stretches tall (gathering tension)
+  // Leap windup — body stretches tall; arms raise dramatically overhead
   _animLeapWindup() {
     const s = this.size;
     this.scene.tweens.add({
@@ -341,6 +389,11 @@ export default class Stomper extends BossBase {
     this.scene.tweens.add({
       targets: this.flipContainer, y: -10,
       duration: 250, ease: 'Cubic.easeIn',
+    });
+    // Arms raise overhead before the leap
+    this.scene.tweens.add({
+      targets: [this.armLeftG, this.armRightG], rotation: -1.0,
+      duration: 250, ease: 'Back.easeOut',
     });
   }
 
@@ -392,9 +445,21 @@ export default class Stomper extends BossBase {
         });
       },
     });
+    // Arms slam to ground on impact then elastic back
+    this.scene.tweens.add({
+      targets: [this.armLeftG, this.armRightG], rotation: 0.55,
+      duration: 100, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: [this.armLeftG, this.armRightG], rotation: 0,
+          duration: 420, ease: 'Elastic.easeOut',
+        });
+      },
+    });
   }
 
-  // Hurt flinch — solid colour flash + scale pop
+  // Hurt flinch — solid colour flash + scale pop + arm twitch
   _animHurt() {
     if (!this.alive) return;
     this.hitFlashBodyS.setAlpha(0.80);
@@ -408,6 +473,15 @@ export default class Stomper extends BossBase {
     });
     this.scene.tweens.add({
       targets: this.flipContainer, x: Phaser.Math.Between(-5, 5),
+      duration: 70, yoyo: true, ease: 'Sine.easeInOut',
+    });
+    // Arms twitch outward on flinch
+    this.scene.tweens.add({
+      targets: this.armLeftG, rotation: -0.20,
+      duration: 70, yoyo: true, ease: 'Sine.easeInOut',
+    });
+    this.scene.tweens.add({
+      targets: this.armRightG, rotation: 0.20,
       duration: 70, yoyo: true, ease: 'Sine.easeInOut',
     });
   }
@@ -441,7 +515,7 @@ export default class Stomper extends BossBase {
       onComplete,
     });
     this.scene.tweens.add({
-      targets: [this.eyeLeftG, this.eyeRightG, this.lowerJawG],
+      targets: [this.eyeLeftG, this.eyeRightG, this.lowerJawG, this.armLeftG, this.armRightG],
       alpha: 0, duration: 360, ease: 'Quad.easeIn',
     });
   }
@@ -841,6 +915,18 @@ export default class Stomper extends BossBase {
       const dist = Phaser.Math.Distance.Between(this.x, this.y, p.x, p.y);
       if (dist > 120) {
         this._moveToward(p.x, p.y, this.moveSpeed, delta / 1000);
+        // Walk animation — bob body + swing arms alternately
+        this._bobPhase += delta / 1000;
+        const bob   = Math.sin(this._bobPhase * 5.5) * 5;
+        const swing = Math.sin(this._bobPhase * 5.5) * 0.18;
+        this.bodyS.y            =  bob;
+        this.armLeftG.rotation  =  swing;
+        this.armRightG.rotation = -swing;
+      } else {
+        // Standing still — snap body/arms back to neutral
+        this.bodyS.y            = 0;
+        this.armLeftG.rotation  = 0;
+        this.armRightG.rotation = 0;
       }
     }
   }
