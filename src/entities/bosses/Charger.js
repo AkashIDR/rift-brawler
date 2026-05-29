@@ -49,6 +49,41 @@ export default class Charger extends BossBase {
     this.bodyS = this._buildBodySprite();
     this.flipContainer.add(this.bodyS);
 
+    // ── Energy cracks — glowing cyan lightning bolts on the body flanks ──────
+    // Four horizontal zigzag polylines, two per side (one tilting up, one down),
+    // kept clear of the face (|x| ≥ 0.55). Layered below the eyes/mouth so they
+    // can never cover a face feature. Drawn in three passes (wide glow → mid-line
+    // → white-hot core) for a neon electric look matching the Electric Blue accent.
+    this.cracksG = this.scene.add.graphics();
+    const cracks = [
+      // RIGHT flank — shortened to stay inside the body oval
+      [[ 0.55, -0.05], [ 0.64, -0.14], [ 0.74, -0.07], [ 0.82, -0.16]], // upper (tilts up)
+      [[ 0.55,  0.14], [ 0.64,  0.20], [ 0.74,  0.14], [ 0.82,  0.23]], // lower (tilts down)
+      // LEFT flank (mirrored)
+      [[-0.55, -0.05], [-0.64, -0.14], [-0.74, -0.07], [-0.82, -0.16]],
+      [[-0.55,  0.14], [-0.64,  0.20], [-0.74,  0.14], [-0.82,  0.23]],
+    ];
+
+    const drawCracks = () => {
+      for (const pts of cracks) {
+        this.cracksG.beginPath();
+        this.cracksG.moveTo(s * pts[0][0], s * pts[0][1]);
+        for (let i = 1; i < pts.length; i++) {
+          this.cracksG.lineTo(s * pts[i][0], s * pts[i][1]);
+        }
+        this.cracksG.strokePath();
+      }
+    };
+
+    this.cracksG.lineStyle(7, this.accentColor, 0.25);  // wide cyan glow halo
+    drawCracks();
+    this.cracksG.lineStyle(3, this.accentColor, 0.85);  // strong cyan mid-line
+    drawCracks();
+    this.cracksG.lineStyle(1.5, 0xffffff, 0.95);        // white-hot core
+    drawCracks();
+
+    this.flipContainer.add(this.cracksG);
+
     // ── Eyes — asymmetric (big angry left, small confused right) ──────────
     this.eyeBigG = this.scene.add.graphics();
     this.eyeBigG.fillStyle(0xffffff, 1);
@@ -74,39 +109,36 @@ export default class Charger extends BossBase {
     this.eyeSmallG.y = -s * 0.12;
     this.flipContainer.add(this.eyeSmallG);
 
-    // ── Energy cracks — glowing cyan lightning bolts ─────────────────────────
-    // Three deliberate zigzag polylines on face/chest only (no tail/ears).
-    // Drawn in three passes (wide glow → mid-line → white-hot core) for a
-    // neon electric look that matches the Electric Blue accent theme.
-    this.cracksG = this.scene.add.graphics();
-    const cracks = [
-      // Crack A — left shoulder branching down
-      [[-0.50, -0.32], [-0.38, -0.08], [-0.46,  0.14], [-0.33,  0.34]],
-      // Crack B — right chest angled inward
-      [[ 0.42, -0.28], [ 0.54,  0.00], [ 0.38,  0.20], [ 0.46,  0.36]],
-      // Crack C — belly centre, short
-      [[-0.07,  0.08], [ 0.06,  0.22], [-0.04,  0.36]],
-    ];
+    // ── Mouth — three separate elements so teeth don't deform with the cavity ──
+    // mouthCavityG : dark rectangle, scaleY tweens around its center (y = mouthCenterY)
+    // sideTeethG   : left + right teeth pointing DOWN, y-tracks the cavity's TOP edge
+    // midToothG    : single centre fang pointing UP,   y-tracks the cavity's BOTTOM edge
+    // _updateTeethPositions() keeps teeth in sync during every scaleY tween.
+    this._mouthCenterY = s * 0.32;   // y of cavity centre in flipContainer space
+    this._mouthHalfH   = s * 0.16;   // half the full cavity height (total height = s*0.32)
 
-    const drawCracks = () => {
-      for (const pts of cracks) {
-        this.cracksG.beginPath();
-        this.cracksG.moveTo(s * pts[0][0], s * pts[0][1]);
-        for (let i = 1; i < pts.length; i++) {
-          this.cracksG.lineTo(s * pts[i][0], s * pts[i][1]);
-        }
-        this.cracksG.strokePath();
-      }
-    };
+    this.mouthCavityG = this.scene.add.graphics();
+    this.mouthCavityG.x = 0;
+    this.mouthCavityG.y = this._mouthCenterY;
+    this.mouthCavityG.fillStyle(0x000814, 1);
+    // Rect drawn centred on local origin so scaleY anchors at the centre
+    this.mouthCavityG.fillRoundedRect(-s * 0.44, -this._mouthHalfH, s * 0.88, s * 0.32, s * 0.07);
 
-    this.cracksG.lineStyle(7, this.accentColor, 0.25);  // wide cyan glow halo
-    drawCracks();
-    this.cracksG.lineStyle(3, this.accentColor, 0.85);  // strong cyan mid-line
-    drawCracks();
-    this.cracksG.lineStyle(1.5, 0xffffff, 0.95);        // white-hot core
-    drawCracks();
+    // Side teeth — drawn downward from local y=0 (will be placed at top edge of cavity)
+    this.sideTeethG = this.scene.add.graphics();
+    this.sideTeethG.fillStyle(0xf4d0a8, 1);
+    this.sideTeethG.fillRoundedRect(-s * 0.34, 0, s * 0.17, s * 0.20, s * 0.04);
+    this.sideTeethG.fillRoundedRect( s * 0.17, 0, s * 0.17, s * 0.20, s * 0.04);
 
-    this.flipContainer.add(this.cracksG);
+    // Middle fang — drawn upward from local y=0 (will be placed at bottom edge of cavity)
+    this.midToothG = this.scene.add.graphics();
+    this.midToothG.fillStyle(0xf4d0a8, 1);
+    this.midToothG.fillRoundedRect(-s * 0.085, -s * 0.22, s * 0.17, s * 0.22, s * 0.04);
+
+    this._updateTeethPositions();   // set initial y positions before first frame
+    this.flipContainer.add(this.mouthCavityG);
+    this.flipContainer.add(this.sideTeethG);
+    this.flipContainer.add(this.midToothG);
 
     // ── Hit flash overlay sprite (pixel-perfect tintFill, alpha 0 at rest) ───
     this.hitFlashBodyS = this.scene.add.sprite(0, 0, `charger-body-${s}`);
@@ -151,24 +183,22 @@ export default class Charger extends BossBase {
       // 2. source-atop — all gradient passes stay within body silhouette
       ctx.globalCompositeOperation = 'source-atop';
 
-      // 3a. Linear top-to-bottom gradient: floods the full wide oval with blue-lit top
-      //     Blue-tinted highlight (not pure white) reads as "electric glow" on dark navy
-      const linGrad = ctx.createLinearGradient(cx, cy - s * 0.80, cx, cy + s * 0.90);
-      linGrad.addColorStop(0.00, 'rgba(140, 200, 255, 0.62)'); // bright blue-white top
-      linGrad.addColorStop(0.30, 'rgba(140, 200, 255, 0.10)'); // fades quickly
-      linGrad.addColorStop(0.55, 'rgba(0, 0, 0, 0)');          // transparent mid
-      linGrad.addColorStop(0.80, 'rgba(0, 0, 0, 0.20)');       // underside darkens
-      linGrad.addColorStop(1.00, 'rgba(0, 0, 0, 0.50)');       // dark bottom
-      ctx.fillStyle = linGrad;
-      ctx.fillRect(0, 0, cw, ch);
-
-      // 3b. Radial edge vignette: center transparent → edges darker (3D roundness)
-      const vignette = ctx.createRadialGradient(cx, cy, 0, cx, cy, s * 1.40);
-      vignette.addColorStop(0.00, 'rgba(0, 0, 0, 0)');
-      vignette.addColorStop(0.65, 'rgba(0, 0, 0, 0)');
-      vignette.addColorStop(1.00, 'rgba(0, 0, 0, 0.40)');
-      ctx.fillStyle = vignette;
-      ctx.fillRect(0, 0, cw, ch);
+      // 3. Elliptical radial gradient — a circular radial drawn under an x-stretch
+      //    transform renders as a horizontal ellipse matching the wide oval body.
+      //    Bright blue-lit crown at top fading to a dark rounded edge = volumetric
+      //    sphere look (not a flat tinted panel like a plain linear gradient).
+      const ar = 1.47;                       // body width/height ratio (s*1.10 / s*0.75)
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(ar, 1.0);                    // x-stretch → circular radial draws as wide ellipse
+      const grad = ctx.createRadialGradient(0, -s * 0.55, 0, 0, -s * 0.35, s * 0.95);
+      grad.addColorStop(0.00, 'rgba(150, 205, 255, 0.55)'); // electric-blue highlight crown
+      grad.addColorStop(0.35, 'rgba(120, 180, 255, 0.12)'); // quick falloff
+      grad.addColorStop(0.60, 'rgba(0, 0, 0, 0)');          // body colour shows through mid
+      grad.addColorStop(1.00, 'rgba(0, 0, 0, 0.55)');       // dark rounded edge/bottom
+      ctx.fillStyle = grad;
+      ctx.fillRect(-cw, -ch, cw * 2, ch * 2);               // covers full canvas in scaled space
+      ctx.restore();
 
       // 4. Angry V brow lines (still source-atop — clipped to body silhouette)
       ctx.strokeStyle = '#000d26';
@@ -183,26 +213,8 @@ export default class Charger extends BossBase {
       ctx.lineTo(cx + s * 0.48, cy - s * 0.40);
       ctx.stroke();
 
-      // 5. Restore before drawing face features
+      // 5. Restore composite mode (mouth is now a live animated Graphics, see _buildBody)
       ctx.globalCompositeOperation = 'source-over';
-
-      // 6. Open mouth — dark cavity carved into lower face
-      ctx.fillStyle = '#000814';
-      ctx.beginPath();
-      ctx.ellipse(cx, cy + s * 0.30, s * 0.52, s * 0.20, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 7. Three bone-colour teeth hanging down from upper jaw into the cavity
-      ctx.fillStyle = '#f4d0a8';
-      ctx.beginPath();
-      ctx.roundRect(cx - s * 0.40, cy + s * 0.08, s * 0.18, s * 0.24, s * 0.04);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.roundRect(cx - s * 0.09, cy + s * 0.05, s * 0.18, s * 0.28, s * 0.04);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.roundRect(cx + s * 0.22,  cy + s * 0.08, s * 0.18, s * 0.24, s * 0.04);
-      ctx.fill();
 
       tex.refresh();
     }
@@ -216,6 +228,15 @@ export default class Charger extends BossBase {
   // ANIMATION HELPERS — every tween is created here. No per-frame draw calls.
   // ─────────────────────────────────────────────────────────────────────────
 
+  // Sync side-teeth (top edge) and mid-fang (bottom edge) to the current
+  // cavity scaleY. Called via onUpdate in every mouthCavityG tween.
+  _updateTeethPositions() {
+    const topEdge = this._mouthCenterY - this._mouthHalfH * this.mouthCavityG.scaleY;
+    const botEdge = this._mouthCenterY + this._mouthHalfH * this.mouthCavityG.scaleY;
+    this.sideTeethG.y = topEdge;
+    this.midToothG.y  = botEdge;
+  }
+
   _animIdleStart() {
     // Breathing wobble — body Y scales up while X scales down (volume preserve)
     this._idleTweens.push(this.scene.tweens.add({
@@ -225,6 +246,12 @@ export default class Charger extends BossBase {
     this._idleTweens.push(this.scene.tweens.add({
       targets: this.bodyS, scaleX: 0.97,
       duration: 800, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+    }));
+    // Mouth chomp — cavity scales from centre; teeth track edges via onUpdate
+    this._idleTweens.push(this.scene.tweens.add({
+      targets: this.mouthCavityG, scaleY: 0.25,
+      duration: 900, ease: 'Sine.easeInOut', yoyo: true, repeat: -1,
+      onUpdate: () => this._updateTeethPositions(),
     }));
     this._scheduleBlink();
   }
@@ -256,6 +283,12 @@ export default class Charger extends BossBase {
     this.scene.tweens.add({
       targets: [this.eyeBigG, this.eyeSmallG], scaleX: 1.85, scaleY: 1.85,
       duration: 220, ease: 'Back.easeOut',
+    });
+    // Mouth gapes wide for the wind-up; teeth track edges
+    this.scene.tweens.add({
+      targets: this.mouthCavityG, scaleY: 1.15,
+      duration: 220, ease: 'Back.easeOut',
+      onUpdate: () => this._updateTeethPositions(),
     });
     // Recoil 16px opposite the charge direction
     this.scene.tweens.add({
@@ -306,6 +339,12 @@ export default class Charger extends BossBase {
     this.scene.tweens.add({
       targets: this.container, rotation: 0,
       duration: 380, ease: 'Elastic.easeOut',
+    });
+    // Mouth snaps back to neutral; teeth track edges
+    this.scene.tweens.add({
+      targets: this.mouthCavityG, scaleY: 1,
+      duration: 380, ease: 'Elastic.easeOut',
+      onUpdate: () => this._updateTeethPositions(),
     });
   }
 
@@ -501,7 +540,7 @@ export default class Charger extends BossBase {
       onComplete,
     });
     this.scene.tweens.add({
-      targets: [this.eyeBigG, this.eyeSmallG],
+      targets: [this.eyeBigG, this.eyeSmallG, this.mouthCavityG, this.sideTeethG, this.midToothG],
       alpha: 0, duration: 360, ease: 'Quad.easeIn',
     });
   }
