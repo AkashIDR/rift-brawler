@@ -370,59 +370,69 @@ export default class Stomper extends BossBase {
     });
   }
 
-  // Stomp windup — body crouches low (wide flat pancake), arms raise to pound
+  // Stomp windup — arms raise, jaw drops, body stays neutral.
+  // The squish happens on impact (not here) so the hit moment is the
+  // dramatic beat, not the telegraph.
   _animStompWindup() {
     const s = this.size;
-    this.scene.tweens.add({
-      targets: this.bodyS, scaleX: 1.45, scaleY: 0.58,
-      duration: 180, ease: 'Cubic.easeIn',
-    });
-    this.scene.tweens.add({
-      targets: [this.eyeLeftG, this.eyeRightG], scaleY: 0.40,
-      duration: 180, ease: 'Cubic.easeIn',
-    });
     this.scene.tweens.add({
       targets: this.lowerJawG, y: this._jawRestY + s * 0.25,
       duration: 180, ease: 'Back.easeOut',
     });
     this.scene.tweens.add({
-      targets: this.flipContainer, y: 8,
+      targets: this.flipContainer, y: 6,
       duration: 180, ease: 'Cubic.easeIn',
     });
-    // Arms raise up/back — gorilla about to pound
     this.scene.tweens.add({
       targets: [this.armLeftG, this.armRightG], rotation: -0.65,
       duration: 180, ease: 'Cubic.easeIn',
     });
   }
 
-  // Stomp impact — elastic bounce back; arms slam forward then return
+  // Stomp impact — instant pancake squish the moment the hit lands, then
+  // elastic rebound. The squish IS the impactful visual event.
   _animStompImpact() {
+    // Phase 1: snap to flat on hit (fast)
     this.scene.tweens.add({
-      targets: this.bodyS, scaleX: 1, scaleY: 1,
-      duration: 400, ease: 'Elastic.easeOut',
+      targets: this.bodyS, scaleX: 1.45, scaleY: 0.58,
+      duration: 75, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: this.bodyS, scaleX: 1, scaleY: 1,
+          duration: 420, ease: 'Elastic.easeOut',
+        });
+      },
     });
     this.scene.tweens.add({
-      targets: [this.eyeLeftG, this.eyeRightG], scaleY: 1,
-      duration: 400, ease: 'Elastic.easeOut',
+      targets: [this.eyeLeftG, this.eyeRightG], scaleY: 0.35,
+      duration: 75, ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (!this.alive) return;
+        this.scene.tweens.add({
+          targets: [this.eyeLeftG, this.eyeRightG], scaleY: 1,
+          duration: 420, ease: 'Elastic.easeOut',
+        });
+      },
     });
+    // Jaw snaps shut on impact, container bounces back up
     this.scene.tweens.add({
       targets: this.lowerJawG, y: this._jawRestY,
-      duration: 400, ease: 'Elastic.easeOut',
+      duration: 420, ease: 'Elastic.easeOut',
     });
     this.scene.tweens.add({
       targets: this.flipContainer, y: 0,
-      duration: 400, ease: 'Elastic.easeOut',
+      duration: 420, ease: 'Elastic.easeOut',
     });
-    // Arms slam forward then elastic back to neutral
+    // Arms slam forward on the hit then elastic back
     this.scene.tweens.add({
       targets: [this.armLeftG, this.armRightG], rotation: 0.35,
-      duration: 80, ease: 'Quad.easeIn',
+      duration: 75, ease: 'Quad.easeIn',
       onComplete: () => {
         if (!this.alive) return;
         this.scene.tweens.add({
           targets: [this.armLeftG, this.armRightG], rotation: 0,
-          duration: 400, ease: 'Elastic.easeOut',
+          duration: 420, ease: 'Elastic.easeOut',
         });
       },
     });
@@ -454,63 +464,66 @@ export default class Stomper extends BossBase {
     });
   }
 
-  // Leap landing — massive impact squish then elastic recovery
+  // Leap landing — body snaps from tall-stretch directly to a massive flat
+  // pancake the instant it hits the ground, then elastic rebound. The jump
+  // arc itself carries the body in the stretched pose from the windup; the
+  // squish is the payoff moment on contact.
   _animLeapLanding() {
     const s = this.size;
-    // Phase 1: slam squish (fast)
+    // Snap flat on contact (very fast — the "hit" moment)
     this.scene.tweens.add({
       targets: this.bodyS, scaleX: 1.55, scaleY: 0.45,
-      duration: 100, ease: 'Quad.easeIn',
+      duration: 60, ease: 'Quad.easeIn',
       onComplete: () => {
         if (!this.alive) return;
         this.scene.tweens.add({
           targets: this.bodyS, scaleX: 1, scaleY: 1,
-          duration: 420, ease: 'Elastic.easeOut',
+          duration: 450, ease: 'Elastic.easeOut',
         });
       },
     });
     this.scene.tweens.add({
-      targets: [this.eyeLeftG, this.eyeRightG], scaleX: 1, scaleY: 0.30,
-      duration: 100, ease: 'Quad.easeIn',
+      targets: [this.eyeLeftG, this.eyeRightG], scaleX: 1, scaleY: 0.25,
+      duration: 60, ease: 'Quad.easeIn',
       onComplete: () => {
         if (!this.alive) return;
         this.scene.tweens.add({
           targets: [this.eyeLeftG, this.eyeRightG], scaleX: 1, scaleY: 1,
-          duration: 420, ease: 'Elastic.easeOut',
+          duration: 450, ease: 'Elastic.easeOut',
         });
       },
     });
     this.scene.tweens.add({
-      targets: this.lowerJawG, y: this._jawRestY + s * 0.15,
-      duration: 100, ease: 'Quad.easeIn',
+      targets: this.lowerJawG, y: this._jawRestY + s * 0.18,
+      duration: 60, ease: 'Quad.easeIn',
       onComplete: () => {
         if (!this.alive) return;
         this.scene.tweens.add({
           targets: this.lowerJawG, y: this._jawRestY,
-          duration: 420, ease: 'Elastic.easeOut',
+          duration: 450, ease: 'Elastic.easeOut',
         });
       },
     });
     this.scene.tweens.add({
-      targets: this.flipContainer, y: 10,
-      duration: 100, ease: 'Quad.easeIn',
+      targets: this.flipContainer, y: 12,
+      duration: 60, ease: 'Quad.easeIn',
       onComplete: () => {
         if (!this.alive) return;
         this.scene.tweens.add({
           targets: this.flipContainer, y: 0,
-          duration: 420, ease: 'Elastic.easeOut',
+          duration: 450, ease: 'Elastic.easeOut',
         });
       },
     });
-    // Arms slam to ground on impact then elastic back
+    // Arms slam to ground then elastic back
     this.scene.tweens.add({
       targets: [this.armLeftG, this.armRightG], rotation: 0.55,
-      duration: 100, ease: 'Quad.easeIn',
+      duration: 60, ease: 'Quad.easeIn',
       onComplete: () => {
         if (!this.alive) return;
         this.scene.tweens.add({
           targets: [this.armLeftG, this.armRightG], rotation: 0,
-          duration: 420, ease: 'Elastic.easeOut',
+          duration: 450, ease: 'Elastic.easeOut',
         });
       },
     });
