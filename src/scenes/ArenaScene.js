@@ -136,14 +136,11 @@ export default class ArenaScene extends Phaser.Scene {
     const floorTexG = this.add.graphics().setDepth(1);
     floorTexG.setMask(floorMask);
 
-    _drawBrickTexture(floorTexG, bounds, 48, 32, t.accentDim, 0.055);
-
-    floorTexG.lineStyle(1, t.accentDim, 0.03);
-    for (let d = -bounds.h; d < bounds.w; d += 80) {
-      floorTexG.lineBetween(bounds.x + d, bounds.y, bounds.x + d + bounds.h, bounds.y + bounds.h);
-      floorTexG.lineBetween(bounds.x + d + bounds.h, bounds.y, bounds.x + d, bounds.y + bounds.h);
-    }
-
+    // Brick mortar grid and cross-hatch removed — they extend across the full
+    // bounding rectangle and require a geometry mask to clip to the polygon.
+    // Phaser 3 WebGL geometry masks don't apply reliably during rt.draw(),
+    // causing visible rectangular artifacts outside the organic arena boundary.
+    // _drawFloorPatches uses arena.containsPoint() to self-clip, so it is safe.
     _drawFloorPatches(floorTexG, this.arena, bounds, t.floorLight, t.floorDark, 22);
 
     // ── DEPTH 2: Drop shadow — wall casting onto floor, north-facing only ────
