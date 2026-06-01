@@ -183,20 +183,7 @@ export default class ArenaScene extends Phaser.Scene {
       detailG.fillCircle(dx, dy, 2.5);
     });
 
-    // ── DEPTH 6: Vignette — progressive darkening inward from perimeter ──────
-    // More bands at lower per-band alpha so no single inner polygon edge is
-    // dark enough to appear as a visible line. Stacked total darkening at the
-    // innermost point ≈ 0.18 — visually equivalent to before, but smooth.
-    const vigOffsets = [72, 58, 46, 36, 27, 19, 12, 6];
-    const vigAlphas  = [0.030, 0.028, 0.026, 0.024, 0.022, 0.020, 0.018, 0.016];
-    const vigGs = [];
-    vigOffsets.forEach((d, i) => {
-      const vg = this.add.graphics().setDepth(6);
-      vg.fillStyle(0x000000, vigAlphas[i]);
-      const inner = _shrinkPts(perimeter, d);
-      _fillBetweenPolygons(vg, perimeter, inner);
-      vigGs.push(vg);
-    });
+    const vigGs = []; // vignette removed — caused visible line artifacts at arena edge
 
     // ── Bake all static layers into one RenderTexture ───────────────────────
     // Phaser Graphics replay all draw commands every render frame. Baking into
