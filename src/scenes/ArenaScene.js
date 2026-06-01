@@ -184,8 +184,11 @@ export default class ArenaScene extends Phaser.Scene {
     });
 
     // ── DEPTH 6: Vignette — progressive darkening inward from perimeter ──────
-    const vigOffsets = [88, 64, 42, 24, 12];
-    const vigAlphas  = [0.09, 0.09, 0.08, 0.07, 0.06];
+    // More bands at lower per-band alpha so no single inner polygon edge is
+    // dark enough to appear as a visible line. Stacked total darkening at the
+    // innermost point ≈ 0.18 — visually equivalent to before, but smooth.
+    const vigOffsets = [72, 58, 46, 36, 27, 19, 12, 6];
+    const vigAlphas  = [0.030, 0.028, 0.026, 0.024, 0.022, 0.020, 0.018, 0.016];
     const vigGs = [];
     vigOffsets.forEach((d, i) => {
       const vg = this.add.graphics().setDepth(6);
