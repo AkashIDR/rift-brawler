@@ -126,31 +126,11 @@ export default class ArenaScene extends Phaser.Scene {
     floorG.fillStyle(t.floor, 1);
     floorG.fillPoints(perimeter, true);
 
-    // ── DEPTH 1: Floor texture (brick mortar + cross-hatch + patches) ────────
-    // All floor-content graphics share ONE geometry mask (one stencil texture).
-    const maskG = this.make.graphics({ add: false });
-    maskG.fillStyle(0xffffff, 1);
-    maskG.fillPoints(perimeter, true);
-    const floorMask = maskG.createGeometryMask();
-
-    const floorTexG = this.add.graphics().setDepth(1);
-    floorTexG.setMask(floorMask);
-
-    // Brick mortar grid and cross-hatch removed — they extend across the full
-    // bounding rectangle and require a geometry mask to clip to the polygon.
-    // Phaser 3 WebGL geometry masks don't apply reliably during rt.draw(),
-    // causing visible rectangular artifacts outside the organic arena boundary.
-    // _drawFloorPatches uses arena.containsPoint() to self-clip, so it is safe.
-    _drawFloorPatches(floorTexG, this.arena, bounds, t.floorLight, t.floorDark, 22);
-
-    // ── DEPTH 2: Drop shadow — wall casting onto floor, north-facing only ────
-    const dropG = this.add.graphics().setDepth(2);
-    dropG.setMask(floorMask);
-    // _drawWallDropShadow removed — the per-segment alpha (0.35 * fEdge) varies
-    // across adjacent wall segments, making each trapezoid visible as a separate
-    // rectangle; the effect scales from barely visible at east/west sides to
-    // clearly visible at the north where fEdge → 1.0. The wall face and cap
-    // geometry already provide sufficient 2.5D depth cues without it.
+    // ── DEPTH 1: Floor patches (organic ellipses, self-clip via containsPoint) ──
+    // Geometry masks removed entirely from the RT pipeline — Phaser 3 WebGL
+    // stencil masks produce visible boundary artifacts at polygon segment edges
+    // that scale with north-facing angle (most visible at the arena top).
+    // _drawFloorPatches uses arena.containsPoint() to self-clip, so no mask needed.
 
     // ── DEPTH 3 & 4: Wall front faces + top caps (the 2.5D wall geometry) ────
     const wallFrontG = this.add.graphics().setDepth(3);
@@ -165,6 +145,8 @@ export default class ArenaScene extends Phaser.Scene {
     _drawMedallion(detailG, cx, cy, t.accent, t.accentDim);
 
     _drawThemeDetails(detailG, themeIdx, this.arena, bounds, t.accent, t.accentDim, 15);
+    // Floor patches drawn here (no mask needed — self-clips via arena.containsPoint)
+    _drawFloorPatches(detailG, this.arena, bounds, t.floorLight, t.floorDark, 22);
 
     const scatter = [
       [bounds.x + 110, bounds.y + 90], [bounds.x + bounds.w - 110, bounds.y + 90],
@@ -187,30 +169,14 @@ export default class ArenaScene extends Phaser.Scene {
     const vigGs = []; // vignette removed — caused visible line artifacts at arena edge
 
     // ── Bake all static layers into one RenderTexture ───────────────────────
-    // Phaser Graphics replay all draw commands every render frame. Baking into
-    // a RenderTexture converts static content to a cached GPU texture:
-    // 1 draw call per frame instead of 14, and 0 stencil passes instead of 2.
-    //
-    // Clear geometry masks before stamping — the RT bakes final pixel output
-    // so masks are no longer needed once content is composited into the RT.
-    // floorTexG and dropG share the same floorMask; clearMask(true) on the
-    // first call destroys the mask object, clearMask(false) on the second just
-    // removes the now-dead reference safely.
+    // No geometry masks in this pipeline — stencil masks produce per-segment
+    // boundary artifacts when drawing to an RT. All content that needs clipping
+    // uses arena.containsPoint() to self-validate instead.
     const arenaRT = this.add.renderTexture(0, 0, worldW, worldH);
     arenaRT.setDepth(0).setOrigin(0, 0);
 
-    // Stamp in logical depth order — each draw composites on top of the previous.
-    // floorTexG and dropG still have their geometry mask active here; the mask IS
-    // applied by the WebGL renderer when drawing to the RT (stencil buffer is part
-    // of the RT framebuffer). Clearing the mask BEFORE the draw was wrong — it
-    // caused the brick texture and drop shadow to render unclipped across the full
-    // bounding rectangle, producing rectangular artifacts outside the arena polygon.
     arenaRT.draw(voidG);
     arenaRT.draw(floorG);
-    arenaRT.draw(floorTexG);     // geometry mask active → clipped to arena polygon
-    arenaRT.draw(dropG);         // geometry mask active → shadow clipped to polygon
-    floorTexG.clearMask(true);   // destroy floorMask now that both draws are done
-    dropG.clearMask(false);      // clear the now-dead mask reference
     arenaRT.draw(wallFrontG);
     arenaRT.draw(wallCapG);
     arenaRT.draw(detailG);
@@ -219,13 +185,10 @@ export default class ArenaScene extends Phaser.Scene {
     // Destroy all live Graphics — the RT now holds their rendered output
     voidG.destroy();
     floorG.destroy();
-    floorTexG.destroy();
-    dropG.destroy();
     wallFrontG.destroy();
     wallCapG.destroy();
     detailG.destroy();
     for (const vg of vigGs) vg.destroy();
-    maskG.destroy();   // source Graphics used to create the geometry mask
 
     // ── DEPTH 7: Ambient particles ───────────────────────────────────────────
     this._initParticles(t.particle);
