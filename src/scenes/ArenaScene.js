@@ -195,17 +195,21 @@ export default class ArenaScene extends Phaser.Scene {
     // floorTexG and dropG share the same floorMask; clearMask(true) on the
     // first call destroys the mask object, clearMask(false) on the second just
     // removes the now-dead reference safely.
-    floorTexG.clearMask(true);   // destroys floorMask
-    dropG.clearMask(false);      // floorMask already gone; just clears reference
-
     const arenaRT = this.add.renderTexture(0, 0, worldW, worldH);
     arenaRT.setDepth(0).setOrigin(0, 0);
 
-    // Stamp in logical depth order — each draw composites on top of the previous
+    // Stamp in logical depth order — each draw composites on top of the previous.
+    // floorTexG and dropG still have their geometry mask active here; the mask IS
+    // applied by the WebGL renderer when drawing to the RT (stencil buffer is part
+    // of the RT framebuffer). Clearing the mask BEFORE the draw was wrong — it
+    // caused the brick texture and drop shadow to render unclipped across the full
+    // bounding rectangle, producing rectangular artifacts outside the arena polygon.
     arenaRT.draw(voidG);
     arenaRT.draw(floorG);
-    arenaRT.draw(floorTexG);
-    arenaRT.draw(dropG);
+    arenaRT.draw(floorTexG);     // geometry mask active → clipped to arena polygon
+    arenaRT.draw(dropG);         // geometry mask active → shadow clipped to polygon
+    floorTexG.clearMask(true);   // destroy floorMask now that both draws are done
+    dropG.clearMask(false);      // clear the now-dead mask reference
     arenaRT.draw(wallFrontG);
     arenaRT.draw(wallCapG);
     arenaRT.draw(detailG);
