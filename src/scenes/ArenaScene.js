@@ -146,7 +146,11 @@ export default class ArenaScene extends Phaser.Scene {
     // ── DEPTH 2: Drop shadow — wall casting onto floor, north-facing only ────
     const dropG = this.add.graphics().setDepth(2);
     dropG.setMask(floorMask);
-    _drawWallDropShadow(dropG, perimeter, ARENA.WALL_SHADOW_DEPTH);
+    // _drawWallDropShadow removed — the per-segment alpha (0.35 * fEdge) varies
+    // across adjacent wall segments, making each trapezoid visible as a separate
+    // rectangle; the effect scales from barely visible at east/west sides to
+    // clearly visible at the north where fEdge → 1.0. The wall face and cap
+    // geometry already provide sufficient 2.5D depth cues without it.
 
     // ── DEPTH 3 & 4: Wall front faces + top caps (the 2.5D wall geometry) ────
     const wallFrontG = this.add.graphics().setDepth(3);
