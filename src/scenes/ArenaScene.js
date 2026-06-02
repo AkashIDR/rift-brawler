@@ -366,6 +366,7 @@ export default class ArenaScene extends Phaser.Scene {
 
     this.events.emit('bossSpawned', { name: this.boss.bossName, maxHp: this.boss.maxHp });
     this.boss.events.on('hpChanged', hp => this.events.emit('bossHpChanged', hp));
+    this.boss.events.on('enraged',   ()  => this.events.emit('bossEnraged'));
     this.cameras.main.shake(300, 0.0036);
   }
 

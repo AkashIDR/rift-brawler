@@ -93,6 +93,7 @@ export default class BossBase {
     this.enraged = true;
     this._attackCooldown = Math.max(800, this._attackCooldown - 400);
     this._telegraphDuration = Math.max(400, this._telegraphDuration - 200);
+    this.events.emit('enraged');
 
     // Visual enrage pulse
     this.scene.tweens.add({

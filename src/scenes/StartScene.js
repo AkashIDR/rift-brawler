@@ -300,13 +300,33 @@ export default class StartScene extends Phaser.Scene {
       duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
     });
 
+    // ── Title drip effect — small blood drips below the title text ──────────────
+    const drips = this.add.graphics();
+    const dripBaseY = titleY + 52;
+    const dripSpecs = [
+      { x: CX - 220, h: 18, w: 5 },
+      { x: CX - 85,  h: 26, w: 7 },
+      { x: CX + 30,  h: 14, w: 5 },
+      { x: CX + 175, h: 22, w: 6 },
+    ];
+    dripSpecs.forEach(d => {
+      drips.fillStyle(0xaa2200, 1);
+      drips.fillTriangle(d.x - d.w, dripBaseY, d.x + d.w, dripBaseY, d.x, dripBaseY + d.h);
+      drips.fillStyle(0xff4422, 0.85);
+      drips.fillTriangle(d.x - d.w * 0.55, dripBaseY + 1, d.x + d.w * 0.55, dripBaseY + 1, d.x, dripBaseY + d.h * 0.85);
+      drips.fillStyle(0xaa2200, 1);
+      drips.fillCircle(d.x, dripBaseY - 1, d.w * 0.7);
+    });
+    drips.setAlpha(0);
+    this.tweens.add({ targets: drips, alpha: 0.85, duration: 800, delay: 600, ease: 'Quad.easeOut' });
+
     // ── Subtitle ────────────────────────────────────────────────────────────────
     const sub = this.add.text(CX, subtitleY, 'Summon. Slay. Survive.', {
       fontFamily: "'Nunito', sans-serif",
       fontSize: '34px',
-      color: '#ccaaff',
+      color: '#d4a96a',
       fontStyle: 'italic',
-      stroke: '#33004d',
+      stroke: '#1a0a08',
       strokeThickness: 3,
     }).setOrigin(0.5).setAlpha(0);
 
@@ -326,38 +346,39 @@ export default class StartScene extends Phaser.Scene {
     const startY = CY + 100;
     const gap    = 90;
 
-    this._makeButton(CX, startY,           'START',    0xaa44ff, 0xffffff, () => this._startGame());
-    this._makeButton(CX, startY + gap,     'CONTROLS', 0x1e1e44, 0xccaaff, () => this._showControls());
-    this._makeButton(CX, startY + gap * 2, 'SETTINGS', 0x1e1e44, 0xccaaff, () => this._showSettings());
+    this._makeButton(CX, startY,           'START',    0x2a1508, 0xffe8c0, () => this._startGame(),    true);
+    this._makeButton(CX, startY + gap,     'CONTROLS', 0x1a0e06, 0xd4a96a, () => this._showControls(), false);
+    this._makeButton(CX, startY + gap * 2, 'SETTINGS', 0x1a0e06, 0xd4a96a, () => this._showSettings(), false);
   }
 
-  _makeButton(x, y, label, bgColor, textColor, onClick) {
+  _makeButton(x, y, label, bgColor, textColor, onClick, isPrimary = false) {
     const w = 360, h = 66, r = 16;
+    const GOLD = 0xd4a96a;
     const container = this.add.container(x, y);
 
     // Drop shadow
     const shadow = this.add.graphics();
-    shadow.fillStyle(0x000000, 0.5);
+    shadow.fillStyle(0x000000, 0.55);
     shadow.fillRoundedRect(-w / 2 + 5, -h / 2 + 5, w, h, r);
 
     const bg = this.add.graphics();
     bg.fillStyle(bgColor, 1);
     bg.fillRoundedRect(-w / 2, -h / 2, w, h, r);
-    // Shine strip
-    bg.fillStyle(0xffffff, 0.09);
+    // Warm cream shine strip
+    bg.fillStyle(0xfff5d0, 0.10);
     bg.fillRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, h / 2 - 2, { tl: r - 1, tr: r - 1, bl: 0, br: 0 });
-    // Border
-    bg.lineStyle(1.5, 0xffffff, 0.18);
+    // Gold border
+    bg.lineStyle(2, GOLD, isPrimary ? 0.95 : 0.75);
     bg.strokeRoundedRect(-w / 2, -h / 2, w, h, r);
 
-    // Glow border for primary button
-    if (bgColor === 0xaa44ff) {
-      bg.lineStyle(3, 0xdd88ff, 0.5);
+    // Outer glow ring for the primary START button
+    if (isPrimary) {
+      bg.lineStyle(3, 0xffd080, 0.55);
       bg.strokeRoundedRect(-w / 2 - 2, -h / 2 - 2, w + 4, h + 4, r + 1);
     }
 
     const hoverG = this.add.graphics();
-    hoverG.fillStyle(0xffffff, 0.14);
+    hoverG.fillStyle(GOLD, 0.18);
     hoverG.fillRoundedRect(-w / 2, -h / 2, w, h, r);
     hoverG.setAlpha(0);
 
