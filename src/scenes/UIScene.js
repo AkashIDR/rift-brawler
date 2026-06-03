@@ -448,11 +448,11 @@ export default class UIScene extends Phaser.Scene {
     if (isHp) {
       // Heart-shaped housing, displayed at 0.72× (52→37px wide, 50→36px tall)
       this.hpIcon = this.add.image(LEFT_CAP_CX, barCY, 'ui-hp-cap')
-        .setOrigin(0.5).setScale(0.72);
+        .setOrigin(0.5).setScale(1.08);
     } else {
-      // Bolt-shaped housing, displayed at 0.60× (46→28px wide, 56→34px tall)
+      // Bolt-shaped housing, displayed at 0.90×
       this.add.image(LEFT_CAP_CX, barCY, 'ui-stam-cap')
-        .setOrigin(0.5).setScale(0.60);
+        .setOrigin(0.5).setScale(0.90);
     }
   }
 
