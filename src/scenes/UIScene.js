@@ -157,21 +157,21 @@ export default class UIScene extends Phaser.Scene {
     ctx.strokeStyle = 'rgba(20,8,2,0.80)'; ctx.lineWidth = 1.8;
     this._heartPath(ctx, cx, cy, 16); ctx.stroke();
 
-    // Inner heart icon — dark outline pass
+    // Inner heart icon — thin dark outline (s=14)
     ctx.fillStyle = '#3a0606';
-    this._heartPath(ctx, cx, cy + 1, 9.5); ctx.fill();
-    // Main red body
+    this._heartPath(ctx, cx, cy + 1, 14); ctx.fill();
+    // Main red body (s=13 — fills most of housing, ~3px border)
     ctx.fillStyle = '#c0392b';
-    this._heartPath(ctx, cx, cy, 9); ctx.fill();
-    // Upper-shine (lighter red across top)
+    this._heartPath(ctx, cx, cy, 13); ctx.fill();
+    // Upper-shine (lighter red across top portion)
     ctx.fillStyle = 'rgba(220,100,100,0.50)';
-    this._heartPath(ctx, cx, cy - 1.5, 6.5); ctx.fill();
+    this._heartPath(ctx, cx, cy - 2, 9.5); ctx.fill();
     // Pink highlight ellipse on top-left lobe
     ctx.fillStyle = 'rgba(255,160,160,0.72)';
-    ctx.beginPath(); ctx.ellipse(cx - 3.5, cy - 3, 2.8, 1.8, -0.45, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(cx - 5, cy - 4, 4.0, 2.5, -0.45, 0, Math.PI * 2); ctx.fill();
     // White specular dot
     ctx.fillStyle = 'rgba(255,255,255,0.90)';
-    ctx.beginPath(); ctx.arc(cx - 4, cy - 4, 1.1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx - 5.5, cy - 5, 1.5, 0, Math.PI * 2); ctx.fill();
 
     tex.refresh();
   }
@@ -184,12 +184,15 @@ export default class UIScene extends Phaser.Scene {
     const tex = this.textures.createCanvas(key, w, h);
     const ctx = tex.getContext();
 
-    const makeBolt = (sx, ox, oy) =>
+    // Scale both bolt shapes from their shared centroid → guaranteed concentric alignment
+    const BOLT_CX = 9, BOLT_CY = 9.86;   // polygon centroid
+    const makeBolt = (sx, targetX, targetY) =>
       [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]]
-        .map(([x, y]) => [x * sx + ox, y * sx + oy]);
+        .map(([x, y]) => [(x - BOLT_CX) * sx + targetX, (y - BOLT_CY) * sx + targetY]);
 
-    const outerPts = makeBolt(1.85,  6.4,  5.8);
-    const innerPts = makeBolt(1.20, 10.2, 13.6);
+    const bCx = w / 2, bCy = h / 2 + 2;   // canvas center (shift down 2px for visual balance)
+    const outerPts = makeBolt(1.85, bCx, bCy);   // outer housing
+    const innerPts = makeBolt(1.45, bCx, bCy);   // inner icon (~2-3px gap each side)
 
     const drawPoly = (pts) => {
       ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
@@ -203,8 +206,7 @@ export default class UIScene extends Phaser.Scene {
     // Housing dark wood base
     ctx.fillStyle = '#1a0d08'; drawPoly(outerPts); ctx.fill();
     // Sphere-like gradient
-    const cx = w / 2, cy = h / 2;
-    const bg = ctx.createRadialGradient(cx - 8, cy - 10, 0, cx, cy, 28);
+    const bg = ctx.createRadialGradient(bCx - 8, bCy - 10, 0, bCx, bCy, 28);
     bg.addColorStop(0,    'rgba(255,255,255,0.28)');
     bg.addColorStop(0.40, 'rgba(255,255,255,0.04)');
     bg.addColorStop(0.75, 'rgba(0,0,0,0.00)');
