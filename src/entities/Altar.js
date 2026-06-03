@@ -20,7 +20,7 @@ export default class Altar {
     this._draw(0);
     this.container.add(this.g);
 
-    this.label = this.scene.add.text(0, -52, 'Summon Boss', {
+    this.label = this.scene.add.text(0, -62, 'Summon Boss', {
       fontFamily: "'Fredoka One', sans-serif",
       fontSize: '18px',
       color: '#ffe8c0',
@@ -40,7 +40,7 @@ export default class Altar {
 
     this.scene.tweens.add({
       targets: this.label,
-      y: -58, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      y: -68, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
     });
   }
 
@@ -110,10 +110,9 @@ export default class Altar {
     this.g.fillStyle(COLORS.ALTAR, Math.min(1, rGlow));
     this.g.fillCircle(0, -4, 3);
 
-    // ── 6. Pillars — drawn AFTER platform, centered on disc ──────────────────
-    //   py_top=-28, ph=44 → center at y=-6, bottom at y=16 (inside disc y=-18..22)
-    //   Visually anchors pillars in the middle of the platform disc.
-    const py_top = -28, pw = 18, ph = 44;
+    // ── 6. Pillars — drawn AFTER platform, midpoint between top and center ───
+    //   py_top=-38, ph=44 → center at y=-16, bottom at y=6 (inside disc y=-18..22)
+    const py_top = -38, pw = 18, ph = 44;
 
     [{ px: -46 }, { px: 30 }].forEach(({ px }) => {
       // Drop shadow
@@ -130,8 +129,8 @@ export default class Altar {
 
       // Carved groove
       this.g.lineStyle(1, STONE_EDGE, 0.50);
-      this.g.lineBetween(px + 2, -11, px + pw - 2, -11);
-      this.g.lineBetween(px + 2,   3, px + pw - 2,   3);
+      this.g.lineBetween(px + 2, -21, px + pw - 2, -21);
+      this.g.lineBetween(px + 2,  -7, px + pw - 2,  -7);
 
       // Top cap
       this.g.fillStyle(STONE_LIGHT, 1);
@@ -144,17 +143,17 @@ export default class Altar {
       this.g.strokeRoundedRect(px, py_top, pw, ph, 3);
     });
 
-    // ── 7. Oval lintel slab — caps pillar tops at y=-28 ──────────────────────
+    // ── 7. Oval lintel slab — caps pillar tops at y=-38 ──────────────────────
     this.g.fillStyle(STONE_DARK, 1);
-    this.g.fillEllipse(0, -25, 112, 20);
+    this.g.fillEllipse(0, -35, 112, 20);
     this.g.fillStyle(STONE_MID, 1);
-    this.g.fillEllipse(0, -28, 110, 16);
+    this.g.fillEllipse(0, -38, 110, 16);
     this.g.fillStyle(STONE_LIGHT, 0.65);
-    this.g.fillEllipse(0, -29, 100, 10);
+    this.g.fillEllipse(0, -39, 100, 10);
     this.g.lineStyle(2, STONE_EDGE, 0.85);
-    this.g.strokeEllipse(0, -25, 112, 20);
+    this.g.strokeEllipse(0, -35, 112, 20);
     this.g.lineStyle(1, STONE_EDGE, 0.55);
-    this.g.strokeEllipse(0, -28, 110, 16);
+    this.g.strokeEllipse(0, -38, 110, 16);
 
     // ── 8. Twin flames — centred on disc ─────────────────────────────────────
     const daisTop = -6;
