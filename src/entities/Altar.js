@@ -20,7 +20,7 @@ export default class Altar {
     this._draw(0);
     this.container.add(this.g);
 
-    this.label = this.scene.add.text(0, -62, 'Summon Boss', {
+    this.label = this.scene.add.text(0, -67, 'Summon Boss', {
       fontFamily: "'Fredoka One', sans-serif",
       fontSize: '18px',
       color: '#ffe8c0',
@@ -40,7 +40,7 @@ export default class Altar {
 
     this.scene.tweens.add({
       targets: this.label,
-      y: -68, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      y: -73, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
     });
   }
 
@@ -111,8 +111,8 @@ export default class Altar {
     this.g.fillCircle(0, -4, 3);
 
     // ── 6. Pillars — drawn AFTER platform, midpoint between top and center ───
-    //   py_top=-38, ph=44 → center at y=-16, bottom at y=6 (inside disc y=-18..22)
-    const py_top = -38, pw = 18, ph = 44;
+    //   py_top=-43, ph=44 → center at y=-21, bottom at y=1 (inside disc y=-18..22)
+    const py_top = -43, pw = 18, ph = 44;
 
     [{ px: -46 }, { px: 30 }].forEach(({ px }) => {
       // Drop shadow
@@ -129,8 +129,8 @@ export default class Altar {
 
       // Carved groove
       this.g.lineStyle(1, STONE_EDGE, 0.50);
-      this.g.lineBetween(px + 2, -21, px + pw - 2, -21);
-      this.g.lineBetween(px + 2,  -7, px + pw - 2,  -7);
+      this.g.lineBetween(px + 2, -26, px + pw - 2, -26);
+      this.g.lineBetween(px + 2, -12, px + pw - 2, -12);
 
       // Top cap
       this.g.fillStyle(STONE_LIGHT, 1);
@@ -145,15 +145,15 @@ export default class Altar {
 
     // ── 7. Oval lintel slab — caps pillar tops at y=-38 ──────────────────────
     this.g.fillStyle(STONE_DARK, 1);
-    this.g.fillEllipse(0, -35, 112, 20);
+    this.g.fillEllipse(0, -40, 112, 20);
     this.g.fillStyle(STONE_MID, 1);
-    this.g.fillEllipse(0, -38, 110, 16);
+    this.g.fillEllipse(0, -43, 110, 16);
     this.g.fillStyle(STONE_LIGHT, 0.65);
-    this.g.fillEllipse(0, -39, 100, 10);
+    this.g.fillEllipse(0, -44, 100, 10);
     this.g.lineStyle(2, STONE_EDGE, 0.85);
-    this.g.strokeEllipse(0, -35, 112, 20);
+    this.g.strokeEllipse(0, -40, 112, 20);
     this.g.lineStyle(1, STONE_EDGE, 0.55);
-    this.g.strokeEllipse(0, -38, 110, 16);
+    this.g.strokeEllipse(0, -43, 110, 16);
 
     // ── 8. Twin flames — centred on disc ─────────────────────────────────────
     const daisTop = -6;
