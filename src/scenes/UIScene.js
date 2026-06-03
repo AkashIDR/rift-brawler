@@ -342,28 +342,29 @@ export default class UIScene extends Phaser.Scene {
     const houseW    = BAR_W + 8;
     const houseY    = barCY - BAR_H / 2 - 4;
     const houseH    = BAR_H + 8;
-    const halfH     = Math.floor(houseH / 2);   // = 15
+    const halfH     = Math.floor(houseH / 2);   // = 15 (used for left cap sizing)
+    const capEnd    = 8;                          // right capsule protrusion — narrow
     const borderCol = isHp ? 0x5a2a10 : 0x4a3200;
 
     const g = this.add.graphics();
 
-    // Housing beam — left: slightly rounded, right: capsule (halfH radius)
+    // Housing beam — left: slightly rounded, right: narrow capsule (capEnd radius)
     g.fillStyle(0x1a0d08, 0.88);
-    g.fillRoundedRect(houseX, houseY, houseW + halfH, houseH, {
-      tl: 5, tr: halfH, bl: 5, br: halfH,
+    g.fillRoundedRect(houseX, houseY, houseW + capEnd, houseH, {
+      tl: 5, tr: capEnd, bl: 5, br: capEnd,
     });
     g.lineStyle(1.5, borderCol, 0.65);
-    g.strokeRoundedRect(houseX, houseY, houseW + halfH, houseH, {
-      tl: 5, tr: halfH, bl: 5, br: halfH,
+    g.strokeRoundedRect(houseX, houseY, houseW + capEnd, houseH, {
+      tl: 5, tr: capEnd, bl: 5, br: capEnd,
     });
 
     // Housing top-shine — broad lift (top 45%) + 1px gloss edge
     g.fillStyle(0xffffff, 0.07);
-    g.fillRoundedRect(houseX + 1, houseY + 1, houseW + halfH - 2, Math.floor(houseH * 0.45), {
-      tl: 4, tr: halfH - 1, bl: 0, br: 0,
+    g.fillRoundedRect(houseX + 1, houseY + 1, houseW + capEnd - 2, Math.floor(houseH * 0.45), {
+      tl: 4, tr: capEnd - 1, bl: 0, br: 0,
     });
     g.fillStyle(0xfff5d0, 0.18);
-    g.fillRect(houseX + 8, houseY + 1, houseW + halfH - 16, 1);
+    g.fillRect(houseX + 8, houseY + 1, houseW + capEnd - 16, 1);
 
     // Left icon cap — sphere-shaded baked texture
     const capR = halfH;   // = 15px
