@@ -2,14 +2,13 @@ import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../config/gameConfig.js';
 
 // ─── Bar layout ──────────────────────────────────────────────────────────────
-const ICON_CX  = 24;                    // heart / bolt icon center X
-const BAR_X    = 52;                    // bar track left edge
-const BAR_W    = 280;                   // 50% wider than before
-const BAR_H    = 16;
-const CAP_R    = 11;                    // end-cap circle radius
-const CAP_PAD  = 8;                     // cap center inset from bar edge
-const HP_BAR_Y = GAME_HEIGHT - 84;     // HP bar track top
-const ST_BAR_Y = GAME_HEIGHT - 50;     // Stamina bar track top
+const LEFT_CAP_CX = 36;           // center X of left icon cap (heart/bolt shaped)
+const BAR_X       = 56;           // bar track left edge (housing overlaps cap by ~6px)
+const BAR_W       = 322;          // ~15% wider than previous 280
+const BAR_H       = 22;           // ~40% taller than previous 16
+const RIGHT_CAP_R = 13;           // right decorative cap radius
+const HP_BAR_Y    = GAME_HEIGHT - 92;   // HP bar track top
+const ST_BAR_Y    = GAME_HEIGHT - 54;   // Stamina bar track top
 
 // ─── Circular skill slots ────────────────────────────────────────────────────
 const SLOT_R   = 32;
@@ -71,6 +70,8 @@ export default class UIScene extends Phaser.Scene {
   _buildIconTextures() {
     this._bakeHeartIcon();
     this._bakeBoltIcon();
+    this._bakeHpCapLeft();
+    this._bakeStamCapLeft();
     this._bakeBossCapTexture();
     this._bakeSkillIcon('skill-q-strike',    0xffdd44, this._drawStrikeIcon);
     this._bakeSkillIcon('skill-w-shield',    0x44aaff, this._drawShieldIcon);
@@ -95,9 +96,9 @@ export default class UIScene extends Phaser.Scene {
 
   _heartPath(ctx, cx, cy, s) {
     ctx.beginPath();
-    ctx.moveTo(cx, cy+s*0.85);
-    ctx.bezierCurveTo(cx-s*1.45, cy+s*0.05, cx-s*1.1, cy-s*0.95, cx, cy-s*0.2);
-    ctx.bezierCurveTo(cx+s*1.1, cy-s*0.95, cx+s*1.45, cy+s*0.05, cx, cy+s*0.85);
+    ctx.moveTo(cx, cy + s * 0.85);
+    ctx.bezierCurveTo(cx - s*1.45, cy + s*0.05, cx - s*1.1, cy - s*0.95, cx, cy - s*0.2);
+    ctx.bezierCurveTo(cx + s*1.1,  cy - s*0.95, cx + s*1.45, cy + s*0.05, cx, cy + s*0.85);
     ctx.closePath();
   }
 
@@ -110,17 +111,103 @@ export default class UIScene extends Phaser.Scene {
     const pts = [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]];
     ctx.fillStyle = '#3a3000';
     ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    for (let i=1; i<pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#fff080';
     ctx.beginPath();
     pts.forEach(([x,y],i) => {
-      const ix = x+(x<8?0.6:-0.6), iy = y+(y<12?0.6:-0.6);
+      const ix=x+(x<8?0.6:-0.6), iy=y+(y<12?0.6:-0.6);
       if (i===0) ctx.moveTo(ix,iy); else ctx.lineTo(ix,iy);
     });
     ctx.closePath(); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillStyle='rgba(255,255,255,0.85)';
     ctx.beginPath(); ctx.moveTo(9.5,3); ctx.lineTo(6.5,11); ctx.lineTo(8,11); ctx.lineTo(10.5,3); ctx.closePath(); ctx.fill();
+    tex.refresh();
+  }
+
+  // Heart-shaped cap background for HP bar left end
+  _bakeHpCapLeft() {
+    const key = 'ui-hp-cap-left';
+    if (this.textures.exists(key)) return;
+    const size = 44;
+    const tex = this.textures.createCanvas(key, size, size);
+    const ctx = tex.getContext();
+    const cx = size / 2, cy = size / 2 + 1;
+
+    // Outer glow / shadow
+    ctx.fillStyle = '#0d0202';
+    this._heartPath(ctx, cx, cy + 2, 21); ctx.fill();
+
+    // Dark crimson body
+    ctx.fillStyle = '#2a0808';
+    this._heartPath(ctx, cx, cy, 20); ctx.fill();
+
+    // Mid layer
+    ctx.fillStyle = '#3d0e0e';
+    this._heartPath(ctx, cx, cy - 1, 17); ctx.fill();
+
+    // Gold/bronze border
+    ctx.strokeStyle = '#c8861a'; ctx.lineWidth = 2.2;
+    this._heartPath(ctx, cx, cy, 20); ctx.stroke();
+
+    // Subtle inner gold ring
+    ctx.strokeStyle = '#d4a96a'; ctx.lineWidth = 1; ctx.globalAlpha = 0.35;
+    this._heartPath(ctx, cx, cy, 16); ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Top-left specular
+    ctx.fillStyle = 'rgba(255,245,208,0.25)';
+    this._heartPath(ctx, cx - 2, cy - 3, 9); ctx.fill();
+
+    tex.refresh();
+  }
+
+  // Bolt-shaped cap background for Stamina bar left end
+  _bakeStamCapLeft() {
+    const key = 'ui-stam-cap-left';
+    if (this.textures.exists(key)) return;
+    const size = 44;
+    const tex = this.textures.createCanvas(key, size, size);
+    const ctx = tex.getContext();
+
+    // Scale original bolt (18x24) to fit 36x36 area centered in 44x44
+    // Scale factor = 36/22 = 1.636, offset so bolt centers in canvas
+    const sc = 1.636, xOff = 7.3, yOff = 2.36;
+    const scalePt = ([x, y]) => [x * sc + xOff, y * sc + yOff];
+    const outer = [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]].map(scalePt);
+    // Inset version (~80% scale from center)
+    const innerSc = 1.3, innerXOff = 9.7, innerYOff = 5.0;
+    const inner = [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]]
+      .map(([x,y]) => [x * innerSc + innerXOff, y * innerSc + innerYOff]);
+
+    const drawPoly = (pts) => {
+      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i=1; i<pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+    };
+
+    // Shadow
+    ctx.fillStyle = '#020508';
+    drawPoly(outer.map(([x,y]) => [x+1.5, y+1.5])); ctx.fill();
+
+    // Dark navy body
+    ctx.fillStyle = '#0a1a38'; drawPoly(outer); ctx.fill();
+
+    // Lighter inner face
+    ctx.fillStyle = '#122a58'; drawPoly(inner); ctx.fill();
+
+    // Gold border
+    ctx.strokeStyle = '#c8861a'; ctx.lineWidth = 2.2; drawPoly(outer); ctx.stroke();
+
+    // Inner gold ring
+    ctx.strokeStyle = '#d4a96a'; ctx.lineWidth = 1; ctx.globalAlpha = 0.35;
+    drawPoly(inner); ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Specular
+    ctx.fillStyle = 'rgba(255,245,208,0.25)';
+    drawPoly(inner.map(([x,y]) => [x-1, y-1])); ctx.fill();
+
     tex.refresh();
   }
 
@@ -137,12 +224,9 @@ export default class UIScene extends Phaser.Scene {
     ctx.beginPath(); ctx.moveTo(tip+3,cy); ctx.lineTo(15,cy-11); ctx.lineTo(joinX,cy-4); ctx.lineTo(joinX,cy+4); ctx.lineTo(15,cy+11); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = '#e8a030'; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(tip+4,cy); ctx.lineTo(joinX-1,cy); ctx.stroke();
-    ctx.fillStyle = '#d4a96a';
-    ctx.beginPath(); ctx.arc(29, cy, 6, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#7a4f1e'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(29, cy, 6, 0, Math.PI*2); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,245,208,0.85)';
-    ctx.beginPath(); ctx.arc(27, cy-2, 2, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#d4a96a'; ctx.beginPath(); ctx.arc(29,cy,6,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#7a4f1e'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(29,cy,6,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,245,208,0.85)'; ctx.beginPath(); ctx.arc(27,cy-2,2,0,Math.PI*2); ctx.fill();
     ctx.strokeStyle = '#1a0800'; ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.moveTo(tip,cy); ctx.lineTo(14,cy-14); ctx.lineTo(joinX,cy-6); ctx.lineTo(joinX,cy+6); ctx.lineTo(14,cy+14); ctx.closePath(); ctx.stroke();
     tex.refresh();
@@ -158,181 +242,125 @@ export default class UIScene extends Phaser.Scene {
 
   // Q — Power Strike: glowing bullet with aura + speed lines
   _drawStrikeIcon(ctx, s, color) {
-    const cx = s/2, cy = s/2;
-    const hex = '#'+color.toString(16).padStart(6,'0');
-    // Soft aura glow
-    ctx.strokeStyle = hex; ctx.lineWidth = 5; ctx.globalAlpha = 0.12;
-    ctx.beginPath(); ctx.ellipse(cx+2, cy, 13, 7, 0, 0, Math.PI*2); ctx.stroke();
-    ctx.lineWidth = 3; ctx.globalAlpha = 0.20;
-    ctx.beginPath(); ctx.ellipse(cx+2, cy, 11, 6, 0, 0, Math.PI*2); ctx.stroke();
-    ctx.globalAlpha = 1;
-    // Speed trail lines
-    ctx.strokeStyle = hex; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.globalAlpha = 0.65;
+    const cx=s/2, cy=s/2, hex='#'+color.toString(16).padStart(6,'0');
+    ctx.strokeStyle=hex; ctx.lineWidth=5; ctx.globalAlpha=0.12;
+    ctx.beginPath(); ctx.ellipse(cx+2,cy,13,7,0,0,Math.PI*2); ctx.stroke();
+    ctx.lineWidth=3; ctx.globalAlpha=0.20;
+    ctx.beginPath(); ctx.ellipse(cx+2,cy,11,6,0,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=1;
+    ctx.strokeStyle=hex; ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.globalAlpha=0.65;
     [[-7,-6],[-10,0],[-7,6]].forEach(([dx,dy]) => {
       ctx.beginPath(); ctx.moveTo(cx+dx-5,cy+dy); ctx.lineTo(cx+dx,cy+dy); ctx.stroke();
     });
-    ctx.globalAlpha = 1;
-    // Bullet body
-    ctx.fillStyle = hex;
-    ctx.beginPath(); ctx.ellipse(cx+2, cy, 10, 5.5, 0, 0, Math.PI*2); ctx.fill();
-    // White-hot core
-    ctx.fillStyle = '#ffffee';
-    ctx.beginPath(); ctx.ellipse(cx+4, cy-1, 4, 2, 0, 0, Math.PI*2); ctx.fill();
-    // Tip spark
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(cx+11, cy, 1.5, 0, Math.PI*2); ctx.fill();
-    // Outline
-    ctx.strokeStyle = '#332200'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.ellipse(cx+2, cy, 10, 5.5, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=1;
+    ctx.fillStyle=hex; ctx.beginPath(); ctx.ellipse(cx+2,cy,10,5.5,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ffffee'; ctx.beginPath(); ctx.ellipse(cx+4,cy-1,4,2,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(cx+11,cy,1.5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#332200'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.ellipse(cx+2,cy,10,5.5,0,0,Math.PI*2); ctx.stroke();
   }
 
   // W — Shield Dash: detailed kite shield with embossed center
   _drawShieldIcon(ctx, s, color) {
-    const cx = s/2, cy = s/2;
-    const hex = '#'+color.toString(16).padStart(6,'0');
-    // Shadow
-    ctx.fillStyle = '#0a2540';
+    const cx=s/2, cy=s/2, hex='#'+color.toString(16).padStart(6,'0');
+    ctx.fillStyle='#0a2540';
     ctx.beginPath();
     ctx.moveTo(cx,cy-13); ctx.lineTo(cx+10,cy-9.5); ctx.lineTo(cx+10,cy+2);
     ctx.bezierCurveTo(cx+10,cy+8,cx+4,cy+13,cx,cy+14);
     ctx.bezierCurveTo(cx-4,cy+13,cx-10,cy+8,cx-10,cy+2);
     ctx.lineTo(cx-10,cy-9.5); ctx.closePath(); ctx.fill();
-    // Shield body
-    ctx.fillStyle = hex;
+    ctx.fillStyle=hex;
     ctx.beginPath();
     ctx.moveTo(cx,cy-11); ctx.lineTo(cx+8,cy-8); ctx.lineTo(cx+8,cy+2);
     ctx.bezierCurveTo(cx+8,cy+7.5,cx+3.5,cy+11,cx,cy+12);
     ctx.bezierCurveTo(cx-3.5,cy+11,cx-8,cy+7.5,cx-8,cy+2);
     ctx.lineTo(cx-8,cy-8); ctx.closePath(); ctx.fill();
-    // Horizontal divider
-    ctx.strokeStyle = 'rgba(0,0,0,0.30)'; ctx.lineWidth = 1.2;
+    ctx.strokeStyle='rgba(0,0,0,0.30)'; ctx.lineWidth=1.2;
     ctx.beginPath(); ctx.moveTo(cx-7,cy-1); ctx.lineTo(cx+7,cy-1); ctx.stroke();
-    // Center boss (embossed oval)
-    ctx.fillStyle = 'rgba(0,0,0,0.20)';
-    ctx.beginPath(); ctx.ellipse(cx,cy+3, 3.5, 4.5, 0, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.beginPath(); ctx.ellipse(cx,cy+3, 2.5, 3.5, 0, 0, Math.PI*2); ctx.fill();
-    // Arrow chevron
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.moveTo(cx-4,cy-6); ctx.lineTo(cx+4,cy-1); ctx.lineTo(cx-4,cy+4);
-    ctx.lineTo(cx-2,cy-1); ctx.closePath(); ctx.fill();
-    // Top shine
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.3;
+    ctx.fillStyle='rgba(0,0,0,0.20)';
+    ctx.beginPath(); ctx.ellipse(cx,cy+3,3.5,4.5,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.25)';
+    ctx.beginPath(); ctx.ellipse(cx,cy+3,2.5,3.5,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ffffff';
+    ctx.beginPath(); ctx.moveTo(cx-4,cy-6); ctx.lineTo(cx+4,cy-1); ctx.lineTo(cx-4,cy+4); ctx.lineTo(cx-2,cy-1); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=1.3;
     ctx.beginPath(); ctx.moveTo(cx-7,cy-7); ctx.lineTo(cx,cy-10); ctx.lineTo(cx+7,cy-7); ctx.stroke();
   }
 
-  // E — Ground Slam: 8-spike burst with fracture lines
+  // E — Ground Slam: 8-spike burst with secondary ring
   _drawSlamIcon(ctx, s, color) {
-    const cx = s/2, cy = s/2;
-    const hex = '#'+color.toString(16).padStart(6,'0');
-    // Outer faint aura
-    ctx.fillStyle = hex; ctx.globalAlpha = 0.15;
+    const cx=s/2, cy=s/2, hex='#'+color.toString(16).padStart(6,'0');
+    ctx.fillStyle=hex; ctx.globalAlpha=0.15;
     ctx.beginPath(); ctx.arc(cx,cy,15,0,Math.PI*2); ctx.fill();
-    ctx.globalAlpha = 1;
-    // 8 spikes
-    const spikes = 8;
-    ctx.fillStyle = hex;
-    for (let i = 0; i < spikes; i++) {
-      const a = (i/spikes)*Math.PI*2 - Math.PI/2;
-      const r1=4, r2=14, perp=a+Math.PI/2, w=2.0;
+    ctx.globalAlpha=1;
+    ctx.fillStyle=hex;
+    for (let i=0; i<8; i++) {
+      const a=(i/8)*Math.PI*2-Math.PI/2, r1=4, r2=14, perp=a+Math.PI/2, w=2.0;
       ctx.beginPath();
       ctx.moveTo(cx+Math.cos(a)*r2, cy+Math.sin(a)*r2);
       ctx.lineTo(cx+Math.cos(a)*r1+Math.cos(perp)*w, cy+Math.sin(a)*r1+Math.sin(perp)*w);
       ctx.lineTo(cx+Math.cos(a)*r1-Math.cos(perp)*w, cy+Math.sin(a)*r1-Math.sin(perp)*w);
       ctx.closePath(); ctx.fill();
     }
-    // Secondary ring
-    ctx.strokeStyle = hex; ctx.lineWidth = 1; ctx.globalAlpha = 0.40;
+    ctx.strokeStyle=hex; ctx.lineWidth=1; ctx.globalAlpha=0.40;
     ctx.beginPath(); ctx.arc(cx,cy,9,0,Math.PI*2); ctx.stroke();
-    ctx.globalAlpha = 1;
-    // Dark inner ring
-    ctx.fillStyle = '#3a1600';
-    ctx.beginPath(); ctx.arc(cx,cy,5,0,Math.PI*2); ctx.fill();
-    // White-hot center
-    ctx.fillStyle = '#fff0c0';
-    ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath(); ctx.arc(cx-0.8,cy-0.8,1.2,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=1;
+    ctx.fillStyle='#3a1600'; ctx.beginPath(); ctx.arc(cx,cy,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff0c0'; ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(cx-0.8,cy-0.8,1.2,0,Math.PI*2); ctx.fill();
   }
 
   // Space — Dodge: bold rightward arrow with motion-ghost trail
   _drawDodgeIcon(ctx, s, color) {
-    const cx = s/2, cy = s/2;
-    const hex = '#'+color.toString(16).padStart(6,'0');
-    // Ghost trail copies (decreasing opacity left to right)
-    [
-      { ox: -13, alpha: 0.15 },
-      { ox: -8,  alpha: 0.32 },
-      { ox: -3,  alpha: 0.52 },
-    ].forEach(({ ox, alpha }) => {
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = hex;
-      const bx = cx + ox;
+    const cx=s/2, cy=s/2, hex='#'+color.toString(16).padStart(6,'0');
+    [{ ox:-13,a:0.15 },{ ox:-8,a:0.32 },{ ox:-3,a:0.52 }].forEach(({ ox,a }) => {
+      ctx.globalAlpha=a; ctx.fillStyle=hex;
+      const bx=cx+ox;
       ctx.beginPath();
-      ctx.moveTo(bx+12, cy);
-      ctx.lineTo(bx+5,  cy-7);
-      ctx.lineTo(bx+5,  cy-3);
-      ctx.lineTo(bx-9,  cy-3);
-      ctx.lineTo(bx-9,  cy+3);
-      ctx.lineTo(bx+5,  cy+3);
-      ctx.lineTo(bx+5,  cy+7);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(bx+12,cy); ctx.lineTo(bx+5,cy-7); ctx.lineTo(bx+5,cy-3);
+      ctx.lineTo(bx-9,cy-3); ctx.lineTo(bx-9,cy+3); ctx.lineTo(bx+5,cy+3);
+      ctx.lineTo(bx+5,cy+7); ctx.closePath(); ctx.fill();
     });
-    ctx.globalAlpha = 1;
-    // Main arrow
-    ctx.fillStyle = hex;
-    const tip = cx+14, left = cx-9;
-    ctx.beginPath();
-    ctx.moveTo(tip,    cy);
-    ctx.lineTo(tip-8,  cy-9);
-    ctx.lineTo(tip-8,  cy-4);
-    ctx.lineTo(left,   cy-4);
-    ctx.lineTo(left,   cy+4);
-    ctx.lineTo(tip-8,  cy+4);
-    ctx.lineTo(tip-8,  cy+9);
-    ctx.closePath();
-    ctx.fill();
-    // Shaft highlight
-    ctx.fillStyle = 'rgba(255,255,255,0.30)';
-    ctx.fillRect(left+1, cy-3, (tip-8)-(left+1), 3);
-    // Tip specular
-    ctx.fillStyle = 'rgba(255,255,255,0.82)';
-    ctx.beginPath();
-    ctx.moveTo(tip,cy); ctx.lineTo(tip-6,cy-5); ctx.lineTo(tip-4,cy-1); ctx.closePath(); ctx.fill();
-    // Dark outline
-    ctx.strokeStyle = '#0a1a10'; ctx.lineWidth = 1.3;
+    ctx.globalAlpha=1;
+    ctx.fillStyle=hex;
+    const tip=cx+14, left=cx-9;
     ctx.beginPath();
     ctx.moveTo(tip,cy); ctx.lineTo(tip-8,cy-9); ctx.lineTo(tip-8,cy-4);
-    ctx.lineTo(left,cy-4); ctx.lineTo(left,cy+4); ctx.lineTo(tip-8,cy+4); ctx.lineTo(tip-8,cy+9);
-    ctx.closePath(); ctx.stroke();
+    ctx.lineTo(left,cy-4); ctx.lineTo(left,cy+4); ctx.lineTo(tip-8,cy+4);
+    ctx.lineTo(tip-8,cy+9); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.30)';
+    ctx.fillRect(left+1,cy-3,(tip-8)-(left+1),3);
+    ctx.fillStyle='rgba(255,255,255,0.82)';
+    ctx.beginPath(); ctx.moveTo(tip,cy); ctx.lineTo(tip-6,cy-5); ctx.lineTo(tip-4,cy-1); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#0a1a10'; ctx.lineWidth=1.3;
+    ctx.beginPath();
+    ctx.moveTo(tip,cy); ctx.lineTo(tip-8,cy-9); ctx.lineTo(tip-8,cy-4);
+    ctx.lineTo(left,cy-4); ctx.lineTo(left,cy+4); ctx.lineTo(tip-8,cy+4);
+    ctx.lineTo(tip-8,cy+9); ctx.closePath(); ctx.stroke();
   }
 
   // ─── HUD ────────────────────────────────────────────────────────────────────
 
   _buildHUD() {
-    // ── HP bar ────────────────────────────────────────────────────────────────
-    this.hpIcon = this.add.image(ICON_CX, HP_BAR_Y + BAR_H/2, 'ui-heart').setOrigin(0.5);
+    // HP bar
     this._buildBarMount(HP_BAR_Y, true);
     this._drawBarTrack(BAR_X, HP_BAR_Y, BAR_W, BAR_H, true);
     this.hpBarFill = this._makeBarFillG(BAR_X, HP_BAR_Y, BAR_W, BAR_H);
-    this.hpNumText = this.add.text(BAR_X + BAR_W - 3, HP_BAR_Y + BAR_H/2, '', {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '10px',
+    this.hpNumText = this.add.text(BAR_X + BAR_W - 4, HP_BAR_Y + BAR_H/2, '', {
+      fontFamily: "'Fredoka One', sans-serif", fontSize: '11px',
       color: PARCHMENT, stroke: '#080000', strokeThickness: 2,
     }).setOrigin(1, 0.5).setDepth(2);
 
-    // ── Stamina bar ───────────────────────────────────────────────────────────
-    this.add.image(ICON_CX, ST_BAR_Y + BAR_H/2, 'ui-bolt').setOrigin(0.5);
+    // Stamina bar
     this._buildBarMount(ST_BAR_Y, false);
     this._drawBarTrack(BAR_X, ST_BAR_Y, BAR_W, BAR_H, false);
     this.stBarFill = this._makeBarFillG(BAR_X, ST_BAR_Y, BAR_W, BAR_H);
-    this.stNumText = this.add.text(BAR_X + BAR_W - 3, ST_BAR_Y + BAR_H/2, '', {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '10px',
+    this.stNumText = this.add.text(BAR_X + BAR_W - 4, ST_BAR_Y + BAR_H/2, '', {
+      fontFamily: "'Fredoka One', sans-serif", fontSize: '11px',
       color: PARCHMENT, stroke: '#00080a', strokeThickness: 2,
     }).setOrigin(1, 0.5).setDepth(2);
 
-    // ── Circular skill slots ──────────────────────────────────────────────────
+    // Skill slots
     const slotDiam   = SLOT_R * 2;
     const totalSlotW = 4 * slotDiam + 3 * SLOT_GAP;
     const firstCX    = (GAME_WIDTH - totalSlotW) / 2 + SLOT_R;
@@ -347,7 +375,7 @@ export default class UIScene extends Phaser.Scene {
       this.skillSlots.push(this._buildSkillSlot(cx, SLOT_CY, sk.key, sk.color, sk.icon));
     });
 
-    // ── Score / Level — top-right ─────────────────────────────────────────────
+    // Score / Level — top-right
     this.scoreText = this.add.text(GAME_WIDTH - 20, 20, `Score: ${this.score}`, {
       fontFamily: "'Fredoka One', sans-serif", fontSize: '22px',
       color: '#d4a96a', stroke: '#1a0a08', strokeThickness: 3,
@@ -357,23 +385,22 @@ export default class UIScene extends Phaser.Scene {
       color: PARCHMENT, stroke: '#1a0a08', strokeThickness: 3,
     }).setOrigin(1, 0);
 
-    // ── Pause button ──────────────────────────────────────────────────────────
+    // Pause button
     this._buildIconButton(GAME_WIDTH - 54, GAME_HEIGHT - 36, '⏸', () => {
       this.arenaScene._togglePause();
     });
   }
 
-  // Subtle bar mount: dark housing beam + circular end caps (like Hades 2, understated)
+  // Bar mount: dark housing beam + right decorative cap + left icon-shaped cap
   _buildBarMount(barY, isHp) {
-    const barCY = barY + BAR_H / 2;
-    const houseX = BAR_X - 4;
-    const houseW = BAR_W + 8;
-    const houseY = barCY - 11;
-    const houseH = 22;
-    const leftCapX  = BAR_X - CAP_PAD;
-    const rightCapX = BAR_X + BAR_W + CAP_PAD;
+    const barCY     = barY + BAR_H / 2;
+    const houseX    = BAR_X - 4;
+    const houseW    = BAR_W + 8;
+    const houseY    = barCY - BAR_H / 2 - 4;
+    const houseH    = BAR_H + 8;
     const borderCol = isHp ? 0x5a2a10 : 0x1a3a5a;
-    const capBorder = isHp ? 0x7a3a18 : 0x2a4a6a;
+    const rightCapX = BAR_X + BAR_W + 10;
+    const rightBord = isHp ? 0x7a3a18 : 0x2a4a6a;
 
     const g = this.add.graphics();
 
@@ -383,21 +410,20 @@ export default class UIScene extends Phaser.Scene {
     g.lineStyle(1.5, borderCol, 0.65);
     g.strokeRoundedRect(houseX, houseY, houseW, houseH, 5);
 
-    // Left end cap
+    // Right decorative end cap (circular)
     g.fillStyle(0x241008, 1);
-    g.fillCircle(leftCapX, barCY, CAP_R);
-    g.lineStyle(1.5, capBorder, 0.70);
-    g.strokeCircle(leftCapX, barCY, CAP_R);
-    g.fillStyle(PANEL_SHINE, 0.30);
-    g.fillCircle(leftCapX - 3, barCY - 3, 3);
-
-    // Right end cap
-    g.fillStyle(0x241008, 1);
-    g.fillCircle(rightCapX, barCY, CAP_R);
-    g.lineStyle(1.5, capBorder, 0.70);
-    g.strokeCircle(rightCapX, barCY, CAP_R);
+    g.fillCircle(rightCapX, barCY, RIGHT_CAP_R);
+    g.lineStyle(1.5, rightBord, 0.70);
+    g.strokeCircle(rightCapX, barCY, RIGHT_CAP_R);
     g.fillStyle(PANEL_SHINE, 0.30);
     g.fillCircle(rightCapX - 3, barCY - 3, 3);
+
+    // Left icon cap — heart or bolt shaped canvas texture
+    this.add.image(LEFT_CAP_CX, barCY, isHp ? 'ui-hp-cap-left' : 'ui-stam-cap-left').setOrigin(0.5);
+
+    // Small icon centered on top of cap
+    const iconImg = this.add.image(LEFT_CAP_CX, barCY, isHp ? 'ui-heart' : 'ui-bolt').setOrigin(0.5);
+    if (isHp) this.hpIcon = iconImg;
   }
 
   _drawBarTrack(x, y, w, h, isHp) {
@@ -449,26 +475,17 @@ export default class UIScene extends Phaser.Scene {
 
   _buildSkillSlot(cx, cy, keyLabel, color, iconKey) {
     const g = this.add.graphics();
-    // Shadow
     g.fillStyle(0x000000, 0.55); g.fillCircle(cx+3, cy+3, SLOT_R);
-    // Outer stone ring
-    g.fillStyle(0x1c1a18, 1); g.fillCircle(cx, cy, SLOT_R);
-    // Rim bevel highlight
+    g.fillStyle(0x1c1a18, 1);    g.fillCircle(cx, cy, SLOT_R);
     g.lineStyle(2, 0x5a5550, 0.65); g.strokeCircle(cx, cy, SLOT_R-1);
-    // Bottom shadow arc
     g.lineStyle(3, 0x080706, 0.55); g.strokeCircle(cx, cy+3, SLOT_R-2);
-    // Inner recess
-    g.fillStyle(0x0f0c09, 1); g.fillCircle(cx, cy, 26);
-    // Skill-color glow ring
+    g.fillStyle(0x0f0c09, 1);    g.fillCircle(cx, cy, 26);
     g.lineStyle(2.5, color, 0.75); g.strokeCircle(cx, cy, 25);
-    // Icon
     const icon = this.add.image(cx, cy, iconKey).setOrigin(0.5);
-    // Key label
     const text = this.add.text(cx, cy+20, keyLabel, {
       fontFamily: "'Fredoka One', sans-serif", fontSize: '12px',
       color: '#d4a96a', stroke: '#0a0600', strokeThickness: 3,
     }).setOrigin(0.5, 0.5);
-    // Cooldown overlay
     const cooldownOverlay = this.add.graphics().setDepth(5);
     return { cx, cy, g, icon, text, cooldownOverlay };
   }
@@ -485,7 +502,7 @@ export default class UIScene extends Phaser.Scene {
       if (ratio > 0.02) {
         const { cx, cy } = slot;
         const r = 24;
-        // Sweep CCW from 12 o'clock so the bright area GROWS CLOCKWISE from 12
+        // Sweep CCW from 12 → bright area grows clockwise from 12 o'clock
         const startA = -Math.PI / 2;
         const endA   = startA - ratio * Math.PI * 2;
         const pts = [{ x: cx, y: cy }];
@@ -514,7 +531,6 @@ export default class UIScene extends Phaser.Scene {
   _buildBossBar() {
     const bw = BOSS_BW, bh = BOSS_BH, by = BOSS_BY;
     const bx = (GAME_WIDTH - bw) / 2;
-
     this.bossBarContainer = this.add.container(0, 0);
     this.bossBarContainer.setVisible(false);
 
@@ -543,7 +559,7 @@ export default class UIScene extends Phaser.Scene {
     shine.fillStyle(0xffffff, 0.07);
     shine.fillRoundedRect(bx+2, by+2, bw-4, Math.floor(bh*0.38), { tl:4, tr:4, bl:0, br:0 });
 
-    const leftCap  = this.add.image(bx-10,    by+bh/2, 'ui-boss-cap').setOrigin(1,0.5).setScale(1.15);
+    const leftCap  = this.add.image(bx-10, by+bh/2, 'ui-boss-cap').setOrigin(1,0.5).setScale(1.15);
     const rightCap = this.add.image(bx+bw+10, by+bh/2, 'ui-boss-cap').setOrigin(0,0.5).setScale(1.15).setFlipX(true);
 
     this.bossNameText = this.add.text(GAME_WIDTH/2, 12, '', {
@@ -563,8 +579,7 @@ export default class UIScene extends Phaser.Scene {
   }
 
   _redrawBossBar(ratio) {
-    const bw = BOSS_BW, bh = BOSS_BH, by = BOSS_BY;
-    const bx = (GAME_WIDTH - bw) / 2;
+    const bw=BOSS_BW, bh=BOSS_BH, by=BOSS_BY, bx=(GAME_WIDTH-BOSS_BW)/2;
     this.bossHpFill.clear();
     const fillW = Math.max(0, bw * ratio);
     if (fillW < 3) return;
@@ -574,11 +589,7 @@ export default class UIScene extends Phaser.Scene {
     this.bossHpFill.fillStyle(0xffffff, 0.28);
     this.bossHpFill.fillRoundedRect(bx+2, by+2, fillW-4, Math.floor((bh-4)*0.38), { tl:4, tr:4, bl:0, br:0 });
     this.bossHpFill.fillStyle(0x000000, 0.28);
-    this.bossHpFill.fillRoundedRect(
-      bx+2, by+2+Math.floor((bh-4)*0.62),
-      fillW-4, Math.floor((bh-4)*0.38),
-      { tl:0, tr:0, bl:4, br:4 }
-    );
+    this.bossHpFill.fillRoundedRect(bx+2, by+2+Math.floor((bh-4)*0.62), fillW-4, Math.floor((bh-4)*0.38), { tl:0, tr:0, bl:4, br:4 });
   }
 
   _flashEnraged() {
@@ -596,100 +607,66 @@ export default class UIScene extends Phaser.Scene {
   // ─── Pause Menu ──────────────────────────────────────────────────────────────
 
   _buildPauseMenu() {
-    const w = 330, h = 290, r = 16;
-    const cx = GAME_WIDTH/2, cy = GAME_HEIGHT/2;
+    const w=330, h=290, r=16, cx=GAME_WIDTH/2, cy=GAME_HEIGHT/2;
     this.pauseContainer = this.add.container(cx, cy);
     this.pauseContainer.setVisible(false).setDepth(200);
 
     const shadow = this.add.graphics();
-    shadow.fillStyle(0x000000, 0.70);
-    shadow.fillRoundedRect(-w/2+7, -h/2+7, w, h, r);
+    shadow.fillStyle(0x000000,0.70); shadow.fillRoundedRect(-w/2+7,-h/2+7,w,h,r);
 
     const bg = this.add.graphics();
-    bg.fillStyle(0x140c06, 0.97);
-    bg.fillRoundedRect(-w/2, -h/2, w, h, r);
-    bg.lineStyle(2.5, GOLD, 0.88);
-    bg.strokeRoundedRect(-w/2, -h/2, w, h, r);
-    bg.lineStyle(1, 0x8b5e3c, 0.40);
-    bg.strokeRoundedRect(-w/2+3, -h/2+3, w-6, h-6, r-2);
-    bg.fillStyle(0xffffff, 0.05);
-    bg.fillRoundedRect(-w/2+2, -h/2+2, w-4, 20, { tl:r-1, tr:r-1, bl:0, br:0 });
+    bg.fillStyle(0x140c06,0.97); bg.fillRoundedRect(-w/2,-h/2,w,h,r);
+    bg.lineStyle(2.5,GOLD,0.88); bg.strokeRoundedRect(-w/2,-h/2,w,h,r);
+    bg.lineStyle(1,0x8b5e3c,0.40); bg.strokeRoundedRect(-w/2+3,-h/2+3,w-6,h-6,r-2);
+    bg.fillStyle(0xffffff,0.05); bg.fillRoundedRect(-w/2+2,-h/2+2,w-4,20,{tl:r-1,tr:r-1,bl:0,br:0});
 
-    const title = this.add.text(0, -h/2+38, 'PAUSED', {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '36px',
-      color: PARCHMENT, stroke: '#4a2800', strokeThickness: 4,
+    const title = this.add.text(0,-h/2+38,'PAUSED',{
+      fontFamily:"'Fredoka One', sans-serif",fontSize:'36px',color:PARCHMENT,stroke:'#4a2800',strokeThickness:4,
     }).setOrigin(0.5);
 
     const div = this.add.graphics();
-    div.lineStyle(1, GOLD, 0.45);
-    div.lineBetween(-w/2+28, -h/2+64, w/2-28, -h/2+64);
+    div.lineStyle(1,GOLD,0.45); div.lineBetween(-w/2+28,-h/2+64,w/2-28,-h/2+64);
 
-    this.pauseContainer.add([shadow, bg, title, div]);
-    this._addPauseBtn('RESUME',    0,  18, () => this.arenaScene._togglePause());
-    this._addPauseBtn('MAIN MENU', 0,  88, () => { this.scene.stop(); this.arenaScene.scene.start('StartScene'); });
+    this.pauseContainer.add([shadow,bg,title,div]);
+    this._addPauseBtn('RESUME',0,18,() => this.arenaScene._togglePause());
+    this._addPauseBtn('MAIN MENU',0,88,() => { this.scene.stop(); this.arenaScene.scene.start('StartScene'); });
   }
 
   _addPauseBtn(label, x, y, fn) {
-    const bw = 220, bh = 46, r = 10;
-    const shadow = this.add.graphics();
-    shadow.fillStyle(0x000000, 0.50);
-    shadow.fillRoundedRect(x-bw/2+3, y-bh/2+3, bw, bh, r);
-    const bg = this.add.graphics();
-    bg.fillStyle(0x2a1508, 1);
-    bg.fillRoundedRect(x-bw/2, y-bh/2, bw, bh, r);
-    bg.fillStyle(PANEL_SHINE, 0.09);
-    bg.fillRoundedRect(x-bw/2, y-bh/2, bw, bh/2, { tl:r, tr:r, bl:0, br:0 });
-    bg.lineStyle(1.5, GOLD, 0.75);
-    bg.strokeRoundedRect(x-bw/2, y-bh/2, bw, bh, r);
-    const hoverG = this.add.graphics();
-    hoverG.fillStyle(GOLD, 0.18);
-    hoverG.fillRoundedRect(x-bw/2, y-bh/2, bw, bh, r);
-    hoverG.setAlpha(0);
-    const txt = this.add.text(x, y, label, {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '24px',
-      color: PARCHMENT, stroke: '#1a0a08', strokeThickness: 3,
+    const bw=220, bh=46, r=10;
+    const shadow=this.add.graphics();
+    shadow.fillStyle(0x000000,0.50); shadow.fillRoundedRect(x-bw/2+3,y-bh/2+3,bw,bh,r);
+    const bg=this.add.graphics();
+    bg.fillStyle(0x2a1508,1); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,r);
+    bg.fillStyle(0xfff5d0,0.09); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh/2,{tl:r,tr:r,bl:0,br:0});
+    bg.lineStyle(1.5,GOLD,0.75); bg.strokeRoundedRect(x-bw/2,y-bh/2,bw,bh,r);
+    const hoverG=this.add.graphics();
+    hoverG.fillStyle(GOLD,0.18); hoverG.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,r); hoverG.setAlpha(0);
+    const txt=this.add.text(x,y,label,{
+      fontFamily:"'Fredoka One', sans-serif",fontSize:'24px',color:PARCHMENT,stroke:'#1a0a08',strokeThickness:3,
     }).setOrigin(0.5);
-    const hit = this.add.rectangle(x, y, bw, bh).setInteractive({ cursor: 'pointer' });
-    hit.on('pointerover', () => {
-      this.tweens.add({ targets: hoverG, alpha: 1, duration: 110 });
-      this.tweens.add({ targets: txt, scaleX: 1.05, scaleY: 1.05, duration: 110 });
-    });
-    hit.on('pointerout', () => {
-      this.tweens.add({ targets: hoverG, alpha: 0, duration: 110 });
-      this.tweens.add({ targets: txt, scaleX: 1, scaleY: 1, duration: 110 });
-    });
-    hit.on('pointerdown', fn);
-    this.pauseContainer.add([shadow, bg, hoverG, txt, hit]);
+    const hit=this.add.rectangle(x,y,bw,bh).setInteractive({cursor:'pointer'});
+    hit.on('pointerover',()=>{ this.tweens.add({targets:hoverG,alpha:1,duration:110}); this.tweens.add({targets:txt,scaleX:1.05,scaleY:1.05,duration:110}); });
+    hit.on('pointerout', ()=>{ this.tweens.add({targets:hoverG,alpha:0,duration:110}); this.tweens.add({targets:txt,scaleX:1,scaleY:1,duration:110}); });
+    hit.on('pointerdown',fn);
+    this.pauseContainer.add([shadow,bg,hoverG,txt,hit]);
   }
 
   // ─── Arena event listeners ───────────────────────────────────────────────────
 
   _listenToArena() {
     const a = this.arenaScene;
-    a.events.on('bossSpawned', ({ name, maxHp }) => {
-      this.bossMaxHp = maxHp; this.bossHp = maxHp;
-      this.bossNameText.setText(name);
-      this.bossBarContainer.setVisible(true);
-      this._redrawBossBar(1);
+    a.events.on('bossSpawned',   ({ name, maxHp }) => {
+      this.bossMaxHp=maxHp; this.bossHp=maxHp;
+      this.bossNameText.setText(name); this.bossBarContainer.setVisible(true); this._redrawBossBar(1);
     });
-    a.events.on('bossHpChanged', (hp) => {
-      this.bossHp = hp;
-      this._redrawBossBar(hp / this.bossMaxHp);
+    a.events.on('bossHpChanged', (hp) => { this.bossHp=hp; this._redrawBossBar(hp/this.bossMaxHp); });
+    a.events.on('bossEnraged',   () => this._flashEnraged());
+    a.events.on('bossDefeated',  () => {
+      this.tweens.add({ targets:this.bossBarContainer, alpha:0, duration:600,
+        onComplete:()=>this.bossBarContainer.setVisible(false).setAlpha(1) });
     });
-    a.events.on('bossEnraged', () => this._flashEnraged());
-    a.events.on('bossDefeated', () => {
-      this.tweens.add({
-        targets: this.bossBarContainer, alpha: 0, duration: 600,
-        onComplete: () => this.bossBarContainer.setVisible(false).setAlpha(1),
-      });
-    });
-    a.events.on('scoreChanged', (score) => {
-      this.score = score;
-      this.scoreText.setText(`Score: ${score}`);
-    });
-    a.events.on('pauseToggled', (paused) => {
-      this.isPaused = paused;
-      this.pauseContainer.setVisible(paused);
-    });
+    a.events.on('scoreChanged',  (score) => { this.score=score; this.scoreText.setText(`Score: ${score}`); });
+    a.events.on('pauseToggled',  (paused) => { this.isPaused=paused; this.pauseContainer.setVisible(paused); });
   }
 }
