@@ -53,13 +53,13 @@ export default class Altar {
     // ── Animation values ─────────────────────────────────────────────────────
     const glow  = 0.30 + Math.sin(phase) * 0.20;
 
-    // Flame height flickers vertically — the key to realistic fire
-    const h1 = 18 + Math.sin(phase * 2.6) * 6;          // 12–24px
-    const h2 = 17 + Math.sin(phase * 2.6 + 1.2) * 5;    // 12–22px
-    const w1 =  5 + Math.sin(phase * 4.1) * 1.0;         // 4–6px base half-width
-    const w2 =  5 + Math.sin(phase * 4.1 + 0.7) * 0.8;
-    const s1 = Math.sin(phase * 1.9) * 1.5;              // subtle sway ±1.5px
-    const s2 = Math.sin(phase * 1.9 + 0.9) * 1.2;
+    // Flame: 3 harmonic components → irregular organic flicker
+    const h1 = 15 + Math.sin(phase*2.6)*4.5 + Math.sin(phase*5.3)*3.0 + Math.sin(phase*8.7)*1.5;
+    const h2 = 15 + Math.sin(phase*2.6+1.2)*4.0 + Math.sin(phase*4.9+0.6)*2.8 + Math.sin(phase*7.9+2.1)*1.5;
+    const w1 =  5 + Math.sin(phase*4.1)*1.2 + Math.sin(phase*7.3)*0.7;
+    const w2 =  5 + Math.sin(phase*4.1+0.7)*1.0 + Math.sin(phase*6.9+1.1)*0.6;
+    const s1 = Math.sin(phase*1.9)*1.2 + Math.sin(phase*4.3)*0.6;  // subtle sway
+    const s2 = Math.sin(phase*1.9+0.9)*1.0 + Math.sin(phase*3.8+0.4)*0.5;
     const rGlow = 0.55 + glow * 0.55;
 
     // ── Stone palette ────────────────────────────────────────────────────────
@@ -137,15 +137,28 @@ export default class Altar {
       // Pillar border
       this.g.lineStyle(1.5, STONE_EDGE, 0.70);
       this.g.strokeRoundedRect(px, -40, pw, ph, 3);
+
+      // Base footing — wider block where pillar meets platform (plants it firmly)
+      this.g.fillStyle(STONE_MID, 1);
+      this.g.fillRoundedRect(px - 2, 8, pw + 4, 7, { tl: 0, tr: 0, bl: 3, br: 3 });
+      this.g.lineStyle(1, STONE_EDGE, 0.65);
+      this.g.strokeRoundedRect(px - 2, 8, pw + 4, 7, { tl: 0, tr: 0, bl: 3, br: 3 });
     });
 
-    // ── 5. Lintel / gateway crossbeam ─────────────────────────────────────────
+    // ── 5. Lintel — 2.5D slab: top-face (bright, viewed from above) +
+    //                            front-edge (dark, the slab's visible thickness)
+    // Front edge — the slab's visible depth, darker
     this.g.fillStyle(STONE_DARK, 1);
-    this.g.fillRoundedRect(-48, -50, 100, 13, 3);
-    this.g.fillStyle(STONE_LIGHT, 1);
-    this.g.fillRoundedRect(-48, -50, 100, 7, { tl: 3, tr: 3, bl: 0, br: 0 });
+    this.g.fillRoundedRect(-48, -44, 100, 8, { tl: 0, tr: 0, bl: 3, br: 3 });
+    this.g.lineStyle(1, STONE_EDGE, 0.70);
+    this.g.strokeRoundedRect(-48, -44, 100, 8, { tl: 0, tr: 0, bl: 3, br: 3 });
+    // Top surface — lighter, slightly wider, this is what reads as the slab top
+    this.g.fillStyle(STONE_MID, 1);
+    this.g.fillRoundedRect(-50, -54, 104, 12, 3);
+    this.g.fillStyle(STONE_LIGHT, 0.85);
+    this.g.fillRoundedRect(-50, -54, 104, 6, { tl: 3, tr: 3, bl: 0, br: 0 });
     this.g.lineStyle(1.5, STONE_EDGE, 0.75);
-    this.g.strokeRoundedRect(-48, -50, 100, 13, 3);
+    this.g.strokeRoundedRect(-50, -54, 104, 12, 3);
 
     // ── 6. Glow halo ─────────────────────────────────────────────────────────
     this.g.fillStyle(COLORS.ALTAR, glow * 0.45);
