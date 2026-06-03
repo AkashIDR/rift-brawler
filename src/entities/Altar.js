@@ -20,8 +20,8 @@ export default class Altar {
     this._draw(0);
     this.container.add(this.g);
 
-    // Floating label
-    this.label = this.scene.add.text(0, -72, 'Summon Boss', {
+    // Floating label — raised to clear taller structure
+    this.label = this.scene.add.text(0, -82, 'Summon Boss', {
       fontFamily: "'Fredoka One', sans-serif",
       fontSize: '18px',
       color: '#ffe8c0',
@@ -43,7 +43,7 @@ export default class Altar {
     // Floating label bob
     this.scene.tweens.add({
       targets: this.label,
-      y: -78, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+      y: -88, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
     });
   }
 
@@ -86,58 +86,7 @@ export default class Altar {
       this.g.fillRoundedRect(x + 1, y, w - 2, 4, { tl: 3, tr: 3, bl: 0, br: 0 });
     });
 
-    // ── 3. Pillars — drawn BEFORE the platform so the platform oval visually
-    //       grounds their bases (platform will draw on top of the lower portion)
-    [{ px: -46 }, { px: 30 }].forEach(({ px }) => {
-      const pw = 18, ph = 52;
-
-      // Drop shadow
-      this.g.fillStyle(0x000000, 0.28);
-      this.g.fillRoundedRect(px + 2, -38, pw, ph, 3);
-
-      // Pillar body
-      this.g.fillStyle(STONE_DARK, 1);
-      this.g.fillRoundedRect(px, -40, pw, ph, 3);
-
-      // Lit centre strip
-      this.g.fillStyle(STONE_MID, 0.35);
-      this.g.fillRoundedRect(px + 3, -40, pw - 6, ph, 2);
-
-      // Carved groove bands
-      this.g.lineStyle(1, STONE_EDGE, 0.50);
-      this.g.lineBetween(px + 2, -20, px + pw - 2, -20);
-      this.g.lineBetween(px + 2,  -4, px + pw - 2,  -4);
-
-      // Top cap (bright top face — implies height)
-      this.g.fillStyle(STONE_LIGHT, 1);
-      this.g.fillRoundedRect(px - 1, -40, pw + 2, 9, { tl: 4, tr: 4, bl: 0, br: 0 });
-      this.g.lineStyle(1.5, STONE_EDGE, 0.70);
-      this.g.strokeRoundedRect(px - 1, -40, pw + 2, 9, { tl: 4, tr: 4, bl: 0, br: 0 });
-
-      // Pillar border
-      this.g.lineStyle(1.5, STONE_EDGE, 0.70);
-      this.g.strokeRoundedRect(px, -40, pw, ph, 3);
-    });
-
-    // ── 4. Lintel — drawn before platform, seen from above:
-    //       Top surface is the dominant face (what a top-down camera sees).
-    //       Front edge is just 3px — a sliver hinting at depth, not a wall.
-    // Top surface (wide, lit, viewed from above)
-    this.g.fillStyle(STONE_MID, 1);
-    this.g.fillRoundedRect(-50, -54, 104, 10, 3);
-    this.g.fillStyle(STONE_LIGHT, 0.80);
-    this.g.fillRoundedRect(-50, -54, 104, 5, { tl: 3, tr: 3, bl: 0, br: 0 });
-    this.g.lineStyle(1.5, STONE_EDGE, 0.75);
-    this.g.strokeRoundedRect(-50, -54, 104, 10, 3);
-    // Front edge (3px sliver — depth hint only, not an eye-level face)
-    this.g.fillStyle(STONE_DARK, 1);
-    this.g.fillRect(-48, -44, 100, 3);
-    this.g.lineStyle(1, STONE_EDGE, 0.50);
-    this.g.lineBetween(-48, -44, 52, -44);
-    this.g.lineBetween(-48, -41, 52, -41);
-
-    // ── 5. Platform oval — drawn AFTER pillars so it covers their bases,
-    //       making them look planted into the stone surface
+    // ── 3. Platform oval — drawn first so pillars stand on top of it ──────────
     this.g.fillStyle(STONE_DARK, 1);
     this.g.fillEllipse(0, 2, 106, 40);
     this.g.fillStyle(STONE_MID, 0.45);
@@ -147,11 +96,11 @@ export default class Altar {
     this.g.lineStyle(2, STONE_EDGE, 0.85);
     this.g.strokeEllipse(0, 2, 106, 40);
 
-    // ── 6. Glow halo ─────────────────────────────────────────────────────────
+    // ── 4. Glow halo ─────────────────────────────────────────────────────────
     this.g.fillStyle(COLORS.ALTAR, glow * 0.45);
     this.g.fillEllipse(0, -2, 64, 30);
 
-    // ── 7. Central raised dais ────────────────────────────────────────────────
+    // ── 5. Central raised dais + rune ────────────────────────────────────────
     this.g.fillStyle(0x302c2a, 1);
     this.g.fillEllipse(0, -2, 50, 24);
     this.g.fillStyle(0x504844, 0.65);
@@ -159,7 +108,6 @@ export default class Altar {
     this.g.lineStyle(1.5, STONE_EDGE, 0.80);
     this.g.strokeEllipse(0, -2, 50, 24);
 
-    // ── 8. Summoning rune ─────────────────────────────────────────────────────
     this.g.lineStyle(1.5, COLORS.ALTAR, rGlow * 0.55);
     this.g.strokeEllipse(0, -4, 38, 16);
     this.g.lineStyle(1, COLORS.ALTAR, rGlow * 0.70);
@@ -168,11 +116,59 @@ export default class Altar {
     this.g.fillStyle(COLORS.ALTAR, Math.min(1, rGlow));
     this.g.fillCircle(0, -4, 3);
 
-    // ── 9. Twin flames ────────────────────────────────────────────────────────
-    const daisTop = -13;
+    // ── 6. Pillars — drawn AFTER platform so they stand on top of the disc ───
+    const py_top = -59, pw = 18, ph = 44;   // bottom sits at y = -15
+
+    [{ px: -46 }, { px: 30 }].forEach(({ px }) => {
+      // Drop shadow
+      this.g.fillStyle(0x000000, 0.28);
+      this.g.fillRoundedRect(px + 2, py_top + 2, pw, ph, 3);
+
+      // Pillar body
+      this.g.fillStyle(STONE_DARK, 1);
+      this.g.fillRoundedRect(px, py_top, pw, ph, 3);
+
+      // Lit centre strip
+      this.g.fillStyle(STONE_MID, 0.35);
+      this.g.fillRoundedRect(px + 3, py_top, pw - 6, ph, 2);
+
+      // Carved groove bands
+      this.g.lineStyle(1, STONE_EDGE, 0.50);
+      this.g.lineBetween(px + 2, -42, px + pw - 2, -42);
+      this.g.lineBetween(px + 2, -26, px + pw - 2, -26);
+
+      // Top cap (brighter — light hitting the top face)
+      this.g.fillStyle(STONE_LIGHT, 1);
+      this.g.fillRoundedRect(px - 1, py_top, pw + 2, 9, { tl: 4, tr: 4, bl: 0, br: 0 });
+      this.g.lineStyle(1.5, STONE_EDGE, 0.70);
+      this.g.strokeRoundedRect(px - 1, py_top, pw + 2, 9, { tl: 4, tr: 4, bl: 0, br: 0 });
+
+      // Pillar border
+      this.g.lineStyle(1.5, STONE_EDGE, 0.70);
+      this.g.strokeRoundedRect(px, py_top, pw, ph, 3);
+    });
+
+    // ── 7. Oval lintel slab — drawn after pillars, caps their tops ───────────
+    // Outer body (slight depth/underside visible)
+    this.g.fillStyle(STONE_DARK, 1);
+    this.g.fillEllipse(0, -53, 112, 20);
+    // Top surface (the face seen from above — dominant)
+    this.g.fillStyle(STONE_MID, 1);
+    this.g.fillEllipse(0, -56, 110, 16);
+    // Inner highlight zone
+    this.g.fillStyle(STONE_LIGHT, 0.65);
+    this.g.fillEllipse(0, -57, 100, 10);
+    // Borders
+    this.g.lineStyle(2, STONE_EDGE, 0.85);
+    this.g.strokeEllipse(0, -53, 112, 20);
+    this.g.lineStyle(1, STONE_EDGE, 0.55);
+    this.g.strokeEllipse(0, -56, 110, 16);
+
+    // ── 8. Twin flames — centred on the platform disc ────────────────────────
+    const daisTop = -6;   // centre of platform, not front edge
     [
-      { bx: -10, h: h1, w: w1, sw: s1 },
-      { bx:  10, h: h2, w: w2, sw: s2 },
+      { bx: -7, h: h1, w: w1, sw: s1 },
+      { bx:  7, h: h2, w: w2, sw: s2 },
     ].forEach(({ bx, h, w, sw }) => {
       const tip = daisTop - h;
 
