@@ -53,12 +53,12 @@ export default class Altar {
     // ── Animation values ─────────────────────────────────────────────────────
     const glow  = 0.30 + Math.sin(phase) * 0.20;
 
-    // Flame: 3 harmonic components → irregular organic flicker
+    // Flame height: 3 harmonics → organic irregular flicker
     const h1 = 15 + Math.sin(phase*2.6)*4.5 + Math.sin(phase*5.3)*3.0 + Math.sin(phase*8.7)*1.5;
     const h2 = 15 + Math.sin(phase*2.6+1.2)*4.0 + Math.sin(phase*4.9+0.6)*2.8 + Math.sin(phase*7.9+2.1)*1.5;
     const w1 =  5 + Math.sin(phase*4.1)*1.2 + Math.sin(phase*7.3)*0.7;
     const w2 =  5 + Math.sin(phase*4.1+0.7)*1.0 + Math.sin(phase*6.9+1.1)*0.6;
-    const s1 = Math.sin(phase*1.9)*1.2 + Math.sin(phase*4.3)*0.6;  // subtle sway
+    const s1 = Math.sin(phase*1.9)*1.2 + Math.sin(phase*4.3)*0.6;
     const s2 = Math.sin(phase*1.9+0.9)*1.0 + Math.sin(phase*3.8+0.4)*0.5;
     const rGlow = 0.55 + glow * 0.55;
 
@@ -73,53 +73,33 @@ export default class Altar {
     this.g.fillEllipse(0, 26, 130, 22);
 
     // ── 2. Front steps (3 tiers) ─────────────────────────────────────────────
-    // Step 1 — bottom / widest
-    this.g.fillStyle(STONE_DARK, 1);
-    this.g.fillRoundedRect(-38, 22, 76, 11, 3);
-    this.g.lineStyle(1, STONE_EDGE, 0.80);
-    this.g.strokeRoundedRect(-38, 22, 76, 11, 3);
-    this.g.fillStyle(STONE_MID, 0.50);
-    this.g.fillRoundedRect(-37, 22, 74, 4, { tl: 3, tr: 3, bl: 0, br: 0 });
+    [
+      { x: -38, y: 22, w: 76 },
+      { x: -30, y: 13, w: 60 },
+      { x: -22, y:  4, w: 44 },
+    ].forEach(({ x, y, w }) => {
+      this.g.fillStyle(STONE_DARK, 1);
+      this.g.fillRoundedRect(x, y, w, 11, 3);
+      this.g.lineStyle(1, STONE_EDGE, 0.80);
+      this.g.strokeRoundedRect(x, y, w, 11, 3);
+      this.g.fillStyle(STONE_MID, 0.50);
+      this.g.fillRoundedRect(x + 1, y, w - 2, 4, { tl: 3, tr: 3, bl: 0, br: 0 });
+    });
 
-    // Step 2
-    this.g.fillStyle(STONE_DARK, 1);
-    this.g.fillRoundedRect(-30, 13, 60, 11, 3);
-    this.g.lineStyle(1, STONE_EDGE, 0.80);
-    this.g.strokeRoundedRect(-30, 13, 60, 11, 3);
-    this.g.fillStyle(STONE_MID, 0.50);
-    this.g.fillRoundedRect(-29, 13, 58, 4, { tl: 3, tr: 3, bl: 0, br: 0 });
-
-    // Step 3 — top / narrowest
-    this.g.fillStyle(STONE_DARK, 1);
-    this.g.fillRoundedRect(-22, 4, 44, 11, 3);
-    this.g.lineStyle(1, STONE_EDGE, 0.80);
-    this.g.strokeRoundedRect(-22, 4, 44, 11, 3);
-    this.g.fillStyle(STONE_MID, 0.50);
-    this.g.fillRoundedRect(-21, 4, 42, 4, { tl: 3, tr: 3, bl: 0, br: 0 });
-
-    // ── 3. Wide stone platform (oval base) ───────────────────────────────────
-    this.g.fillStyle(STONE_DARK, 1);
-    this.g.fillEllipse(0, 2, 106, 40);
-    this.g.fillStyle(STONE_MID, 0.45);
-    this.g.fillEllipse(0, 0, 104, 30);
-    this.g.lineStyle(1, STONE_EDGE, 0.45);
-    this.g.strokeEllipse(0, 2, 90, 32);
-    this.g.lineStyle(2, STONE_EDGE, 0.85);
-    this.g.strokeEllipse(0, 2, 106, 40);
-
-    // ── 4. Standing stone pillars (left + right) ──────────────────────────────
+    // ── 3. Pillars — drawn BEFORE the platform so the platform oval visually
+    //       grounds their bases (platform will draw on top of the lower portion)
     [{ px: -46 }, { px: 30 }].forEach(({ px }) => {
       const pw = 18, ph = 52;
 
       // Drop shadow
-      this.g.fillStyle(0x000000, 0.30);
+      this.g.fillStyle(0x000000, 0.28);
       this.g.fillRoundedRect(px + 2, -38, pw, ph, 3);
 
       // Pillar body
       this.g.fillStyle(STONE_DARK, 1);
       this.g.fillRoundedRect(px, -40, pw, ph, 3);
 
-      // Lit centre strip (front face)
+      // Lit centre strip
       this.g.fillStyle(STONE_MID, 0.35);
       this.g.fillRoundedRect(px + 3, -40, pw - 6, ph, 2);
 
@@ -128,7 +108,7 @@ export default class Altar {
       this.g.lineBetween(px + 2, -20, px + pw - 2, -20);
       this.g.lineBetween(px + 2,  -4, px + pw - 2,  -4);
 
-      // Top cap (brighter top face)
+      // Top cap (bright top face — implies height)
       this.g.fillStyle(STONE_LIGHT, 1);
       this.g.fillRoundedRect(px - 1, -40, pw + 2, 9, { tl: 4, tr: 4, bl: 0, br: 0 });
       this.g.lineStyle(1.5, STONE_EDGE, 0.70);
@@ -137,28 +117,35 @@ export default class Altar {
       // Pillar border
       this.g.lineStyle(1.5, STONE_EDGE, 0.70);
       this.g.strokeRoundedRect(px, -40, pw, ph, 3);
-
-      // Base footing — wider block where pillar meets platform (plants it firmly)
-      this.g.fillStyle(STONE_MID, 1);
-      this.g.fillRoundedRect(px - 2, 8, pw + 4, 7, { tl: 0, tr: 0, bl: 3, br: 3 });
-      this.g.lineStyle(1, STONE_EDGE, 0.65);
-      this.g.strokeRoundedRect(px - 2, 8, pw + 4, 7, { tl: 0, tr: 0, bl: 3, br: 3 });
     });
 
-    // ── 5. Lintel — 2.5D slab: top-face (bright, viewed from above) +
-    //                            front-edge (dark, the slab's visible thickness)
-    // Front edge — the slab's visible depth, darker
-    this.g.fillStyle(STONE_DARK, 1);
-    this.g.fillRoundedRect(-48, -44, 100, 8, { tl: 0, tr: 0, bl: 3, br: 3 });
-    this.g.lineStyle(1, STONE_EDGE, 0.70);
-    this.g.strokeRoundedRect(-48, -44, 100, 8, { tl: 0, tr: 0, bl: 3, br: 3 });
-    // Top surface — lighter, slightly wider, this is what reads as the slab top
+    // ── 4. Lintel — drawn before platform, seen from above:
+    //       Top surface is the dominant face (what a top-down camera sees).
+    //       Front edge is just 3px — a sliver hinting at depth, not a wall.
+    // Top surface (wide, lit, viewed from above)
     this.g.fillStyle(STONE_MID, 1);
-    this.g.fillRoundedRect(-50, -54, 104, 12, 3);
-    this.g.fillStyle(STONE_LIGHT, 0.85);
-    this.g.fillRoundedRect(-50, -54, 104, 6, { tl: 3, tr: 3, bl: 0, br: 0 });
+    this.g.fillRoundedRect(-50, -54, 104, 10, 3);
+    this.g.fillStyle(STONE_LIGHT, 0.80);
+    this.g.fillRoundedRect(-50, -54, 104, 5, { tl: 3, tr: 3, bl: 0, br: 0 });
     this.g.lineStyle(1.5, STONE_EDGE, 0.75);
-    this.g.strokeRoundedRect(-50, -54, 104, 12, 3);
+    this.g.strokeRoundedRect(-50, -54, 104, 10, 3);
+    // Front edge (3px sliver — depth hint only, not an eye-level face)
+    this.g.fillStyle(STONE_DARK, 1);
+    this.g.fillRect(-48, -44, 100, 3);
+    this.g.lineStyle(1, STONE_EDGE, 0.50);
+    this.g.lineBetween(-48, -44, 52, -44);
+    this.g.lineBetween(-48, -41, 52, -41);
+
+    // ── 5. Platform oval — drawn AFTER pillars so it covers their bases,
+    //       making them look planted into the stone surface
+    this.g.fillStyle(STONE_DARK, 1);
+    this.g.fillEllipse(0, 2, 106, 40);
+    this.g.fillStyle(STONE_MID, 0.45);
+    this.g.fillEllipse(0, 0, 104, 30);
+    this.g.lineStyle(1, STONE_EDGE, 0.45);
+    this.g.strokeEllipse(0, 2, 90, 32);
+    this.g.lineStyle(2, STONE_EDGE, 0.85);
+    this.g.strokeEllipse(0, 2, 106, 40);
 
     // ── 6. Glow halo ─────────────────────────────────────────────────────────
     this.g.fillStyle(COLORS.ALTAR, glow * 0.45);
@@ -181,7 +168,7 @@ export default class Altar {
     this.g.fillStyle(COLORS.ALTAR, Math.min(1, rGlow));
     this.g.fillCircle(0, -4, 3);
 
-    // ── 9. Twin flames (height-flickering) ────────────────────────────────────
+    // ── 9. Twin flames ────────────────────────────────────────────────────────
     const daisTop = -13;
     [
       { bx: -10, h: h1, w: w1, sw: s1 },
@@ -189,19 +176,15 @@ export default class Altar {
     ].forEach(({ bx, h, w, sw }) => {
       const tip = daisTop - h;
 
-      // Dark orange base (widest)
       this.g.fillStyle(0xcc4400, 0.70 + glow * 0.10);
       this.g.fillTriangle(bx - w, daisTop, bx + w, daisTop, bx + sw, tip);
 
-      // Orange mid
       this.g.fillStyle(0xff7700, 0.75);
       this.g.fillTriangle(bx - w*0.7, daisTop, bx + w*0.7, daisTop, bx + sw*0.6, tip + h*0.2);
 
-      // Yellow upper
       this.g.fillStyle(0xffcc00, 0.65);
       this.g.fillTriangle(bx - w*0.4, daisTop, bx + w*0.4, daisTop, bx + sw*0.3, tip + h*0.4);
 
-      // Near-white hot core
       this.g.fillStyle(0xfff5c0, 0.50 + glow * 0.20);
       this.g.fillTriangle(bx - w*0.2, daisTop - h*0.15, bx + w*0.2, daisTop - h*0.15, bx + sw*0.1, tip + h*0.55);
     });
