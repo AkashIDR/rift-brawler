@@ -69,6 +69,7 @@ export default class UIScene extends Phaser.Scene {
   _buildIconTextures() {
     this._bakeHeartIcon();
     this._bakeBoltIcon();
+    this._bakeBarCapLeft();
     this._bakeBossCapTexture();
     this._bakeSkillIcon('skill-q-strike',    0xffdd44, this._drawStrikeIcon);
     this._bakeSkillIcon('skill-w-shield',    0x44aaff, this._drawShieldIcon);
@@ -119,6 +120,38 @@ export default class UIScene extends Phaser.Scene {
     ctx.closePath(); ctx.fill();
     ctx.fillStyle='rgba(255,255,255,0.85)';
     ctx.beginPath(); ctx.moveTo(9.5,3); ctx.lineTo(6.5,11); ctx.lineTo(8,11); ctx.lineTo(10.5,3); ctx.closePath(); ctx.fill();
+    tex.refresh();
+  }
+
+  // Sphere-shaded end cap — baked once, reused for both bars
+  _bakeBarCapLeft() {
+    const key = 'ui-bar-cap';
+    if (this.textures.exists(key)) return;
+    const size = 32;
+    const tex  = this.textures.createCanvas(key, size, size);
+    const ctx  = tex.getContext();
+    const cx = size / 2, cy = size / 2, r = size / 2 - 1;
+
+    // Base dark fill
+    ctx.fillStyle = '#1a0d08';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+    // Sphere radial gradient — hot spot offset to upper-left
+    const grad = ctx.createRadialGradient(
+      cx - r * 0.35, cy - r * 0.35, 0,
+      cx, cy, r
+    );
+    grad.addColorStop(0,    'rgba(255,255,255,0.38)');
+    grad.addColorStop(0.40, 'rgba(255,255,255,0.06)');
+    grad.addColorStop(0.70, 'rgba(0,0,0,0.00)');
+    grad.addColorStop(1.00, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+    // Thin dark definition rim
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(cx, cy, r - 0.3, 0, Math.PI * 2); ctx.stroke();
+
     tex.refresh();
   }
 
@@ -324,15 +357,18 @@ export default class UIScene extends Phaser.Scene {
       tl: 5, tr: halfH, bl: 5, br: halfH,
     });
 
-    // Left icon cap — plain dark circle matching housing (no gold border)
-    const capR = halfH;   // same radius as capsule end = 15px
-    g.fillStyle(0x1a0d08, 1);
-    g.fillCircle(LEFT_CAP_CX, barCY, capR);
-    g.lineStyle(1.5, 0x3a2010, 0.80);
-    g.strokeCircle(LEFT_CAP_CX, barCY, capR);
-    // Subtle top-left specular
-    g.fillStyle(PANEL_SHINE, 0.10);
-    g.fillCircle(LEFT_CAP_CX - 4, barCY - 4, 4);
+    // Housing top-shine — broad lift (top 45%) + 1px gloss edge
+    g.fillStyle(0xffffff, 0.07);
+    g.fillRoundedRect(houseX + 1, houseY + 1, houseW + halfH - 2, Math.floor(houseH * 0.45), {
+      tl: 4, tr: halfH - 1, bl: 0, br: 0,
+    });
+    g.fillStyle(0xfff5d0, 0.18);
+    g.fillRect(houseX + 8, houseY + 1, houseW + halfH - 16, 1);
+
+    // Left icon cap — sphere-shaded baked texture
+    const capR = halfH;   // = 15px
+    this.add.image(LEFT_CAP_CX, barCY, 'ui-bar-cap')
+      .setOrigin(0.5).setDisplaySize(capR * 2, capR * 2);
 
     // Icon centered on cap
     const iconImg = this.add.image(LEFT_CAP_CX, barCY, isHp ? 'ui-heart' : 'ui-bolt').setOrigin(0.5);
@@ -365,11 +401,23 @@ export default class UIScene extends Phaser.Scene {
     if (fillW < 1) return;
     const baseColor  = isStamina ? STAM_FILL  : (ratio < 0.25 ? HP_LOW_FILL : HP_FILL);
     const shineColor = isStamina ? STAM_SHINE : HP_SHINE;
+    // 1. Base fill
     g.fillStyle(baseColor, 1);
     g.fillRoundedRect(0, 0, fillW, h, 3);
-    g.fillStyle(shineColor, 0.32);
-    g.fillRoundedRect(1, 0, Math.max(1, fillW-2), Math.floor(h*0.42), { tl:3, tr:3, bl:0, br:0 });
-    g.fillStyle(0x000000, 0.25);
+    // 2. Broad upper-half catch light
+    g.fillStyle(0xffffff, 0.10);
+    g.fillRoundedRect(0, 0, fillW, Math.floor(h * 0.55), { tl:3, tr:3, bl:0, br:0 });
+    // 3. Upper third — brighter convex peak
+    g.fillStyle(0xffffff, 0.14);
+    g.fillRoundedRect(1, 0, Math.max(1, fillW-2), Math.floor(h * 0.35), { tl:3, tr:3, bl:0, br:0 });
+    // 4. Top quarter — core specular band (hue-tinted shine)
+    g.fillStyle(shineColor, 0.35);
+    g.fillRoundedRect(2, 0, Math.max(1, fillW-4), Math.floor(h * 0.20), { tl:3, tr:3, bl:0, br:0 });
+    // 5. Very top edge — 2px near-white gloss line
+    g.fillStyle(0xffffff, 0.40);
+    g.fillRect(3, 0, Math.max(1, fillW-6), 2);
+    // 6. Bottom shadow
+    g.fillStyle(0x000000, 0.32);
     g.fillRoundedRect(0, Math.floor(h*0.60), fillW, Math.floor(h*0.40), { tl:0, tr:0, bl:3, br:3 });
 
     if (!isStamina && this.hpIcon) {
