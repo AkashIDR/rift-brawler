@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { COLORS } from '../config/gameConfig.js';
+import { spawnBurst } from '../systems/ParticleHelper.js';
 
 export default class Altar {
   constructor(scene, x, y) {
@@ -176,6 +177,21 @@ export default class Altar {
   interact() {
     if (this._interacted) return;
     this._interacted = true;
+
+    // H — dramatic fire burst from the dais centre on summon
+    spawnBurst(this.scene, this.x, this.y - 30, {
+      color: 0xff8800, count: 18,
+      minDist: 25, maxDist: 80,
+      minSize: 4,  maxSize: 12,
+      duration: 450,
+    });
+    spawnBurst(this.scene, this.x, this.y - 30, {
+      color: 0xffee00, count: 10,
+      minDist: 10, maxDist: 40,
+      minSize: 2,  maxSize: 6,
+      duration: 300,
+    });
+
     if (this.onInteract) this.onInteract();
   }
 

@@ -3,6 +3,7 @@ import {
   PLAYER, SKILLS, COLORS, SCALING,
   GAME_WIDTH, GAME_HEIGHT
 } from '../config/gameConfig.js';
+import { spawnBurst, spawnImpactSparks, spawnDust } from '../systems/ParticleHelper.js';
 
 export default class Player {
   constructor(scene, x, y, level = 1, incomingHp = null) {
@@ -305,6 +306,13 @@ export default class Player {
       // Power Strike — big fast projectile
       this._fireProjectile(angle, dmg, SKILLS.Q.color, 11, SKILLS.Q.projectileSpeed, true);
       this.scene.cameras.main.shake(80, 0.0015);
+      // G — Q activation flash
+      spawnBurst(this.scene, this.x, this.y, {
+        color: 0xffee44, count: 6,
+        minDist: 12, maxDist: 35,
+        minSize: 3, maxSize: 6,
+        duration: 180,
+      });
     } else if (key === 'W') {
       // Shield Dash — dash + i-frames + contact damage
       this._doDash(angle, SKILLS.W.dashDistance, SKILLS.W.dashSpeed, SKILLS.W.iframeDuration, dmg, 0x44aaff);
@@ -437,7 +445,11 @@ export default class Player {
         ring.lineStyle(4, SKILLS.E.color, 1 - r / radius);
         ring.strokeCircle(0, 0, r);
       },
-      onComplete: () => ring.destroy()
+      onComplete: () => {
+        ring.destroy();
+        // F — ground dust on slam landing
+        spawnDust(this.scene, this.x, this.y, 14);
+      }
     });
 
     // Stomp animation: jump then land
@@ -473,6 +485,9 @@ export default class Player {
     // Red flash
     this._hitFlash();
     this._updateFloatingHP();
+
+    // E — incoming hit sparks
+    spawnImpactSparks(this.scene, this.x, this.y, 0xff4422, 5);
 
     if (this.hp <= 0) this._die();
   }
@@ -702,6 +717,8 @@ export default class Player {
           if (!proj._isSkill) {
             this.stamina = Math.min(this.staminaMax, this.stamina + PLAYER.STAMINA_REGEN_PER_HIT);
           }
+          // D — projectile impact sparks at hit point
+          spawnImpactSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 7);
           scene.boss.takeDamage(proj._damage);
           proj._alive = false;
           proj.destroy();

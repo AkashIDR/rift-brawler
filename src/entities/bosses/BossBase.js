@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { SCALING } from '../../config/gameConfig.js';
+import { spawnBurst, spawnImpactSparks } from '../../systems/ParticleHelper.js';
 
 /*
   BossBase — all bosses extend this.
@@ -60,7 +61,15 @@ export default class BossBase {
       targets: this.container,
       alpha: 1, scaleX: 1, scaleY: 1,
       duration: 500, ease: 'Back.easeOut',
-      onComplete: () => { this._state = 'idle'; this._stateTimer = 800; }
+      onComplete: () => {
+        this._state = 'idle';
+        this._stateTimer = 800;
+        // B — spawn materialization burst
+        spawnBurst(scene, x, y, {
+          color: this.accentColor, count: 14,
+          minDist: 30, maxDist: 90, duration: 500,
+        });
+      }
     });
   }
 
@@ -76,6 +85,9 @@ export default class BossBase {
     // Hit flash
     this.container.setAlpha(0.4);
     this.scene.time.delayedCall(80, () => this.container.setAlpha(1));
+
+    // A — accent-colored impact sparks
+    spawnImpactSparks(this.scene, this.x, this.y, this.accentColor, 8);
 
     // Check enrage thresholds
     const ratio = this.hp / this.maxHp;
@@ -112,6 +124,14 @@ export default class BossBase {
     this.scene.tweens.add({
       targets: glow, alpha: 0, duration: 600,
       onComplete: () => glow.destroy()
+    });
+
+    // C — dramatic enrage aura burst
+    spawnBurst(this.scene, this.x, this.y, {
+      color: 0xff2200, count: 16,
+      minDist: 40, maxDist: 110,
+      minSize: 5, maxSize: 14,
+      duration: 350,
     });
   }
 
