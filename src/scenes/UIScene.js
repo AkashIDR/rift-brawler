@@ -125,7 +125,7 @@ export default class UIScene extends Phaser.Scene {
     tex.refresh();
   }
 
-  // Heart-shaped cap background for HP bar left end
+  // Heart-shaped cap — same dark warm-wood color as the housing, gold border
   _bakeHpCapLeft() {
     const key = 'ui-hp-cap-left';
     if (this.textures.exists(key)) return;
@@ -134,35 +134,35 @@ export default class UIScene extends Phaser.Scene {
     const ctx = tex.getContext();
     const cx = size / 2, cy = size / 2 + 1;
 
-    // Outer glow / shadow
-    ctx.fillStyle = '#0d0202';
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.60)';
     this._heartPath(ctx, cx, cy + 2, 21); ctx.fill();
 
-    // Dark crimson body
-    ctx.fillStyle = '#2a0808';
+    // Main body — same dark wood as housing (0x1a0d05)
+    ctx.fillStyle = '#1a0d05';
     this._heartPath(ctx, cx, cy, 20); ctx.fill();
 
-    // Mid layer
-    ctx.fillStyle = '#3d0e0e';
-    this._heartPath(ctx, cx, cy - 1, 17); ctx.fill();
+    // Slightly lighter inner face for depth
+    ctx.fillStyle = '#2a1508';
+    this._heartPath(ctx, cx, cy - 1, 16); ctx.fill();
 
-    // Gold/bronze border
+    // Gold border — matches housing border color
     ctx.strokeStyle = '#c8861a'; ctx.lineWidth = 2.2;
     this._heartPath(ctx, cx, cy, 20); ctx.stroke();
 
-    // Subtle inner gold ring
-    ctx.strokeStyle = '#d4a96a'; ctx.lineWidth = 1; ctx.globalAlpha = 0.35;
+    // Inner gold ring (subtle)
+    ctx.strokeStyle = '#d4a96a'; ctx.lineWidth = 1; ctx.globalAlpha = 0.30;
     this._heartPath(ctx, cx, cy, 16); ctx.stroke();
     ctx.globalAlpha = 1;
 
-    // Top-left specular
-    ctx.fillStyle = 'rgba(255,245,208,0.25)';
+    // Warm top-left specular
+    ctx.fillStyle = 'rgba(255,245,208,0.18)';
     this._heartPath(ctx, cx - 2, cy - 3, 9); ctx.fill();
 
     tex.refresh();
   }
 
-  // Bolt-shaped cap background for Stamina bar left end
+  // Bolt-shaped cap — same dark warm-wood color as the housing, gold border
   _bakeStamCapLeft() {
     const key = 'ui-stam-cap-left';
     if (this.textures.exists(key)) return;
@@ -170,14 +170,11 @@ export default class UIScene extends Phaser.Scene {
     const tex = this.textures.createCanvas(key, size, size);
     const ctx = tex.getContext();
 
-    // Scale original bolt (18x24) to fit 36x36 area centered in 44x44
-    // Scale factor = 36/22 = 1.636, offset so bolt centers in canvas
     const sc = 1.636, xOff = 7.3, yOff = 2.36;
     const scalePt = ([x, y]) => [x * sc + xOff, y * sc + yOff];
     const outer = [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]].map(scalePt);
-    // Inset version (~80% scale from center)
     const innerSc = 1.3, innerXOff = 9.7, innerYOff = 5.0;
-    const inner = [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]]
+    const inner  = [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]]
       .map(([x,y]) => [x * innerSc + innerXOff, y * innerSc + innerYOff]);
 
     const drawPoly = (pts) => {
@@ -186,26 +183,26 @@ export default class UIScene extends Phaser.Scene {
       ctx.closePath();
     };
 
-    // Shadow
-    ctx.fillStyle = '#020508';
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.60)';
     drawPoly(outer.map(([x,y]) => [x+1.5, y+1.5])); ctx.fill();
 
-    // Dark navy body
-    ctx.fillStyle = '#0a1a38'; drawPoly(outer); ctx.fill();
+    // Main body — same dark wood as housing
+    ctx.fillStyle = '#1a0d05'; drawPoly(outer); ctx.fill();
 
-    // Lighter inner face
-    ctx.fillStyle = '#122a58'; drawPoly(inner); ctx.fill();
+    // Slightly lighter inner face
+    ctx.fillStyle = '#2a1508'; drawPoly(inner); ctx.fill();
 
     // Gold border
     ctx.strokeStyle = '#c8861a'; ctx.lineWidth = 2.2; drawPoly(outer); ctx.stroke();
 
-    // Inner gold ring
-    ctx.strokeStyle = '#d4a96a'; ctx.lineWidth = 1; ctx.globalAlpha = 0.35;
+    // Inner gold ring (subtle)
+    ctx.strokeStyle = '#d4a96a'; ctx.lineWidth = 1; ctx.globalAlpha = 0.30;
     drawPoly(inner); ctx.stroke();
     ctx.globalAlpha = 1;
 
-    // Specular
-    ctx.fillStyle = 'rgba(255,245,208,0.25)';
+    // Warm specular
+    ctx.fillStyle = 'rgba(255,245,208,0.18)';
     drawPoly(inner.map(([x,y]) => [x-1, y-1])); ctx.fill();
 
     tex.refresh();
@@ -418,10 +415,13 @@ export default class UIScene extends Phaser.Scene {
     g.fillStyle(PANEL_SHINE, 0.30);
     g.fillCircle(rightCapX - 3, barCY - 3, 3);
 
-    // Left icon cap — heart or bolt shaped canvas texture
-    this.add.image(LEFT_CAP_CX, barCY, isHp ? 'ui-hp-cap-left' : 'ui-stam-cap-left').setOrigin(0.5);
+    // Left icon cap — heart or bolt shaped canvas texture, scaled to match housing height
+    // houseH = BAR_H + 8 = 30px; cap canvas = 44px; scale = 30/44 ≈ 0.68
+    const capScale = (BAR_H + 8) / 44;
+    this.add.image(LEFT_CAP_CX, barCY, isHp ? 'ui-hp-cap-left' : 'ui-stam-cap-left')
+      .setOrigin(0.5).setScale(capScale);
 
-    // Small icon centered on top of cap
+    // Small icon centered on top of cap (no extra scale — natural size fits the scaled cap)
     const iconImg = this.add.image(LEFT_CAP_CX, barCY, isHp ? 'ui-heart' : 'ui-bolt').setOrigin(0.5);
     if (isHp) this.hpIcon = iconImg;
   }
