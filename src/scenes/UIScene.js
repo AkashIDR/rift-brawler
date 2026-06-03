@@ -2,13 +2,12 @@ import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../config/gameConfig.js';
 
 // ─── Bar layout ──────────────────────────────────────────────────────────────
-const LEFT_CAP_CX = 36;           // center X of left icon cap (heart/bolt shaped)
-const BAR_X       = 56;           // bar track left edge (housing overlaps cap by ~6px)
-const BAR_W       = 322;          // ~15% wider than previous 280
-const BAR_H       = 22;           // ~40% taller than previous 16
-const RIGHT_CAP_R = 13;           // right decorative cap radius
-const HP_BAR_Y    = GAME_HEIGHT - 92;   // HP bar track top
-const ST_BAR_Y    = GAME_HEIGHT - 54;   // Stamina bar track top
+const LEFT_CAP_CX = 36;           // center X of left icon cap
+const BAR_X       = 56;           // bar track left edge
+const BAR_W       = 322;
+const BAR_H       = 22;
+const HP_BAR_Y    = GAME_HEIGHT - 92;
+const ST_BAR_Y    = GAME_HEIGHT - 54;
 
 // ─── Circular skill slots ────────────────────────────────────────────────────
 const SLOT_R   = 32;
@@ -25,8 +24,8 @@ const PANEL_SHINE = 0xfff5d0;
 const HP_FILL     = 0xc0392b;
 const HP_SHINE    = 0xff8080;
 const HP_LOW_FILL = 0xff0000;
-const STAM_FILL   = 0x1a6ba0;
-const STAM_SHINE  = 0x74d0ff;
+const STAM_FILL   = 0xcf8a00;   // warm golden amber — matches bolt icon energy
+const STAM_SHINE  = 0xffe080;   // bright yellow shine
 const BOSS_BORDER = 0xaa0000;
 const GOLD        = 0xd4a96a;
 const PARCHMENT   = '#ffe8c0';
@@ -70,8 +69,6 @@ export default class UIScene extends Phaser.Scene {
   _buildIconTextures() {
     this._bakeHeartIcon();
     this._bakeBoltIcon();
-    this._bakeHpCapLeft();
-    this._bakeStamCapLeft();
     this._bakeBossCapTexture();
     this._bakeSkillIcon('skill-q-strike',    0xffdd44, this._drawStrikeIcon);
     this._bakeSkillIcon('skill-w-shield',    0x44aaff, this._drawShieldIcon);
@@ -122,89 +119,6 @@ export default class UIScene extends Phaser.Scene {
     ctx.closePath(); ctx.fill();
     ctx.fillStyle='rgba(255,255,255,0.85)';
     ctx.beginPath(); ctx.moveTo(9.5,3); ctx.lineTo(6.5,11); ctx.lineTo(8,11); ctx.lineTo(10.5,3); ctx.closePath(); ctx.fill();
-    tex.refresh();
-  }
-
-  // Heart-shaped cap — same dark warm-wood color as the housing, gold border
-  _bakeHpCapLeft() {
-    const key = 'ui-hp-cap-left';
-    if (this.textures.exists(key)) return;
-    const size = 44;
-    const tex = this.textures.createCanvas(key, size, size);
-    const ctx = tex.getContext();
-    const cx = size / 2, cy = size / 2 + 1;
-
-    // Drop shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.60)';
-    this._heartPath(ctx, cx, cy + 2, 21); ctx.fill();
-
-    // Main body — same dark wood as housing (0x1a0d05)
-    ctx.fillStyle = '#1a0d05';
-    this._heartPath(ctx, cx, cy, 20); ctx.fill();
-
-    // Slightly lighter inner face for depth
-    ctx.fillStyle = '#2a1508';
-    this._heartPath(ctx, cx, cy - 1, 16); ctx.fill();
-
-    // Gold border — matches housing border color
-    ctx.strokeStyle = '#c8861a'; ctx.lineWidth = 2.2;
-    this._heartPath(ctx, cx, cy, 20); ctx.stroke();
-
-    // Inner gold ring (subtle)
-    ctx.strokeStyle = '#d4a96a'; ctx.lineWidth = 1; ctx.globalAlpha = 0.30;
-    this._heartPath(ctx, cx, cy, 16); ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    // Warm top-left specular
-    ctx.fillStyle = 'rgba(255,245,208,0.18)';
-    this._heartPath(ctx, cx - 2, cy - 3, 9); ctx.fill();
-
-    tex.refresh();
-  }
-
-  // Bolt-shaped cap — same dark warm-wood color as the housing, gold border
-  _bakeStamCapLeft() {
-    const key = 'ui-stam-cap-left';
-    if (this.textures.exists(key)) return;
-    const size = 44;
-    const tex = this.textures.createCanvas(key, size, size);
-    const ctx = tex.getContext();
-
-    const sc = 1.636, xOff = 7.3, yOff = 2.36;
-    const scalePt = ([x, y]) => [x * sc + xOff, y * sc + yOff];
-    const outer = [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]].map(scalePt);
-    const innerSc = 1.3, innerXOff = 9.7, innerYOff = 5.0;
-    const inner  = [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]]
-      .map(([x,y]) => [x * innerSc + innerXOff, y * innerSc + innerYOff]);
-
-    const drawPoly = (pts) => {
-      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let i=1; i<pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-      ctx.closePath();
-    };
-
-    // Drop shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.60)';
-    drawPoly(outer.map(([x,y]) => [x+1.5, y+1.5])); ctx.fill();
-
-    // Main body — same dark wood as housing
-    ctx.fillStyle = '#1a0d05'; drawPoly(outer); ctx.fill();
-
-    // Slightly lighter inner face
-    ctx.fillStyle = '#2a1508'; drawPoly(inner); ctx.fill();
-
-    // Gold border
-    ctx.strokeStyle = '#c8861a'; ctx.lineWidth = 2.2; drawPoly(outer); ctx.stroke();
-
-    // Inner gold ring (subtle)
-    ctx.strokeStyle = '#d4a96a'; ctx.lineWidth = 1; ctx.globalAlpha = 0.30;
-    drawPoly(inner); ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    // Warm specular
-    ctx.fillStyle = 'rgba(255,245,208,0.18)';
-    drawPoly(inner.map(([x,y]) => [x-1, y-1])); ctx.fill();
-
     tex.refresh();
   }
 
@@ -388,40 +302,39 @@ export default class UIScene extends Phaser.Scene {
     });
   }
 
-  // Bar mount: dark housing beam + right decorative cap + left icon-shaped cap
+  // Bar mount: dark housing beam with capsule right end + dark circle left cap
   _buildBarMount(barY, isHp) {
     const barCY     = barY + BAR_H / 2;
     const houseX    = BAR_X - 4;
     const houseW    = BAR_W + 8;
     const houseY    = barCY - BAR_H / 2 - 4;
     const houseH    = BAR_H + 8;
-    const borderCol = isHp ? 0x5a2a10 : 0x1a3a5a;
-    const rightCapX = BAR_X + BAR_W + 10;
-    const rightBord = isHp ? 0x7a3a18 : 0x2a4a6a;
+    const halfH     = Math.floor(houseH / 2);   // = 15
+    const borderCol = isHp ? 0x5a2a10 : 0x4a3200;
 
     const g = this.add.graphics();
 
-    // Housing beam
+    // Housing beam — left: slightly rounded, right: capsule (halfH radius)
     g.fillStyle(0x1a0d08, 0.88);
-    g.fillRoundedRect(houseX, houseY, houseW, houseH, 5);
+    g.fillRoundedRect(houseX, houseY, houseW + halfH, houseH, {
+      tl: 5, tr: halfH, bl: 5, br: halfH,
+    });
     g.lineStyle(1.5, borderCol, 0.65);
-    g.strokeRoundedRect(houseX, houseY, houseW, houseH, 5);
+    g.strokeRoundedRect(houseX, houseY, houseW + halfH, houseH, {
+      tl: 5, tr: halfH, bl: 5, br: halfH,
+    });
 
-    // Right decorative end cap (circular)
-    g.fillStyle(0x241008, 1);
-    g.fillCircle(rightCapX, barCY, RIGHT_CAP_R);
-    g.lineStyle(1.5, rightBord, 0.70);
-    g.strokeCircle(rightCapX, barCY, RIGHT_CAP_R);
-    g.fillStyle(PANEL_SHINE, 0.30);
-    g.fillCircle(rightCapX - 3, barCY - 3, 3);
+    // Left icon cap — plain dark circle matching housing (no gold border)
+    const capR = halfH;   // same radius as capsule end = 15px
+    g.fillStyle(0x1a0d08, 1);
+    g.fillCircle(LEFT_CAP_CX, barCY, capR);
+    g.lineStyle(1.5, 0x3a2010, 0.80);
+    g.strokeCircle(LEFT_CAP_CX, barCY, capR);
+    // Subtle top-left specular
+    g.fillStyle(PANEL_SHINE, 0.10);
+    g.fillCircle(LEFT_CAP_CX - 4, barCY - 4, 4);
 
-    // Left icon cap — heart or bolt shaped canvas texture, scaled to match housing height
-    // houseH = BAR_H + 8 = 30px; cap canvas = 44px; scale = 30/44 ≈ 0.68
-    const capScale = (BAR_H + 8) / 44;
-    this.add.image(LEFT_CAP_CX, barCY, isHp ? 'ui-hp-cap-left' : 'ui-stam-cap-left')
-      .setOrigin(0.5).setScale(capScale);
-
-    // Small icon centered on top of cap (no extra scale — natural size fits the scaled cap)
+    // Icon centered on cap
     const iconImg = this.add.image(LEFT_CAP_CX, barCY, isHp ? 'ui-heart' : 'ui-bolt').setOrigin(0.5);
     if (isHp) this.hpIcon = iconImg;
   }
@@ -430,9 +343,9 @@ export default class UIScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.fillStyle(0x000000, 0.50);
     g.fillRoundedRect(x+2, y+2, w, h, 4);
-    g.fillStyle(isHp ? 0x0d0505 : 0x05050d, 1);
+    g.fillStyle(isHp ? 0x0d0505 : 0x0d0900, 1);
     g.fillRoundedRect(x, y, w, h, 4);
-    g.lineStyle(1.5, isHp ? 0x5a1a1a : 0x1a3a5a, 0.90);
+    g.lineStyle(1.5, isHp ? 0x5a1a1a : 0x4a3200, 0.90);
     g.strokeRoundedRect(x, y, w, h, 4);
     g.lineStyle(1, 0x000000, 0.45);
     g.lineBetween(x+4, y+1, x+w-4, y+1);
