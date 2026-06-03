@@ -69,7 +69,8 @@ export default class UIScene extends Phaser.Scene {
   _buildIconTextures() {
     this._bakeHeartIcon();
     this._bakeBoltIcon();
-    this._bakeBarCapLeft();
+    this._bakeHpCap();
+    this._bakeStamCap();
     this._bakeBossCapTexture();
     this._bakeSkillIcon('skill-q-strike',    0xffdd44, this._drawStrikeIcon);
     this._bakeSkillIcon('skill-w-shield',    0x44aaff, this._drawShieldIcon);
@@ -93,10 +94,16 @@ export default class UIScene extends Phaser.Scene {
   }
 
   _heartPath(ctx, cx, cy, s) {
+    // Classic two-lobe arc construction — clean, symmetric
+    const lr = s * 0.52;
+    const lx = cx - s * 0.5, ly = cy - s * 0.15;
+    const rx = cx + s * 0.5, ry = cy - s * 0.15;
     ctx.beginPath();
-    ctx.moveTo(cx, cy + s * 0.85);
-    ctx.bezierCurveTo(cx - s*1.45, cy + s*0.05, cx - s*1.1, cy - s*0.95, cx, cy - s*0.2);
-    ctx.bezierCurveTo(cx + s*1.1,  cy - s*0.95, cx + s*1.45, cy + s*0.05, cx, cy + s*0.85);
+    ctx.moveTo(cx, cy + s * 0.90);
+    ctx.bezierCurveTo(cx - s*1.15, cy + s*0.35, cx - s*1.05, cy - s*0.55, lx, ly - lr);
+    ctx.arc(lx, ly, lr, -Math.PI / 2, 0, false);
+    ctx.arc(rx, ry, lr, Math.PI,      -Math.PI / 2, false);
+    ctx.bezierCurveTo(cx + s*1.05, cy - s*0.55, cx + s*1.15, cy + s*0.35, cx, cy + s*0.90);
     ctx.closePath();
   }
 
@@ -123,34 +130,105 @@ export default class UIScene extends Phaser.Scene {
     tex.refresh();
   }
 
-  // Sphere-shaded end cap — baked once, reused for both bars
-  _bakeBarCapLeft() {
-    const key = 'ui-bar-cap';
+  // HP cap: heart-shaped housing + heart icon in one baked texture
+  _bakeHpCap() {
+    const key = 'ui-hp-cap';
     if (this.textures.exists(key)) return;
-    const size = 32;
-    const tex  = this.textures.createCanvas(key, size, size);
-    const ctx  = tex.getContext();
-    const cx = size / 2, cy = size / 2, r = size / 2 - 1;
+    const w = 52, h = 50;
+    const tex = this.textures.createCanvas(key, w, h);
+    const ctx = tex.getContext();
+    const cx = w / 2, cy = h / 2 + 1;
 
-    // Base dark fill
+    // Housing drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    this._heartPath(ctx, cx + 1, cy + 2, 16); ctx.fill();
+    // Housing dark wood base
     ctx.fillStyle = '#1a0d08';
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    this._heartPath(ctx, cx, cy, 16); ctx.fill();
+    // Sphere-like gradient on housing
+    const hg = ctx.createRadialGradient(cx - 6, cy - 7, 0, cx, cy, 20);
+    hg.addColorStop(0,    'rgba(255,255,255,0.28)');
+    hg.addColorStop(0.42, 'rgba(255,255,255,0.04)');
+    hg.addColorStop(0.75, 'rgba(0,0,0,0.00)');
+    hg.addColorStop(1.00, 'rgba(0,0,0,0.30)');
+    ctx.fillStyle = hg;
+    this._heartPath(ctx, cx, cy, 16); ctx.fill();
+    // Thin metallic rim
+    ctx.strokeStyle = 'rgba(20,8,2,0.80)'; ctx.lineWidth = 1.8;
+    this._heartPath(ctx, cx, cy, 16); ctx.stroke();
 
-    // Sphere radial gradient — hot spot offset to upper-left
-    const grad = ctx.createRadialGradient(
-      cx - r * 0.35, cy - r * 0.35, 0,
-      cx, cy, r
-    );
-    grad.addColorStop(0,    'rgba(255,255,255,0.38)');
-    grad.addColorStop(0.40, 'rgba(255,255,255,0.06)');
-    grad.addColorStop(0.70, 'rgba(0,0,0,0.00)');
-    grad.addColorStop(1.00, 'rgba(0,0,0,0.35)');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    // Inner heart icon — dark outline pass
+    ctx.fillStyle = '#3a0606';
+    this._heartPath(ctx, cx, cy + 1, 9.5); ctx.fill();
+    // Main red body
+    ctx.fillStyle = '#c0392b';
+    this._heartPath(ctx, cx, cy, 9); ctx.fill();
+    // Upper-shine (lighter red across top)
+    ctx.fillStyle = 'rgba(220,100,100,0.50)';
+    this._heartPath(ctx, cx, cy - 1.5, 6.5); ctx.fill();
+    // Pink highlight ellipse on top-left lobe
+    ctx.fillStyle = 'rgba(255,160,160,0.72)';
+    ctx.beginPath(); ctx.ellipse(cx - 3.5, cy - 3, 2.8, 1.8, -0.45, 0, Math.PI * 2); ctx.fill();
+    // White specular dot
+    ctx.fillStyle = 'rgba(255,255,255,0.90)';
+    ctx.beginPath(); ctx.arc(cx - 4, cy - 4, 1.1, 0, Math.PI * 2); ctx.fill();
 
-    // Thin dark definition rim
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.arc(cx, cy, r - 0.3, 0, Math.PI * 2); ctx.stroke();
+    tex.refresh();
+  }
+
+  // Stamina cap: bolt-shaped housing + bolt icon in one baked texture
+  _bakeStamCap() {
+    const key = 'ui-stam-cap';
+    if (this.textures.exists(key)) return;
+    const w = 46, h = 56;
+    const tex = this.textures.createCanvas(key, w, h);
+    const ctx = tex.getContext();
+
+    const makeBolt = (sx, ox, oy) =>
+      [[10,1],[3,12],[8,12],[5,23],[15,10],[9,10],[13,1]]
+        .map(([x, y]) => [x * sx + ox, y * sx + oy]);
+
+    const outerPts = makeBolt(1.85,  6.4,  5.8);
+    const innerPts = makeBolt(1.20, 10.2, 13.6);
+
+    const drawPoly = (pts) => {
+      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+    };
+
+    // Housing shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    drawPoly(outerPts.map(([x, y]) => [x + 1.5, y + 2])); ctx.fill();
+    // Housing dark wood base
+    ctx.fillStyle = '#1a0d08'; drawPoly(outerPts); ctx.fill();
+    // Sphere-like gradient
+    const cx = w / 2, cy = h / 2;
+    const bg = ctx.createRadialGradient(cx - 8, cy - 10, 0, cx, cy, 28);
+    bg.addColorStop(0,    'rgba(255,255,255,0.28)');
+    bg.addColorStop(0.40, 'rgba(255,255,255,0.04)');
+    bg.addColorStop(0.75, 'rgba(0,0,0,0.00)');
+    bg.addColorStop(1.00, 'rgba(0,0,0,0.30)');
+    ctx.fillStyle = bg; drawPoly(outerPts); ctx.fill();
+    // Metallic rim
+    ctx.strokeStyle = 'rgba(20,8,2,0.80)'; ctx.lineWidth = 1.8;
+    drawPoly(outerPts); ctx.stroke();
+
+    // Inner bolt icon — dark outline
+    ctx.fillStyle = '#3a3000';
+    drawPoly(innerPts.map(([x, y]) => [x + 0.5, y + 0.5])); ctx.fill();
+    // Yellow body
+    ctx.fillStyle = '#ffcc00'; drawPoly(innerPts); ctx.fill();
+    // Top-shine
+    ctx.fillStyle = 'rgba(255,245,150,0.45)'; drawPoly(innerPts); ctx.fill();
+    // White specular streak on upper shaft
+    ctx.fillStyle = 'rgba(255,255,255,0.80)';
+    ctx.beginPath();
+    ctx.moveTo(innerPts[6][0],     innerPts[6][1]);
+    ctx.lineTo(innerPts[5][0] - 1, innerPts[5][1]);
+    ctx.lineTo(innerPts[0][0] - 2, innerPts[0][1]);
+    ctx.lineTo(innerPts[0][0] + 1, innerPts[0][1]);
+    ctx.closePath(); ctx.fill();
 
     tex.refresh();
   }
@@ -366,14 +444,16 @@ export default class UIScene extends Phaser.Scene {
     g.fillStyle(0xfff5d0, 0.18);
     g.fillRect(houseX + 8, houseY + 1, houseW + capEnd - 16, 1);
 
-    // Left icon cap — sphere-shaded baked texture
-    const capR = halfH;   // = 15px
-    this.add.image(LEFT_CAP_CX, barCY, 'ui-bar-cap')
-      .setOrigin(0.5).setDisplaySize(capR * 2, capR * 2);
-
-    // Icon centered on cap
-    const iconImg = this.add.image(LEFT_CAP_CX, barCY, isHp ? 'ui-heart' : 'ui-bolt').setOrigin(0.5);
-    if (isHp) this.hpIcon = iconImg;
+    // Left cap — combined housing + icon texture (shape matches icon exactly)
+    if (isHp) {
+      // Heart-shaped housing, displayed at 0.72× (52→37px wide, 50→36px tall)
+      this.hpIcon = this.add.image(LEFT_CAP_CX, barCY, 'ui-hp-cap')
+        .setOrigin(0.5).setScale(0.72);
+    } else {
+      // Bolt-shaped housing, displayed at 0.60× (46→28px wide, 56→34px tall)
+      this.add.image(LEFT_CAP_CX, barCY, 'ui-stam-cap')
+        .setOrigin(0.5).setScale(0.60);
+    }
   }
 
   _drawBarTrack(x, y, w, h, isHp) {
