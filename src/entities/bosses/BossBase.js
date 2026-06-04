@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { SCALING } from '../../config/gameConfig.js';
-import { spawnBurst, spawnImpactSparks } from '../../systems/ParticleHelper.js';
+import { spawnBurst, spawnBlood } from '../../systems/ParticleHelper.js';
 
 /*
   BossBase — all bosses extend this.
@@ -86,8 +86,8 @@ export default class BossBase {
     this.container.setAlpha(0.4);
     this.scene.time.delayedCall(80, () => this.container.setAlpha(1));
 
-    // A — accent-colored impact sparks
-    spawnImpactSparks(this.scene, this.x, this.y, this.accentColor, 8);
+    // A — blood splatter on hit
+    spawnBlood(this.scene, this.x, this.y, 10);
 
     // Check enrage thresholds
     const ratio = this.hp / this.maxHp;

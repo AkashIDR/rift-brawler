@@ -3,7 +3,7 @@ import {
   PLAYER, SKILLS, COLORS, SCALING,
   GAME_WIDTH, GAME_HEIGHT
 } from '../config/gameConfig.js';
-import { spawnBurst, spawnImpactSparks, spawnDust } from '../systems/ParticleHelper.js';
+import { spawnBurst, spawnSparks, spawnDust, spawnBlood } from '../systems/ParticleHelper.js';
 
 export default class Player {
   constructor(scene, x, y, level = 1, incomingHp = null) {
@@ -447,8 +447,8 @@ export default class Player {
       },
       onComplete: () => {
         ring.destroy();
-        // F — ground dust on slam landing
-        spawnDust(this.scene, this.x, this.y, 14);
+        // F — ground dust cloud on slam landing
+        spawnDust(this.scene, this.x, this.y, 16);
       }
     });
 
@@ -486,8 +486,8 @@ export default class Player {
     this._hitFlash();
     this._updateFloatingHP();
 
-    // E — incoming hit sparks
-    spawnImpactSparks(this.scene, this.x, this.y, 0xff4422, 5);
+    // E — blood splatter on player hit
+    spawnBlood(this.scene, this.x, this.y, 12);
 
     if (this.hp <= 0) this._die();
   }
@@ -691,9 +691,9 @@ export default class Player {
         for (const obs of scene.obstacles) {
           const od = Phaser.Math.Distance.Between(proj.x, proj.y, obs.x, obs.y);
           if (od < obs.baseRadius + (proj._radius || 5)) {
-            // Projectile splash + stone chip on obstacle hit
-            spawnImpactSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 10);
-            spawnDust(this.scene, proj.x, proj.y, 6);
+            // Spark ricochet + stone dust on obstacle hit
+            spawnSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 8);
+            spawnDust(this.scene, proj.x, proj.y, 8);
             proj._alive = false;
             proj.destroy();
             return;
@@ -720,8 +720,8 @@ export default class Player {
           if (!proj._isSkill) {
             this.stamina = Math.min(this.staminaMax, this.stamina + PLAYER.STAMINA_REGEN_PER_HIT);
           }
-          // D — projectile impact sparks at hit point
-          spawnImpactSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 7);
+          // D — directional spark streaks at impact point
+          spawnSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 10);
           scene.boss.takeDamage(proj._damage);
           proj._alive = false;
           proj.destroy();
