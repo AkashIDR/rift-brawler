@@ -691,6 +691,9 @@ export default class Player {
         for (const obs of scene.obstacles) {
           const od = Phaser.Math.Distance.Between(proj.x, proj.y, obs.x, obs.y);
           if (od < obs.baseRadius + (proj._radius || 5)) {
+            // Projectile splash + stone chip on obstacle hit
+            spawnImpactSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 10);
+            spawnDust(this.scene, proj.x, proj.y, 6);
             proj._alive = false;
             proj.destroy();
             return;

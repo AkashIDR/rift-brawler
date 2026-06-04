@@ -66,15 +66,15 @@ export function spawnBurst(scene, x, y, {
  * Quick small impact-spark burst — subtle & snappy.
  * Use for per-hit feedback (boss taking damage, projectile impact, player hit).
  */
-export function spawnImpactSparks(scene, x, y, color, count = 7) {
+export function spawnImpactSparks(scene, x, y, color, count = 12) {
   spawnBurst(scene, x, y, {
     color,
     count,
-    minDist:  15,
-    maxDist:  45,
-    minSize:  3,
-    maxSize:  7,
-    duration: 240,
+    minDist:  28,
+    maxDist:  70,
+    minSize:  5,
+    maxSize:  12,
+    duration: 350,
     depth:    21,
   });
 }
