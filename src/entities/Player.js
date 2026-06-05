@@ -95,7 +95,7 @@ export default class Player {
 
     this.container = this.scene.add.container(this.x, this.y).setDepth(10);
 
-    // Bake static body/head/weapon textures once per direction (cached in scene.textures)
+    // Bake static character textures (one canvas per direction) and weapon
     this._buildFacingTextures();
     this._buildWeaponTexture();
 
@@ -103,59 +103,39 @@ export default class Player {
     this.gLegL = this.scene.add.graphics();
     this.gLegR = this.scene.add.graphics();
 
-    // Body sprite: torso + pauldrons + shield (front-facing) — baked canvas.
-    // Canvas 70×60, origin at canvas center; positioned so body center sits at local y=14
-    this.bodySprite = this.scene.add.image(0, 14, 'player-body-down');
-    this.bodySprite.setOrigin(0.5, 0.5);
+    // Single merged character sprite — head + helmet + body all in one 80×120 canvas.
+    // Canvas center (40, 60) = local (0, 0) = waist pivot. setOrigin(0.5, 0.5) so
+    // the canvas center is the container-local position anchor.
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char-down');
+    this.characterSprite.setOrigin(0.5, 0.5);
 
     // Weapon: orbits body center — position updated every frame in update().
-    // Origin at grip back-end so the barrel always extends outward from the orbit point.
     this.weaponSprite = this.scene.add.image(0, 0, 'player-weapon');
     this.weaponSprite.setOrigin(4 / 30, 0.5);
 
-    // Head sprite: huge chibi head + helmet — baked canvas.
-    // Canvas 80×80, origin at canvas center; positioned so head center sits at local y=-18
-    this.headSprite = this.scene.add.image(0, -18, 'player-head-down');
-    this.headSprite.setOrigin(0.5, 0.5);
-
-    // Z-order: legs → body → weapon → head (helmet covers weapon grip on top-aim)
-    this.container.add([
-      this.gLegL, this.gLegR,
-      this.bodySprite,
-      this.weaponSprite,
-      this.headSprite,
-    ]);
+    // Z-order: legs → character → weapon (weapon floats over the body)
+    this.container.add([this.gLegL, this.gLegR, this.characterSprite, this.weaponSprite]);
     this.container.setScale(0.765);
 
-    this.facing = null;          // force _updateFacing to initialise on first call
-    this._drawLegs(0);
-    this._updateFacing();        // set correct initial texture for starting facingAngle
+    this.facing = null;
+    this._drawLegs(0, false);
+    this._updateFacing();
   }
 
   // ─── Facing texture baking ────────────────────────────────────────────────
-  // Creates six 2D canvas textures (3 directions × body/head) once at startup.
-  // Textures are cached in scene.textures and reused on restart.
+  // Creates three 80×120 canvas textures (one per direction) once at startup.
+  // Each canvas contains the full character: helmet + head + body + pauldrons.
   _buildFacingTextures() {
-    const dirs = ['down', 'up', 'left'];
-    for (const dir of dirs) {
-      const bKey = `player-body-${dir}`;
-      const hKey = `player-head-${dir}`;
-      if (!this.scene.textures.exists(bKey)) {
-        const bt = this.scene.textures.createCanvas(bKey, 70, 60);
-        this._drawBodyToCanvas(bt.getContext(), dir, 35, 30);
-        bt.refresh();
-      }
-      if (!this.scene.textures.exists(hKey)) {
-        const ht = this.scene.textures.createCanvas(hKey, 80, 80);
-        this._drawHeadToCanvas(ht.getContext(), dir, 40, 40);
-        ht.refresh();
-      }
+    for (const dir of ['down', 'up', 'left']) {
+      const key = `player-char-${dir}`;
+      if (this.scene.textures.exists(key)) continue;
+      const tex = this.scene.textures.createCanvas(key, 80, 120);
+      this._drawCharToCanvas(tex.getContext(), dir, 40, 60);
+      tex.refresh();
     }
   }
 
   // ─── Weapon texture baking ────────────────────────────────────────────────
-  // Single shared blunderbuss texture; the sprite rotates to track the cursor.
-  // Canvas 30×16; muzzle tip at canvas x=26, grip back-end at canvas x=4.
   _buildWeaponTexture() {
     const key = 'player-weapon';
     if (this.scene.textures.exists(key)) return;
@@ -164,11 +144,14 @@ export default class Player {
     tex.refresh();
   }
 
-  // ─── Body canvas drawing ──────────────────────────────────────────────────
-  // Canvas 70×60. ox=35 (center x), oy=30 (body center y in canvas).
-  // Draws tiny chibi torso + pauldrons (+ shield for 'left'). Both resting arms
-  // are drawn here; the firing arm is replaced by the separate weaponSprite.
-  _drawBodyToCanvas(ctx, dir, ox, oy) {
+  // ─── Character canvas drawing ─────────────────────────────────────────────
+  // Canvas 80×120. ox=40 (center x), oy=60 (waist pivot = container local origin).
+  // Head center at canvas (40, 28) = local (0, −32). Head r=22. Dome r=24.
+  // Body at canvas y=63–77. Legs drawn live below the canvas.
+  // All three directions use the same shared helpers; 'right' is 'left' scaleX-flipped.
+  _drawCharToCanvas(ctx, dir, ox, oy) {
+    // ox=40, oy=60 (waist/canvas-center). Head center at (ox, oy-32).
+    // Head r=22. Helmet dome r=24. Body at canvas y=63–77.
     const hx = n => '#' + n.toString(16).padStart(6, '0');
     const BODY    = hx(COLORS.PLAYER_BODY);
     const BODY_HI = hx(COLORS.PLAYER_BODY_HI);
@@ -179,372 +162,264 @@ export default class Player {
     const SHIELD  = hx(COLORS.PLAYER_SHIELD);
     const SHIELD_HI = hx(COLORS.PLAYER_SHIELD_HI);
     const SHIELD_LO = hx(COLORS.PLAYER_SHIELD_LO);
+    const SKIN    = hx(COLORS.PLAYER_SKIN);
+    const SKIN_HI = hx(COLORS.PLAYER_SKIN_HI);
+    const SKIN_LO = hx(COLORS.PLAYER_SKIN_LO);
+    const HAIR    = hx(COLORS.PLAYER_HAIR);
     const OUTLINE = '#1a1a2a';
+    const HEAD_CX = ox,  HEAD_CY = oy - 32;   // head circle center in canvas
+    const HEAD_R  = 22,  DOME_R  = 24;         // head radius, helmet dome radius
+    const BODY_Y1 = oy + 3,   BODY_Y2 = oy + 17;  // body top/bottom in canvas
 
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = OUTLINE;
 
-    // Soft contact shadow on top — body sits below the giant head
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    ctx.beginPath();
-    ctx.ellipse(ox, oy - 9, 13, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // ─── Shared helpers ──────────────────────────────────────────────────
 
-    // ─ Pauldron helper (spherical steel cap with radial gradient) ─
-    const drawPauldron = (pcx, pcy, pr) => {
-      const g = ctx.createRadialGradient(pcx - pr * 0.4, pcy - pr * 0.5, pr * 0.1, pcx, pcy, pr);
-      g.addColorStop(0, HELM_HI);
-      g.addColorStop(0.55, HELM);
-      g.addColorStop(1, HELM_LO);
+    // Skin head circle — radial gradient (sun upper-left)
+    const drawHead = () => {
+      const g = ctx.createRadialGradient(
+        HEAD_CX - HEAD_R * 0.35, HEAD_CY - HEAD_R * 0.45, HEAD_R * 0.12,
+        HEAD_CX, HEAD_CY + HEAD_R * 0.1, HEAD_R * 1.05
+      );
+      g.addColorStop(0, SKIN_HI); g.addColorStop(0.55, SKIN); g.addColorStop(1, SKIN_LO);
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(pcx, pcy, pr, 0, Math.PI * 2);
+      ctx.arc(HEAD_CX, HEAD_CY, HEAD_R, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
     };
 
-    // ─ Heater shield helper (with gold gradient) ─
-    const drawShield = (sx, sy) => {
-      const sw = 14, sh = 18, scx = sx + sw / 2;
-      // Gold gradient
-      const g = ctx.createLinearGradient(sx, sy, sx, sy + sh);
-      g.addColorStop(0, SHIELD_HI);
-      g.addColorStop(0.5, SHIELD);
-      g.addColorStop(1, SHIELD_LO);
+    // Helmet dome — half-ellipse clockwise from π to 0 = top half (the dome)
+    const drawDome = (brimX, brimW) => {
+      // Dome fill with radial gradient (upper-left hot spot)
+      const g = ctx.createRadialGradient(
+        HEAD_CX - DOME_R * 0.3, HEAD_CY - DOME_R * 0.5, 2,
+        HEAD_CX, HEAD_CY, DOME_R
+      );
+      g.addColorStop(0, HELM_HI); g.addColorStop(0.55, HELM); g.addColorStop(1, HELM_LO);
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(sx + sw, sy);
+      ctx.ellipse(HEAD_CX, HEAD_CY, DOME_R, DOME_R, 0, Math.PI, 0, false);
+      ctx.closePath();
+      ctx.fill();
+      ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
+
+      // Specular hotspot (bright upper-left ellipse)
+      ctx.fillStyle = HELM_HI;
+      ctx.globalAlpha = 0.50;
+      ctx.beginPath();
+      ctx.ellipse(HEAD_CX - DOME_R * 0.28, HEAD_CY - DOME_R * 0.52, DOME_R * 0.32, DOME_R * 0.15, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // Gold spike at crown
+      const tipY = HEAD_CY - DOME_R - 4;
+      ctx.fillStyle = hx(COLORS.PLAYER_SHIELD_HI);
+      ctx.beginPath();
+      ctx.moveTo(HEAD_CX, tipY - 3);
+      ctx.lineTo(HEAD_CX + 3, tipY + 3);
+      ctx.lineTo(HEAD_CX, tipY + 5);
+      ctx.lineTo(HEAD_CX - 3, tipY + 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = hx(COLORS.PLAYER_SHIELD); ctx.lineWidth = 1; ctx.stroke();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+
+      // Brim band (dark steel bar across the bottom of the dome)
+      ctx.fillStyle = HELM_LO;
+      rrect(ctx, brimX, HEAD_CY - 2, brimW, 5, 2);
+      ctx.fill(); ctx.stroke();
+
+      // Rivets along the brim
+      ctx.fillStyle = HELM_HI;
+      const rivetStep = brimW / 4;
+      for (let i = 0; i <= 4; i++) {
+        ctx.beginPath();
+        ctx.arc(brimX + rivetStep * i, HEAD_CY + 0.5, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = OUTLINE; ctx.lineWidth = 0.8; ctx.stroke();
+      }
+      ctx.lineWidth = 1.5; ctx.strokeStyle = OUTLINE;
+    };
+
+    // Ear flap (steel side-guard extending below the brim)
+    const drawEarFlap = (fx) => {
+      const g = ctx.createRadialGradient(fx + 2, HEAD_CY + 4, 1, fx + 4, HEAD_CY + 8, 8);
+      g.addColorStop(0, HELM_HI); g.addColorStop(1, HELM_LO);
+      ctx.fillStyle = g;
+      rrect(ctx, fx, HEAD_CY + 2, 9, 14, 2);
+      ctx.fill(); ctx.stroke();
+    };
+
+    // Vertical-oval eye — chibi style, taller than wide
+    const drawEye = (ex, ey) => {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.ellipse(ex, ey, 3.5, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = '#2d4f8a';
+      ctx.beginPath(); ctx.ellipse(ex, ey + 0.5, 2.2, 3.8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#0a0a14';
+      ctx.beginPath(); ctx.ellipse(ex, ey + 0.5, 1.2, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(ex + 1.1, ey - 1.5, 1.0, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = OUTLINE;
+    };
+
+    // Pauldron (small steel shoulder dome with radial gradient)
+    const drawPauldron = (pcx, pcy, r) => {
+      const g = ctx.createRadialGradient(pcx - r * 0.4, pcy - r * 0.5, r * 0.1, pcx, pcy, r);
+      g.addColorStop(0, HELM_HI); g.addColorStop(0.55, HELM); g.addColorStop(1, HELM_LO);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(pcx, pcy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    };
+
+    // Torso with linear gradient (top-lit by default, pass true for back-lit)
+    const drawTorso = (tw, bx, backLit = false) => {
+      const ty = BODY_Y1, th = BODY_Y2 - BODY_Y1;
+      const g = ctx.createLinearGradient(0, ty, 0, ty + th);
+      if (backLit) { g.addColorStop(0, BODY_LO); g.addColorStop(0.5, BODY); g.addColorStop(1, BODY_HI); }
+      else          { g.addColorStop(0, BODY_HI); g.addColorStop(0.45, BODY); g.addColorStop(1, BODY_LO); }
+      ctx.fillStyle = g;
+      rrect(ctx, bx, ty, tw, th, 4);
+      ctx.fill(); ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5; ctx.stroke();
+    };
+
+    // Heater shield (pentagon, gold gradient) — used in left/right profile
+    const drawShield = (sx, sy) => {
+      const sw = 14, sh = 18, scx = sx + sw / 2;
+      const g = ctx.createLinearGradient(sx, sy, sx, sy + sh);
+      g.addColorStop(0, SHIELD_HI); g.addColorStop(0.5, SHIELD); g.addColorStop(1, SHIELD_LO);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy); ctx.lineTo(sx + sw, sy);
       ctx.lineTo(sx + sw, sy + sh * 0.55);
       ctx.lineTo(scx, sy + sh);
       ctx.lineTo(sx, sy + sh * 0.55);
       ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // Diamond boss in center
-      ctx.beginPath();
-      ctx.moveTo(scx,     sy + 5);
-      ctx.lineTo(scx + 3, sy + 9);
-      ctx.lineTo(scx,     sy + 13);
-      ctx.lineTo(scx - 3, sy + 9);
-      ctx.closePath();
+      ctx.fill(); ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5; ctx.stroke();
+      // Diamond emblem
       ctx.fillStyle = SHIELD_LO;
-      ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(scx, sy + 4); ctx.lineTo(scx + 3, sy + 8);
+      ctx.lineTo(scx, sy + 12); ctx.lineTo(scx - 3, sy + 8);
+      ctx.closePath(); ctx.fill();
+      ctx.lineWidth = 1; ctx.stroke();
       ctx.lineWidth = 1.5;
     };
 
-    // ─ Torso helper with vertical gradient ─
-    const drawTorso = (tw, th, flipShading = false) => {
-      const tx = ox - tw / 2, ty = oy - th / 2;
-      const g = ctx.createLinearGradient(tx, ty, tx, ty + th);
-      if (flipShading) {
-        g.addColorStop(0, BODY_LO);
-        g.addColorStop(0.5, BODY);
-        g.addColorStop(1, BODY_HI);
-      } else {
-        g.addColorStop(0, BODY_HI);
-        g.addColorStop(0.45, BODY);
-        g.addColorStop(1, BODY_LO);
-      }
-      ctx.fillStyle = g;
-      rrect(ctx, tx, ty, tw, th, 4);
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    };
+    // ─── Direction-specific rendering ────────────────────────────────────
 
     if (dir === 'down') {
-      // Resting left arm stub (right side of player from viewer = right arm holds weapon, so left stub is on viewer-left)
-      ctx.fillStyle = BODY;
-      rrect(ctx, ox - 14, oy - 4, 6, 11, 3); ctx.fill(); ctx.stroke();
+      // 1. Skin head circle
+      drawHead();
 
-      // Torso (22×16)
-      drawTorso(22, 16);
-
-      // Gold cross chest emblem
-      ctx.fillStyle = SHIELD;
-      ctx.fillRect(ox - 1.5, oy - 5, 3, 9);
-      ctx.fillRect(ox - 4, oy - 2, 9, 3);
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = SHIELD_LO;
-      ctx.strokeRect(ox - 1.5, oy - 5, 3, 9);
-      ctx.strokeRect(ox - 4, oy - 2, 9, 3);
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = OUTLINE;
-
-      // Pauldrons
-      drawPauldron(ox - 12, oy - 6, 5);
-      drawPauldron(ox + 12, oy - 6, 5);
-
-      // Belt
-      ctx.fillStyle = HELM_LO;
-      ctx.fillRect(ox - 11, oy + 5, 22, 2.5);
-
-    } else if (dir === 'up') {
-      // Two arm stubs (both visible from behind)
-      ctx.fillStyle = BODY;
-      rrect(ctx, ox - 14, oy - 4, 6, 11, 3); ctx.fill(); ctx.stroke();
-      rrect(ctx, ox + 8,  oy - 4, 6, 11, 3); ctx.fill(); ctx.stroke();
-
-      // Torso with reversed shading (light from behind viewer)
-      drawTorso(22, 16, true);
-
-      // Pauldrons (same)
-      drawPauldron(ox - 12, oy - 6, 5);
-      drawPauldron(ox + 12, oy - 6, 5);
-
-      // Back plate seam lines
-      ctx.strokeStyle = BODY_LO;
-      ctx.lineWidth = 1;
-      ctx.globalAlpha = 0.55;
-      [oy - 3, oy + 2].forEach(lineY => {
-        ctx.beginPath();
-        ctx.moveTo(ox - 8, lineY);
-        ctx.lineTo(ox + 8, lineY);
-        ctx.stroke();
-      });
-      ctx.globalAlpha = 1.0;
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1.5;
-
-      // Belt
-      ctx.fillStyle = HELM_LO;
-      ctx.fillRect(ox - 11, oy + 5, 22, 2.5);
-
-    } else { // left — side profile
-      // Shield in front (drawn first so torso overlaps the inside edge)
-      drawShield(ox - 18, oy - 6);
-
-      // Narrower torso
-      drawTorso(16, 16);
-
-      // Single back arm stub on the right side
-      ctx.fillStyle = BODY;
-      rrect(ctx, ox + 7, oy - 4, 6, 11, 3); ctx.fill(); ctx.stroke();
-
-      // One pauldron (on cursor side = left)
-      drawPauldron(ox - 9, oy - 6, 5);
-
-      // Belt
-      ctx.fillStyle = HELM_LO;
-      ctx.fillRect(ox - 8, oy + 5, 16, 2.5);
-    }
-  }
-
-  // ─── Head canvas drawing ──────────────────────────────────────────────────
-  // Canvas 80×80. ox=40 (center x), oy=40 (head circle center y).
-  // Helmet is a spherical dome (true elliptical arc) sitting on the head.
-  // Face exposed below the brim — no visor cavity. Eyes are vertical ovals.
-  _drawHeadToCanvas(ctx, dir, ox, oy) {
-    const hx = n => '#' + n.toString(16).padStart(6, '0');
-    const SKIN    = hx(COLORS.PLAYER_SKIN);
-    const SKIN_HI = hx(COLORS.PLAYER_SKIN_HI);
-    const SKIN_LO = hx(COLORS.PLAYER_SKIN_LO);
-    const HELM    = hx(COLORS.PLAYER_HELMET);
-    const HELM_HI = hx(COLORS.PLAYER_HELMET_HI);
-    const HELM_LO = hx(COLORS.PLAYER_HELMET_LO);
-    const HAIR    = hx(COLORS.PLAYER_HAIR);
-    const GOLD    = hx(COLORS.PLAYER_SHIELD);
-    const GOLD_HI = hx(COLORS.PLAYER_SHIELD_HI);
-    const OUTLINE = '#1a1a2a';
-    const HEAD_R  = 24;
-
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = OUTLINE;
-
-    // ─ Skin head circle — radial gradient (sun upper-left) ─
-    const skinGrad = ctx.createRadialGradient(
-      ox - HEAD_R * 0.35, oy - HEAD_R * 0.45, HEAD_R * 0.12,
-      ox, oy + HEAD_R * 0.1, HEAD_R * 1.05
-    );
-    skinGrad.addColorStop(0,    SKIN_HI);
-    skinGrad.addColorStop(0.55, SKIN);
-    skinGrad.addColorStop(1.0,  SKIN_LO);
-    ctx.fillStyle = skinGrad;
-    ctx.beginPath();
-    ctx.arc(ox, oy, HEAD_R, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // ─ Vertical-oval eye helper ─
-    // Eyes are taller than wide — chibi style, not bug-eye circles.
-    const drawEye = (ex, ey) => {
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.ellipse(ex, ey, 3.5, 5.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.2; ctx.stroke();
-      ctx.fillStyle = '#2d4f8a';
-      ctx.beginPath();
-      ctx.ellipse(ex, ey + 0.5, 2.2, 3.8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#0a0a14';
-      ctx.beginPath();
-      ctx.ellipse(ex, ey + 0.5, 1.2, 2.2, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(ex + 1.1, ey - 1.5, 1.0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = OUTLINE;
-    };
-
-    // ─ Spherical dome helper ─
-    // Draws a top-half ellipse (the dome), brim band, rivets, and gold spike.
-    // domeRx/domeRy: semi-axes of the ellipse. brimX/brimW: brim band rect.
-    const drawHelmet = (domeRx, domeRy, brimX, brimW) => {
-      // Dome: top half of ellipse (clockwise from π to 0 = goes up = dome)
-      const domeGrad = ctx.createRadialGradient(
-        ox - domeRx * 0.3, oy - domeRy * 0.55, 3,
-        ox, oy, domeRx
-      );
-      domeGrad.addColorStop(0,    HELM_HI);
-      domeGrad.addColorStop(0.55, HELM);
-      domeGrad.addColorStop(1.0,  HELM_LO);
-      ctx.fillStyle = domeGrad;
-      ctx.beginPath();
-      ctx.ellipse(ox, oy, domeRx, domeRy, 0, Math.PI, 0, false);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke();
-
-      // Specular hotspot (upper-left bright spot)
-      ctx.fillStyle = HELM_HI;
-      ctx.globalAlpha = 0.55;
-      ctx.beginPath();
-      ctx.ellipse(ox - domeRx * 0.28, oy - domeRy * 0.55, domeRx * 0.35, domeRy * 0.18, -0.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
-
-      // Gold spike at the crown (small diamond/teardrop)
-      const spikeY = oy - domeRy;
-      ctx.fillStyle = GOLD_HI;
-      ctx.beginPath();
-      ctx.moveTo(ox, spikeY - 7);
-      ctx.lineTo(ox + 3, spikeY - 1);
-      ctx.lineTo(ox, spikeY + 1);
-      ctx.lineTo(ox - 3, spikeY - 1);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = GOLD; ctx.lineWidth = 1; ctx.stroke();
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
-
-      // Brim band (slightly wider than dome base, darker steel)
-      ctx.fillStyle = HELM_LO;
-      rrect(ctx, brimX, oy - 2, brimW, 5, 2);
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.lineWidth = 2;
-
-      // Rivets along the brim (evenly spaced circles)
-      ctx.fillStyle = HELM_HI;
-      const rivetStep = brimW / 5;
-      for (let i = 0; i < 5; i++) {
-        const rx = brimX + rivetStep * (i + 0.5);
-        ctx.beginPath();
-        ctx.arc(rx, oy + 0.5, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = OUTLINE; ctx.lineWidth = 0.8; ctx.stroke();
-      }
-      ctx.lineWidth = 2; ctx.strokeStyle = OUTLINE;
-    };
-
-    if (dir === 'down') {
-      // Hair tuft peeking below the helmet brim, at the forehead (front view only)
+      // 2. Hair tuft peeking from under the brim (drawn before helmet so brim covers top)
       ctx.fillStyle = HAIR;
       ctx.beginPath();
-      ctx.arc(ox - 4, oy + 1, 4, Math.PI, 0);
-      ctx.arc(ox + 4, oy + 1, 4, Math.PI, 0);
-      ctx.lineTo(ox + 8, oy + 4);
-      ctx.lineTo(ox - 8, oy + 4);
+      ctx.arc(HEAD_CX - 4, HEAD_CY + 1, 3.5, Math.PI, 0);  // left bump
+      ctx.arc(HEAD_CX + 4, HEAD_CY + 1, 3.5, Math.PI, 0);  // right bump
+      ctx.lineTo(HEAD_CX + 8, HEAD_CY + 4);
+      ctx.lineTo(HEAD_CX - 8, HEAD_CY + 4);
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1; ctx.stroke();
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1; ctx.stroke(); ctx.lineWidth = 1.5;
 
-      // Spherical dome (rx=26, ry=26 = circular dome), brim slightly wider
-      drawHelmet(26, 26, ox - 28, 56);
+      // 3. Helmet dome + brim + rivets + spike
+      drawDome(HEAD_CX - 28, 56);   // brimX=12, brimW=56
 
-      // Eyes below the brim (vertical oval style)
-      drawEye(ox - 10, oy + 13);
-      drawEye(ox + 10, oy + 13);
+      // 4. Eyes (below the brim, vertical ovals)
+      drawEye(HEAD_CX - 11, HEAD_CY + 12);
+      drawEye(HEAD_CX + 11, HEAD_CY + 12);
 
-      // Rosy cheeks
+      // 5. Rosy cheeks
       ctx.fillStyle = 'rgba(255,120,120,0.52)';
-      ctx.beginPath(); ctx.ellipse(ox - 16, oy + 20, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(ox + 16, oy + 20, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(HEAD_CX - 16, HEAD_CY + 19, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(HEAD_CX + 16, HEAD_CY + 19, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
 
-      // Tiny nose dot
+      // 6. Tiny nose
       ctx.fillStyle = SKIN_LO;
-      ctx.beginPath(); ctx.arc(ox, oy + 18, 1.3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(HEAD_CX, HEAD_CY + 16, 1.3, 0, Math.PI * 2); ctx.fill();
 
-      // Slight smile
-      ctx.strokeStyle = '#7a4830';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(ox, oy + 22, 4, 0.3, Math.PI - 0.3);
-      ctx.stroke();
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
+      // 7. Smile
+      ctx.strokeStyle = '#7a4830'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(HEAD_CX, HEAD_CY + 20, 4, 0.3, Math.PI - 0.3); ctx.stroke();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+
+      // 8. Body
+      drawTorso(22, ox - 11);
+      // Gold chest cross
+      ctx.fillStyle = SHIELD;
+      ctx.fillRect(ox - 1.5, BODY_Y1 + 2, 3, 8);
+      ctx.fillRect(ox - 4,   BODY_Y1 + 5, 9, 3);
+      ctx.strokeStyle = SHIELD_LO; ctx.lineWidth = 0.8;
+      ctx.strokeRect(ox - 1.5, BODY_Y1 + 2, 3, 8);
+      ctx.strokeRect(ox - 4, BODY_Y1 + 5, 9, 3);
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+      // Belt
+      ctx.fillStyle = HELM_LO;
+      ctx.fillRect(ox - 11, BODY_Y2 - 1, 22, 2.5);
+
+      // 9. Pauldrons (shoulder caps at body top corners)
+      drawPauldron(ox - 15, BODY_Y1, 5);
+      drawPauldron(ox + 15, BODY_Y1, 5);
 
     } else if (dir === 'up') {
-      // Back view: same dome shape, wider brim overhang at the sides
-      drawHelmet(26, 26, ox - 30, 60);
+      // 1. Skin head circle
+      drawHead();
 
-      // Vertical spine seam (visible from behind)
-      ctx.strokeStyle = HELM_LO;
-      ctx.lineWidth = 1.5;
-      ctx.globalAlpha = 0.70;
-      ctx.beginPath();
-      ctx.moveTo(ox, oy - 24);
-      ctx.lineTo(ox, oy);
-      ctx.stroke();
-      ctx.globalAlpha = 1.0;
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
+      // 2. Helmet dome + spine + ear flaps
+      drawDome(HEAD_CX - 30, 60);   // wider brim for back view
 
-      // Ear flaps extending down from the sides of the brim
-      const eFlap = (ex) => {
-        const g = ctx.createRadialGradient(ex + 1, oy + 4, 1, ex + 2, oy + 7, 8);
-        g.addColorStop(0, HELM_HI); g.addColorStop(1, HELM_LO);
-        ctx.fillStyle = g;
-        rrect(ctx, ex, oy + 2, 9, 16, 3); ctx.fill();
-        ctx.strokeStyle = OUTLINE; ctx.stroke();
-      };
-      eFlap(ox - 31);
-      eFlap(ox + 22);
+      // Center spine seam
+      ctx.strokeStyle = HELM_LO; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.65;
+      ctx.beginPath(); ctx.moveTo(HEAD_CX, HEAD_CY - DOME_R + 2); ctx.lineTo(HEAD_CX, HEAD_CY); ctx.stroke();
+      ctx.globalAlpha = 1.0; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
 
-    } else { // left — side profile (mirrored for right via scaleX=-1)
-      // Side profile: circular dome appears as a circle from the side
-      // Brim extends more to the LEFT (front of the left-facing character)
-      drawHelmet(26, 26, ox - 30, 52);
+      // Ear flaps
+      drawEarFlap(HEAD_CX - 31);
+      drawEarFlap(HEAD_CX + 22);
 
-      // Ear flap on the back (right) side only
-      const g = ctx.createRadialGradient(ox + 23, oy + 4, 1, ox + 24, oy + 8, 8);
-      g.addColorStop(0, HELM_HI); g.addColorStop(1, HELM_LO);
-      ctx.fillStyle = g;
-      rrect(ctx, ox + 22, oy + 2, 9, 16, 3); ctx.fill();
-      ctx.strokeStyle = OUTLINE; ctx.stroke();
+      // 3. Body (back-lit gradient) + pauldrons + belt
+      drawTorso(22, ox - 11, true);
+      ctx.fillStyle = HELM_LO;
+      ctx.fillRect(ox - 11, BODY_Y2 - 1, 22, 2.5);
+      drawPauldron(ox - 15, BODY_Y1, 5);
+      drawPauldron(ox + 15, BODY_Y1, 5);
 
-      // Face visible on the left side (below the brim in the LEFT region of the circle)
-      // One eye, one cheek, a small nose bump
-      drawEye(ox - 12, oy + 13);
+    } else { // left — side profile (mirrored for right via scaleX=−1)
+      // 1. Skin head circle
+      drawHead();
+
+      // 2. Helmet dome, brim extends more to the LEFT (front of character)
+      drawDome(HEAD_CX - 30, 62);   // brimX=10, brimW=62
+
+      // One ear flap on the RIGHT (back) side only
+      drawEarFlap(HEAD_CX + 22);
+
+      // 3. Face on LEFT side (canvas x ≈ 18–36)
+      drawEye(HEAD_CX - 13, HEAD_CY + 12);
 
       ctx.fillStyle = 'rgba(255,120,120,0.52)';
-      ctx.beginPath(); ctx.ellipse(ox - 14, oy + 20, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(HEAD_CX - 15, HEAD_CY + 19, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
 
-      // Tiny nose bump (on the left/front edge of the face)
+      // Tiny nose bump on the front edge
       ctx.fillStyle = SKIN_LO;
-      ctx.beginPath();
-      ctx.arc(ox - 21, oy + 16, 1.8, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(HEAD_CX - 21, HEAD_CY + 15, 1.8, 0, Math.PI * 2); ctx.fill();
+
+      // 4. Heater shield on LEFT (front side)
+      drawShield(ox - 30, BODY_Y1 - 3);
+
+      // 5. Narrower body (side profile)
+      drawTorso(16, ox - 8);
+      ctx.fillStyle = HELM_LO;
+      ctx.fillRect(ox - 8, BODY_Y2 - 1, 16, 2.5);
+
+      // 6. ONE pauldron, slightly left of body center (near-side shoulder)
+      drawPauldron(ox - 6, BODY_Y1, 5);
     }
   }
+
 
   // ─── Weapon canvas drawing — stubby brass blunderbuss ─────────────────────
   // Canvas 30×16. Origin: grip back-end at canvas x=4, muzzle tip at canvas x=26.
@@ -639,35 +514,32 @@ export default class Player {
   }
 
   // ─── Live leg animation ───────────────────────────────────────────────────
-  // Called every frame during update(). Only gLegL/gLegR are cleared/redrawn.
-  // Stubby chibi legs (7×10) with darker boot at the bottom.
-  _drawLegs(legSwing) {
-    const col     = COLORS.PLAYER_BODY;
-    const bootCol = COLORS.PLAYER_BODY_LO;
-    const outline = 0x1a1a2a;
+  // Called every frame. Legs alternate up/down (marching bob) instead of
+  // sliding left/right. Consistent x-positions in all facing directions.
+  _drawLegs(legPhase, moving) {
+    const col  = COLORS.PLAYER_BODY;
+    const boot = COLORS.PLAYER_BODY_LO;
+    const outl = 0x1a1a2a;
 
-    // LEFT
-    this.gLegL.clear();
-    this.gLegL.fillStyle(col, 1);
-    this.gLegL.fillRoundedRect(-10 + legSwing, 23, 7, 10, 2);
-    this.gLegL.fillStyle(bootCol, 1);
-    this.gLegL.fillRect(-10 + legSwing, 30, 7, 3);
-    this.gLegL.lineStyle(1.5, outline, 1);
-    this.gLegL.strokeRoundedRect(-10 + legSwing, 23, 7, 10, 2);
+    // Left lifts when sin > 0, right lifts when sin < 0 → natural alternation
+    const liftL = moving ? -Math.max(0,  Math.sin(legPhase))           * 4 : 0;
+    const liftR = moving ? -Math.max(0, -Math.sin(legPhase))           * 4 : 0;
 
-    // RIGHT
-    this.gLegR.clear();
-    this.gLegR.fillStyle(col, 1);
-    this.gLegR.fillRoundedRect(3 - legSwing, 23, 7, 10, 2);
-    this.gLegR.fillStyle(bootCol, 1);
-    this.gLegR.fillRect(3 - legSwing, 30, 7, 3);
-    this.gLegR.lineStyle(1.5, outline, 1);
-    this.gLegR.strokeRoundedRect(3 - legSwing, 23, 7, 10, 2);
+    const drawLeg = (g, lx, lift) => {
+      g.clear();
+      g.fillStyle(col,  1); g.fillRoundedRect(lx, 17 + lift, 8, 10, 3);
+      g.fillStyle(boot, 1); g.fillRect(lx, 24 + lift, 8, 3);
+      g.lineStyle(1.5, outl, 1);
+      g.strokeRoundedRect(lx, 17 + lift, 8, 10, 3);
+    };
+
+    drawLeg(this.gLegL, -11, liftL);
+    drawLeg(this.gLegR,   3, liftR);
   }
 
   // ─── Facing direction update ──────────────────────────────────────────────
-  // Derives facing from facingAngle and swaps body/head textures only when it changes.
-  // 'right' reuses the 'left' baked texture with scaleX = -1 (horizontal mirror).
+  // Derives facing from facingAngle; swaps the single characterSprite texture
+  // only when direction changes. 'right' mirrors 'left' via scaleX=−1.
   _updateFacing() {
     const a = this.facingAngle;
     let f;
@@ -676,15 +548,13 @@ export default class Player {
     else if (a > -Math.PI * 0.25 && a <  Math.PI * 0.25) f = 'right';
     else                                                   f = 'left';
 
-    if (f === this.facing) return;   // no change — skip texture swap
+    if (f === this.facing) return;
     this.facing = f;
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.bodySprite.setTexture(`player-body-${dir}`);
-    this.bodySprite.setScale(flip, 1);
-    this.headSprite.setTexture(`player-head-${dir}`);
-    this.headSprite.setScale(flip, 1);
+    this.characterSprite.setTexture(`player-char-${dir}`);
+    this.characterSprite.setScale(flip, 1);
   }
 
   _buildFloatingHPBar() {
@@ -1018,7 +888,7 @@ export default class Player {
   }
 
   _hitFlash() {
-    [this.bodySprite, this.headSprite, this.weaponSprite].forEach(s => {
+    [this.characterSprite, this.weaponSprite].forEach(s => {
       this.scene.tweens.add({
         targets: s, alpha: 0.3, duration: 60, yoyo: true, repeat: 2,
         onComplete: () => { if (s?.active) s.setAlpha(1); },
@@ -1160,14 +1030,13 @@ export default class Player {
       }
     }
 
-    // Idle bob — y-transform only on headSprite (no redraw)
+    // Idle bob — gentle whole-body y nudge (no redraw)
     this._idleTimer += dt;
     const bobOffset = this.moving ? 0 : Math.sin(this._idleTimer * 2.2) * 2;
-    this.headSprite.y = -18 + bobOffset;
+    this.characterSprite.y = bobOffset;
 
-    // Leg stride + facing update
-    const legSwing = this.moving ? Math.sin(this._legPhase) * 5 : 0;
-    this._drawLegs(legSwing);
+    // Leg marching bob + facing update
+    this._drawLegs(this._legPhase, this.moving);
     this._updateFacing();
 
     // Weapon orbits body center at fixed radius, always pointing at cursor
@@ -1184,7 +1053,7 @@ export default class Player {
     if (this.shadowG && this.shadowG.active) {
       this.shadowG.clear();
       this.shadowG.fillStyle(0x000000, 0.28);
-      this.shadowG.fillEllipse(this.x + 3, this.y + 26, 34, 10);
+      this.shadowG.fillEllipse(this.x + 2, this.y + 22, 30, 8);
     }
 
     // Update projectiles

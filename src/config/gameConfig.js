@@ -61,7 +61,7 @@ export const PLAYER = {
   // Floating HP bar above player
   HP_BAR_WIDTH: 48,
   HP_BAR_HEIGHT: 6,
-  HP_BAR_OFFSET_Y: -36,
+  HP_BAR_OFFSET_Y: -52,   // clears the helmet dome top (~world y-43 at container scale)
 };
 
 // Skill base stats (default Knight class)
