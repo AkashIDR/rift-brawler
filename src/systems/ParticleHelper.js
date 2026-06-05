@@ -145,16 +145,25 @@ export function spawnDust(scene, x, y, count = 10) {
 }
 
 // ─── Blood drops ──────────────────────────────────────────────────────────────
-// Filled circles that splatter in chaotic random directions, dripping downward.
-// Mix of bright red and dark red. Elongate slightly as they fall.
+// Each drop has an initial velocity and real gravity, producing parabolic arcs.
+// The onUpdate counter runs only for the tween's lifetime (fire-and-forget, not
+// repeat:-1). Mix of bright red and dark red; elongates into a teardrop as it falls.
 // Use for: player taking damage, boss taking damage.
+const BLOOD_GRAVITY = 260;   // px/s² downward acceleration
+
 export function spawnBlood(scene, x, y, count = 10) {
   for (let i = 0; i < count; i++) {
-    const angle   = Math.random() * Math.PI * 2;   // fully random
-    const dist    = 15 + Math.random() * 65;        // 15–80px
-    const size    = 2.5 + Math.random() * 5.5;      // 2.5–8px
-    const col     = Math.random() < 0.5 ? 0xdd0011 : 0x8b0000;
-    const gravity = 5 + Math.random() * 35;          // 5–40px downward drip
+    const angle    = Math.random() * Math.PI * 2;
+    const speed    = 80 + Math.random() * 140;   // 80–220 px/s launch speed
+    const size     = 2.5 + Math.random() * 5.5;  // 2.5–8px radius
+    const col      = Math.random() < 0.55 ? 0xdd0011 : 0x8b0000;
+    const duration = 320 + Math.random() * 240;  // 320–560ms flight time
+    const secs     = duration / 1000;
+
+    // Initial velocity components. Subtract a small upward bias so even
+    // downward-aimed drops arc before gravity pulls them to the ground.
+    const vx =  Math.cos(angle) * speed;
+    const vy =  Math.sin(angle) * speed - 40;   // -40 = slight upward nudge
 
     const g = scene.add.graphics();
     g.fillStyle(col, 1);
@@ -163,15 +172,24 @@ export function spawnBlood(scene, x, y, count = 10) {
     g.setDepth(22);
 
     scene.events.once('shutdown', () => { if (g.active) g.destroy(); });
-    scene.tweens.add({
-      targets: g,
-      x: x + Math.cos(angle) * dist,
-      y: y + Math.sin(angle) * dist + gravity,
-      alpha: 0,
-      scaleX: 0.5,
-      scaleY: 1.4,    // elongate into a teardrop
-      duration: 300 + Math.random() * 220,    // 300–520ms
-      ease: 'Quad.easeOut',
+
+    // Physics simulation via addCounter — single-shot, self-destroying tween.
+    scene.tweens.addCounter({
+      from: 0, to: secs,
+      duration,
+      onUpdate: (tween) => {
+        if (!g.active) return;
+        const t = tween.getValue();
+        g.x = x + vx * t;
+        g.y = y + vy * t + 0.5 * BLOOD_GRAVITY * t * t;   // s = v₀t + ½at²
+        // Fade out over last 40 % of flight
+        g.alpha = t < secs * 0.60 ? 1 : 1 - (t - secs * 0.60) / (secs * 0.40);
+        // Elongate drop as it picks up downward speed (teardrop effect)
+        const fallSpeed = vy + BLOOD_GRAVITY * t;   // current vertical velocity
+        const stretch   = 1 + Math.max(0, fallSpeed) / 300;
+        g.scaleX = 1 / Math.max(stretch, 0.5);   // pinch width as height grows
+        g.scaleY = Math.min(stretch, 2.2);
+      },
       onComplete: () => { if (g.active) g.destroy(); },
     });
   }
