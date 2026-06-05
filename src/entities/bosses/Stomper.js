@@ -601,8 +601,8 @@ export default class Stomper extends BossBase {
       duration: 200, ease: 'Quad.easeOut',
     });
     this.scene.tweens.add({
-      targets: this.bodyS, scaleX: 1.14, scaleY: 1.14,
-      duration: 70, yoyo: true, ease: 'Back.easeOut',
+      targets: this.bodyS, scaleX: 1.06, scaleY: 0.90,
+      duration: 55, yoyo: true, ease: 'Quad.easeOut',
     });
     this.scene.tweens.add({
       targets: this.flipContainer, x: Phaser.Math.Between(-5, 5),
@@ -1136,6 +1136,18 @@ export default class Stomper extends BossBase {
   // ─────────────────────────────────────────────────────────────────────────
   // UPDATE LOOP — movement only; no per-frame redraw
   // ─────────────────────────────────────────────────────────────────────────
+
+  /** Arm collision zones — each arm is a circle centered at the shoulder position.
+   *  FlipContainer.scaleX accounts for facing direction (1 = face right, -1 = face left). */
+  getAuxHitZones() {
+    const s    = this.size;
+    const flip = this.flipContainer.scaleX;
+    const armR = s * 0.55;
+    return [
+      { x: this.x + flip * (-s * 0.90), y: this.y + s * 0.50, r: armR },
+      { x: this.x + flip * ( s * 0.90), y: this.y + s * 0.50, r: armR },
+    ];
+  }
 
   update(time, delta) {
     super.update(time, delta);

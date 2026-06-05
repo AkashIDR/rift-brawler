@@ -77,6 +77,10 @@ export default class BossBase {
     this.arenaBounds = rect;
   }
 
+  /** Extra hit zones beyond the main body circle, in world coords: [{x,y,r}].
+   *  Subclasses with limbs (e.g. Stomper) override this. */
+  getAuxHitZones() { return []; }
+
   takeDamage(amount) {
     if (!this.alive) return;
     this.hp = Math.max(0, this.hp - amount);

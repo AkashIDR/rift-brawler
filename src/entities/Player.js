@@ -753,6 +753,24 @@ export default class Player {
           proj.destroy();
         }
       }
+
+      // Aux hit zones — e.g. Stomper arms (checked only if still alive after body check)
+      if (proj._alive && scene.boss && scene.bossAlive) {
+        for (const zone of scene.boss.getAuxHitZones()) {
+          const zd = Phaser.Math.Distance.Between(proj.x, proj.y, zone.x, zone.y);
+          if (zd < zone.r + (proj._radius || 5)) {
+            if (!proj._isSkill) {
+              this.stamina = Math.min(this.staminaMax, this.stamina + PLAYER.STAMINA_REGEN_PER_HIT);
+            }
+            spawnSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 8);
+            if (proj._isSkill) spawnImpactRing(this.scene, proj.x, proj.y, proj._color || 0x88ddff);
+            scene.boss.takeDamage(proj._damage);
+            proj._alive = false;
+            proj.destroy();
+            break;
+          }
+        }
+      }
     });
   }
 

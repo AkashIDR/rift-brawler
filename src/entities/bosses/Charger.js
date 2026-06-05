@@ -403,8 +403,8 @@ export default class Charger extends BossBase {
     });
     // Body flinch pop
     this.scene.tweens.add({
-      targets: this.bodyS, scaleX: 1.18, scaleY: 1.18,
-      duration: 70, yoyo: true, ease: 'Back.easeOut',
+      targets: this.bodyS, scaleX: 1.08, scaleY: 0.88,
+      duration: 55, yoyo: true, ease: 'Quad.easeOut',
     });
     // Tiny random knock
     this.scene.tweens.add({

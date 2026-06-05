@@ -409,8 +409,8 @@ export default class Gunner extends BossBase {
       duration: 220, ease: 'Quad.easeOut',
     });
     this.scene.tweens.add({
-      targets: this.bodyS, scaleX: 1.18, scaleY: 1.18,
-      duration: 70, yoyo: true, ease: 'Back.easeOut',
+      targets: this.bodyS, scaleX: 1.08, scaleY: 0.88,
+      duration: 55, yoyo: true, ease: 'Quad.easeOut',
     });
     this.scene.tweens.add({
       targets: this.flipContainer, x: Phaser.Math.Between(-5, 5),
