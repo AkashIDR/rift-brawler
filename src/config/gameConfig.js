@@ -152,10 +152,11 @@ export const COLORS = {
   BOSS_HP: 0xe74c3c,
   BOSS_HP_MID: 0xe67e22,
   BOSS_HP_LOW: 0xc0392b,
-  PLAYER_BODY: 0x3a9ff5,
-  PLAYER_HEAD: 0x5ab8ff,
-  PLAYER_HELMET: 0x8fbdcc,
-  PLAYER_SHIELD: 0xffd700,
+  PLAYER_BODY: 0x2d7dd2,    // armor blue (deeper than old 0x3a9ff5)
+  PLAYER_HEAD: 0x5ab8ff,    // kept — used for death particle color
+  PLAYER_HELMET: 0x8faab8,  // steel helmet
+  PLAYER_SHIELD: 0xf0c040,  // gold shield
+  PLAYER_SKIN: 0xf4c090,    // face / cheeks skin tone
   WHITE: 0xffffff,
   BLACK: 0x000000,
   PORTAL: 0xaa44ff,

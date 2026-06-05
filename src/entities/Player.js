@@ -5,6 +5,29 @@ import {
 } from '../config/gameConfig.js';
 import { spawnBurst, spawnSparks, spawnDust, spawnBlood, spawnImpactRing } from '../systems/ParticleHelper.js';
 
+// ─── Canvas 2D helper ─────────────────────────────────────────────────────────
+// Draws a rounded rectangle path onto a Canvas 2D context.
+// `r` may be a number (uniform) or { tl, tr, bl, br } for per-corner radii.
+function rrect(ctx, x, y, w, h, r) {
+  let tl = 0, tr = 0, bl = 0, br = 0;
+  if (typeof r === 'object') {
+    tl = r.tl ?? 0; tr = r.tr ?? 0; bl = r.bl ?? 0; br = r.br ?? 0;
+  } else if (typeof r === 'number') {
+    tl = tr = bl = br = Math.min(r, w / 2, h / 2);
+  }
+  ctx.beginPath();
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(x + w - tr, y);
+  if (tr > 0) ctx.arcTo(x + w, y,     x + w, y + tr, tr); else ctx.lineTo(x + w, y);
+  ctx.lineTo(x + w, y + h - br);
+  if (br > 0) ctx.arcTo(x + w, y + h, x + w - br, y + h, br); else ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x + bl, y + h);
+  if (bl > 0) ctx.arcTo(x,     y + h, x, y + h - bl, bl); else ctx.lineTo(x, y + h);
+  ctx.lineTo(x, y + tl);
+  if (tl > 0) ctx.arcTo(x,     y,     x + tl, y, tl); else ctx.lineTo(x, y);
+  ctx.closePath();
+}
+
 export default class Player {
   constructor(scene, x, y, level = 1, incomingHp = null) {
     this.scene = scene;
@@ -66,99 +89,331 @@ export default class Player {
   }
 
   _buildGraphics() {
-    // Ground shadow (below everything)
-    this.shadowG = this.scene.add.graphics();
-    this.shadowG.setDepth(9);
+    // Ground shadow — standalone (not in container, world-space position each frame)
+    this.shadowG = this.scene.add.graphics().setDepth(9);
 
-    this.container = this.scene.add.container(this.x, this.y);
-    this.container.setDepth(10);
+    this.container = this.scene.add.container(this.x, this.y).setDepth(10);
 
-    // All parts drawn as Graphics children of the container
-    this.gBody = this.scene.add.graphics();
-    this.gHead = this.scene.add.graphics();
-    this.gHelmet = this.scene.add.graphics();
-    this.gArmL = this.scene.add.graphics();
-    this.gArmR = this.scene.add.graphics();
+    // Bake static body/head textures once per direction (cached by key in scene.textures)
+    this._buildFacingTextures();
+
+    // Legs: live Graphics — only parts that genuinely change every frame (walk stride)
     this.gLegL = this.scene.add.graphics();
     this.gLegR = this.scene.add.graphics();
-    this.gShield = this.scene.add.graphics();
 
-    this.container.add([
-      this.gLegL, this.gLegR,
-      this.gBody,
-      this.gArmL, this.gArmR,
-      this.gShield,
-      this.gHead,
-      this.gHelmet,
-    ]);
+    // Body sprite: torso + arms + shield — Image backed by baked canvas texture.
+    // setOrigin(0.5, 0.6): canvas is 90×50; pivot at (45, 30) = hip center in local space.
+    this.bodySprite = this.scene.add.image(0, 0, 'player-body-down');
+    this.bodySprite.setOrigin(0.5, 0.6);
 
+    // Head sprite: head circle + helmet — Image backed by baked canvas texture.
+    // setOrigin(0.5, 30/56): canvas is 60×56; pivot at (30, 30) = head center in local space.
+    this.headSprite = this.scene.add.image(0, -26, 'player-head-down');
+    this.headSprite.setOrigin(0.5, 30 / 56);
+
+    // Z-order: legs behind body, body behind head
+    this.container.add([this.gLegL, this.gLegR, this.bodySprite, this.headSprite]);
     this.container.setScale(0.765);
-    this._drawCharacter(0);
+
+    this.facing = null;          // force _updateFacing to initialise on first call
+    this._drawLegs(0);
+    this._updateFacing();        // set correct initial texture for starting facingAngle
   }
 
-  _drawCharacter(legSwing) {
+  // ─── Facing texture baking ────────────────────────────────────────────────
+  // Creates six 2D canvas textures (3 directions × body/head) once at startup.
+  // Textures are cached in scene.textures and reused on restart.
+  _buildFacingTextures() {
+    const dirs = ['down', 'up', 'left'];
+    for (const dir of dirs) {
+      const bKey = `player-body-${dir}`;
+      const hKey = `player-head-${dir}`;
+      if (!this.scene.textures.exists(bKey)) {
+        const bt = this.scene.textures.createCanvas(bKey, 90, 50);
+        this._drawBodyToCanvas(bt.getContext(), dir, 45, 30);
+        bt.refresh();
+      }
+      if (!this.scene.textures.exists(hKey)) {
+        const ht = this.scene.textures.createCanvas(hKey, 60, 56);
+        this._drawHeadToCanvas(ht.getContext(), dir, 30, 30);
+        ht.refresh();
+      }
+    }
+  }
+
+  // ─── Body canvas drawing ──────────────────────────────────────────────────
+  // Canvas 90×50. ox=45 (center x), oy=30 (hip center y).
+  // Draws torso + arms + shield for the given direction.
+  _drawBodyToCanvas(ctx, dir, ox, oy) {
+    const hx = n => '#' + n.toString(16).padStart(6, '0');
+    const BODY    = hx(COLORS.PLAYER_BODY);    // armor blue
+    const BODY_HI = '#4a9de8';                  // lighter blue highlight
+    const BODY_DK = '#1d5fa0';                  // darker blue shadow
+    const HELM    = hx(COLORS.PLAYER_HELMET);  // steel gray
+    const OUTLINE = '#1a1a2a';
+    const SHIELD  = hx(COLORS.PLAYER_SHIELD);  // gold
+    const SHLD_DK = '#c09010';
+
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = OUTLINE;
+
+    // Heater shield shape: flat top, tapered sides, pointed bottom
+    const drawShield = (sx, sy) => {
+      const sw = 14, sh = 17, scx = sx + sw / 2;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + sw, sy);
+      ctx.lineTo(sx + sw, sy + sh * 0.55);
+      ctx.lineTo(scx, sy + sh);
+      ctx.lineTo(sx, sy + sh * 0.55);
+      ctx.closePath();
+      ctx.fillStyle = SHIELD;
+      ctx.fill();
+      ctx.strokeStyle = SHLD_DK;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Center diamond emblem
+      ctx.beginPath();
+      ctx.moveTo(scx,     sy + 4);
+      ctx.lineTo(scx + 3, sy + 8);
+      ctx.lineTo(scx,     sy + 12);
+      ctx.lineTo(scx - 3, sy + 8);
+      ctx.closePath();
+      ctx.fillStyle = SHLD_DK;
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.5;
+    };
+
+    if (dir === 'down') {
+      // Arms (drawn before body so body overlaps them at shoulder)
+      ctx.fillStyle = BODY;
+      rrect(ctx, ox - 24, oy - 4, 10, 18, 4); ctx.fill(); ctx.stroke();
+      rrect(ctx, ox + 14, oy - 4, 10, 18, 4); ctx.fill(); ctx.stroke();
+
+      // Shield on left arm
+      drawShield(ox - 36, oy - 1);
+
+      // Body
+      ctx.fillStyle = BODY;
+      rrect(ctx, ox - 14, oy - 8, 28, 26, 6); ctx.fill(); ctx.stroke();
+
+      // Top-edge highlight
+      ctx.fillStyle = BODY_HI;
+      ctx.globalAlpha = 0.30;
+      rrect(ctx, ox - 12, oy - 7, 24, 7, 4); ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // Chest cross emblem
+      ctx.fillStyle = HELM;
+      ctx.globalAlpha = 0.80;
+      ctx.fillRect(ox - 2, oy - 1, 4, 10);
+      ctx.fillRect(ox - 5, oy + 2, 10, 4);
+      ctx.globalAlpha = 1.0;
+
+    } else if (dir === 'up') {
+      // Arms behind body
+      ctx.fillStyle = BODY;
+      rrect(ctx, ox - 24, oy - 2, 9, 16, 4); ctx.fill(); ctx.stroke();
+      rrect(ctx, ox + 15, oy - 2, 9, 16, 4); ctx.fill(); ctx.stroke();
+
+      // Body
+      ctx.fillStyle = BODY;
+      rrect(ctx, ox - 14, oy - 8, 28, 26, 6); ctx.fill(); ctx.stroke();
+
+      // Highlight
+      ctx.fillStyle = BODY_HI;
+      ctx.globalAlpha = 0.25;
+      rrect(ctx, ox - 12, oy - 7, 24, 7, 4); ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // Pauldrons (shoulder plates)
+      ctx.fillStyle = HELM;
+      ctx.beginPath(); ctx.arc(ox - 16, oy - 8, 7, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(ox + 16, oy - 8, 7, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+
+      // Back plate horizontal lines
+      ctx.strokeStyle = BODY_DK;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.45;
+      [oy - 3, oy + 3, oy + 9].forEach(lineY => {
+        ctx.beginPath();
+        ctx.moveTo(ox - 9, lineY);
+        ctx.lineTo(ox + 9, lineY);
+        ctx.stroke();
+      });
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.5;
+
+    } else { // left — side profile
+      // Shield in front (left side, drawn first)
+      drawShield(ox - 32, oy - 3);
+
+      // Body (narrower side profile)
+      ctx.fillStyle = BODY;
+      rrect(ctx, ox - 10, oy - 8, 20, 26, 5); ctx.fill(); ctx.stroke();
+
+      // Highlight
+      ctx.fillStyle = BODY_HI;
+      ctx.globalAlpha = 0.28;
+      rrect(ctx, ox - 8, oy - 7, 14, 7, 3); ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // Right arm (only visible arm in left-facing profile)
+      ctx.fillStyle = BODY;
+      rrect(ctx, ox + 10, oy - 2, 10, 16, 4); ctx.fill(); ctx.stroke();
+    }
+  }
+
+  // ─── Head canvas drawing ──────────────────────────────────────────────────
+  // Canvas 60×56. ox=30 (center x), oy=30 (head circle center y).
+  // Draws head circle + helmet (+ face details when visible).
+  _drawHeadToCanvas(ctx, dir, ox, oy) {
+    const hx = n => '#' + n.toString(16).padStart(6, '0');
+    const SKIN    = hx(COLORS.PLAYER_SKIN);    // warm peach
+    const SKIN_DK = '#d4946a';                  // darker for nose
+    const HELM    = hx(COLORS.PLAYER_HELMET);  // steel
+    const HELM_HI = '#a8c5d2';                  // lighter steel highlight
+    const HELM_DK = '#667788';                  // dark steel
+    const OUTLINE = '#1a1a2a';
+    const PLUME   = '#cc3322';                  // red plume for side profile
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = OUTLINE;
+
+    // Skin head circle — same for all directions
+    ctx.fillStyle = SKIN;
+    ctx.beginPath();
+    ctx.arc(ox, oy, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Shared helmet dome + brim drawing helper
+    const drawHelmetDome = (brimX, brimW) => {
+      // Dome
+      ctx.fillStyle = HELM;
+      rrect(ctx, ox - 15, oy - 14, 30, 16, { tl: 9, tr: 9, bl: 3, br: 3 });
+      ctx.fill(); ctx.stroke();
+      // Highlight band at very top
+      ctx.fillStyle = HELM_HI;
+      ctx.globalAlpha = 0.38;
+      rrect(ctx, ox - 13, oy - 13, 26, 5, { tl: 8, tr: 8, bl: 0, br: 0 });
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+      // Brim bar (lip at bottom of dome)
+      ctx.fillStyle = HELM_DK;
+      rrect(ctx, brimX, oy - 1, brimW, 4, 2);
+      ctx.fill(); ctx.stroke();
+    };
+
+    const drawEye = (ex, ey) => {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(ex, ey, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = '#2d4f8a';
+      ctx.beginPath(); ctx.arc(ex, ey, 2.8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#0a0a14';
+      ctx.beginPath(); ctx.arc(ex, ey, 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(ex + 1.2, ey - 1.5, 0.9, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = OUTLINE;
+    };
+
+    if (dir === 'down') {
+      drawHelmetDome(ox - 17, 34);
+
+      // Eyes below the helmet brim
+      drawEye(ox - 8, oy + 5);
+      drawEye(ox + 8, oy + 5);
+
+      // Rosy cheeks
+      ctx.fillStyle = 'rgba(255,110,110,0.40)';
+      ctx.beginPath(); ctx.ellipse(ox - 10, oy + 11, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ox + 10, oy + 11, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+
+      // Tiny nose dot
+      ctx.fillStyle = SKIN_DK;
+      ctx.beginPath(); ctx.arc(ox, oy + 8, 1.2, 0, Math.PI * 2); ctx.fill();
+
+      // Subtle smile
+      ctx.strokeStyle = '#a06040';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(ox, oy + 15, 4, 0.2, Math.PI - 0.2);
+      ctx.stroke();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
+
+    } else if (dir === 'up') {
+      drawHelmetDome(ox - 17, 34);
+
+      // Ear guards
+      ctx.fillStyle = HELM;
+      rrect(ctx, ox - 20, oy - 3, 6, 12, 2); ctx.fill(); ctx.stroke();
+      rrect(ctx, ox + 14, oy - 3, 6, 12, 2); ctx.fill(); ctx.stroke();
+
+    } else { // left — side profile
+      // Plume (front/left side of helmet, sticks up)
+      ctx.fillStyle = PLUME;
+      ctx.globalAlpha = 0.90;
+      rrect(ctx, ox - 18, oy - 28, 6, 15, 3); ctx.fill();
+      ctx.strokeStyle = '#881111'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.globalAlpha = 1.0;
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
+
+      // Helmet dome (same shape) + wider brim extending forward (left)
+      drawHelmetDome(ox - 20, 38);
+
+      // One eye (left side of face = front in left profile)
+      drawEye(ox - 7, oy + 5);
+
+      // One cheek
+      ctx.fillStyle = 'rgba(255,110,110,0.40)';
+      ctx.beginPath(); ctx.ellipse(ox - 9, oy + 11, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // ─── Live leg animation ───────────────────────────────────────────────────
+  // Called every frame during update(). Only gLegL/gLegR are cleared/redrawn.
+  _drawLegs(legSwing) {
+    const col     = COLORS.PLAYER_BODY;
     const outline = 0x1a1a2a;
 
-    // --- Legs: horizontal crossing (left swings right, right swings left) ---
     this.gLegL.clear();
-    this.gLegL.fillStyle(0x2277cc, 1);
-    this.gLegL.fillRoundedRect(-14 + legSwing, 18, 10, 16, 3);
+    this.gLegL.fillStyle(col, 1);
+    this.gLegL.fillRoundedRect(-13 + legSwing, 19, 9, 15, 3);
     this.gLegL.lineStyle(1.5, outline, 1);
-    this.gLegL.strokeRoundedRect(-14 + legSwing, 18, 10, 16, 3);
+    this.gLegL.strokeRoundedRect(-13 + legSwing, 19, 9, 15, 3);
 
     this.gLegR.clear();
-    this.gLegR.fillStyle(0x2277cc, 1);
-    this.gLegR.fillRoundedRect(4 - legSwing, 18, 10, 16, 3);
+    this.gLegR.fillStyle(col, 1);
+    this.gLegR.fillRoundedRect(4 - legSwing, 19, 9, 15, 3);
     this.gLegR.lineStyle(1.5, outline, 1);
-    this.gLegR.strokeRoundedRect(4 - legSwing, 18, 10, 16, 3);
+    this.gLegR.strokeRoundedRect(4 - legSwing, 19, 9, 15, 3);
+  }
 
-    // --- Body ---
-    this.gBody.clear();
-    this.gBody.fillStyle(COLORS.PLAYER_BODY, 1);
-    this.gBody.fillRoundedRect(-16, -10, 32, 28, 6);
-    this.gBody.lineStyle(2, outline, 1);
-    this.gBody.strokeRoundedRect(-16, -10, 32, 28, 6);
-    // Chest emblem (small cross)
-    this.gBody.fillStyle(COLORS.PLAYER_HELMET, 0.7);
-    this.gBody.fillRect(-2, -2, 4, 10);
-    this.gBody.fillRect(-5, 1, 10, 4);
+  // ─── Facing direction update ──────────────────────────────────────────────
+  // Derives facing from facingAngle and swaps body/head textures only when it changes.
+  // 'right' reuses the 'left' baked texture with scaleX = -1 (horizontal mirror).
+  _updateFacing() {
+    const a = this.facingAngle;
+    let f;
+    if      (a > -Math.PI * 0.75 && a < -Math.PI * 0.25) f = 'up';
+    else if (a >  Math.PI * 0.25 && a <  Math.PI * 0.75) f = 'down';
+    else if (a > -Math.PI * 0.25 && a <  Math.PI * 0.25) f = 'right';
+    else                                                   f = 'left';
 
-    // --- Arms (will be rotated separately toward cursor) ---
-    this.gArmL.clear();
-    this.gArmL.fillStyle(0x2277cc, 1);
-    this.gArmL.fillRoundedRect(-24, -4, 10, 18, 4);
-    this.gArmL.lineStyle(1.5, outline, 1);
-    this.gArmL.strokeRoundedRect(-24, -4, 10, 18, 4);
+    if (f === this.facing) return;   // no change — skip texture swap
+    this.facing = f;
 
-    this.gArmR.clear();
-    this.gArmR.fillStyle(0x2277cc, 1);
-    this.gArmR.fillRoundedRect(14, -4, 10, 18, 4);
-    this.gArmR.lineStyle(1.5, outline, 1);
-    this.gArmR.strokeRoundedRect(14, -4, 10, 18, 4);
-
-    // --- Shield on left arm ---
-    this.gShield.clear();
-    this.gShield.fillStyle(COLORS.PLAYER_SHIELD, 1);
-    this.gShield.fillRoundedRect(-30, -2, 14, 16, 3);
-    this.gShield.lineStyle(1.5, 0xaa7700, 1);
-    this.gShield.strokeRoundedRect(-30, -2, 14, 16, 3);
-
-    // --- Head ---
-    this.gHead.clear();
-    this.gHead.fillStyle(COLORS.PLAYER_HEAD, 1);
-    this.gHead.fillCircle(0, -18, 13);
-    this.gHead.lineStyle(2, outline, 1);
-    this.gHead.strokeCircle(0, -18, 13);
-
-    // --- Helmet ---
-    this.gHelmet.clear();
-    this.gHelmet.fillStyle(COLORS.PLAYER_HELMET, 1);
-    this.gHelmet.fillRoundedRect(-13, -30, 26, 14, { tl: 5, tr: 5, bl: 0, br: 0 });
-    this.gHelmet.lineStyle(2, 0x667788, 1);
-    this.gHelmet.strokeRoundedRect(-13, -30, 26, 14, { tl: 5, tr: 5, bl: 0, br: 0 });
-    // Visor slit
-    this.gHelmet.fillStyle(0x334455, 1);
-    this.gHelmet.fillRect(-8, -22, 16, 4);
+    const dir  = (f === 'right') ? 'left' : f;
+    const flip = (f === 'right') ? -1 : 1;
+    this.bodySprite.setTexture(`player-body-${dir}`);
+    this.bodySprite.setScale(flip, 1);
+    this.headSprite.setTexture(`player-head-${dir}`);
+    this.headSprite.setScale(flip, 1);
   }
 
   _buildFloatingHPBar() {
@@ -240,13 +495,14 @@ export default class Player {
     const angle = Phaser.Math.Angle.Between(this.x, this.y, ptr.worldX, ptr.worldY);
     this._fireProjectile(angle, this.baseDamage, 0x88ddff, 7, PLAYER.BASIC_ATTACK_SPEED, false);
 
-    // Arm recoil animation
+    // Punch-forward body nudge (replaces old gArmR tween — arm is now baked into bodySprite)
     this.scene.tweens.add({
-      targets: this.gArmR,
-      x: Math.cos(angle) * 6,
-      y: Math.sin(angle) * 6,
+      targets: this.bodySprite,
+      x: Math.cos(angle) * 3,
+      y: Math.sin(angle) * 3,
       duration: 80,
       yoyo: true,
+      onComplete: () => { if (this.bodySprite?.active) { this.bodySprite.x = 0; this.bodySprite.y = 0; } },
     });
   }
 
@@ -497,11 +753,10 @@ export default class Player {
   }
 
   _hitFlash() {
-    // Flash all graphics red
-    [this.gBody, this.gHead, this.gHelmet].forEach(g => {
+    [this.bodySprite, this.headSprite].forEach(s => {
       this.scene.tweens.add({
-        targets: g, alpha: 0.3, duration: 60, yoyo: true, repeat: 2,
-        onComplete: () => g.setAlpha(1),
+        targets: s, alpha: 0.3, duration: 60, yoyo: true, repeat: 2,
+        onComplete: () => { if (s?.active) s.setAlpha(1); },
       });
     });
   }
@@ -640,15 +895,15 @@ export default class Player {
       }
     }
 
-    // Idle bob
+    // Idle bob — y-transform only on headSprite (no redraw)
     this._idleTimer += dt;
     const bobOffset = this.moving ? 0 : Math.sin(this._idleTimer * 2.2) * 2;
-    this.gHead.y = bobOffset;
-    this.gHelmet.y = bobOffset;
+    this.headSprite.y = -26 + bobOffset;
 
-    // Leg stride animation — horizontal crossing swing
+    // Leg stride + facing update
     const legSwing = this.moving ? Math.sin(this._legPhase) * 6 : 0;
-    this._drawCharacter(legSwing);
+    this._drawLegs(legSwing);
+    this._updateFacing();
 
     // Update floating HP bar position
     this._updateFloatingHP();
@@ -786,7 +1041,8 @@ export default class Player {
   }
 
   destroy() {
-    this.container.destroy(true);
+    this.container.destroy(true);   // destroys gLegL, gLegR, bodySprite, headSprite
+    if (this.shadowG?.active) { this.shadowG.destroy(); this.shadowG = null; }
     this.floatHPBg.destroy();
     this.floatHPFill.destroy();
     this.projectiles.clear(true, true);
