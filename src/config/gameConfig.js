@@ -152,11 +152,24 @@ export const COLORS = {
   BOSS_HP: 0xe74c3c,
   BOSS_HP_MID: 0xe67e22,
   BOSS_HP_LOW: 0xc0392b,
-  PLAYER_BODY: 0x2d7dd2,    // armor blue (deeper than old 0x3a9ff5)
+  PLAYER_BODY: 0x2d7dd2,    // armor blue base
+  PLAYER_BODY_HI: 0x5aa3e8, // armor blue highlight (top-lit)
+  PLAYER_BODY_LO: 0x1a5a9e, // armor blue shadow (bottom)
   PLAYER_HEAD: 0x5ab8ff,    // kept — used for death particle color
-  PLAYER_HELMET: 0x8faab8,  // steel helmet
-  PLAYER_SHIELD: 0xf0c040,  // gold shield
-  PLAYER_SKIN: 0xf4c090,    // face / cheeks skin tone
+  PLAYER_HELMET: 0x8faab8,  // steel base
+  PLAYER_HELMET_HI: 0xc8d8e2, // steel highlight
+  PLAYER_HELMET_LO: 0x556878, // steel shadow
+  PLAYER_SHIELD: 0xf0c040,  // gold base
+  PLAYER_SHIELD_HI: 0xffe480, // gold highlight
+  PLAYER_SHIELD_LO: 0xa07810, // gold shadow
+  PLAYER_SKIN: 0xf4c090,    // skin base
+  PLAYER_SKIN_HI: 0xffe4c0, // skin highlight
+  PLAYER_SKIN_LO: 0xc48868, // skin shadow
+  PLAYER_HAIR: 0x4a3020,    // dark brown hair tuft
+  PLAYER_BRASS: 0xd4a040,   // blunderbuss barrel base
+  PLAYER_BRASS_HI: 0xf4d870, // brass highlight
+  PLAYER_BRASS_LO: 0x8a6020, // brass shadow
+  PLAYER_WOOD: 0x6a4020,    // weapon grip wood
   WHITE: 0xffffff,
   BLACK: 0x000000,
   PORTAL: 0xaa44ff,
