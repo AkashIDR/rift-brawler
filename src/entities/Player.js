@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char7-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char8-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char7-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char8-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char7-${dir}`;
+      const key = `player-char8-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -371,7 +371,7 @@ export default class Player {
     } else { // left — side profile (mirrored for right via scaleX=-1)
       drawHead();
       drawHelmet(3);
-      drawEarGuard(ox - 10);               // ear guard next to eye (ear position, x=25–34)
+      drawEarGuard(ox - 5);                // ear guard slightly behind eye (ear position, x=30–39)
       drawEye(ox - 14, HC + 11);
       // One cheek
       ctx.fillStyle = 'rgba(255,120,120,0.50)';
@@ -519,7 +519,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char7-${dir}`);
+    this.characterSprite.setTexture(`player-char8-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
