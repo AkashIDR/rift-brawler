@@ -726,6 +726,8 @@ export default class Player {
       if (scene.altar) {
         const altarDist = Phaser.Math.Distance.Between(proj.x, proj.y, scene.altar.x, scene.altar.y);
         if (altarDist < 40) {
+          spawnSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 8);
+          if (proj._isSkill) spawnImpactRing(this.scene, proj.x, proj.y, proj._color || 0x88ddff);
           scene.altar.interact();
           proj._alive = false;
           proj.destroy();
