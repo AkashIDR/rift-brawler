@@ -3,7 +3,7 @@ import {
   PLAYER, SKILLS, COLORS, SCALING,
   GAME_WIDTH, GAME_HEIGHT
 } from '../config/gameConfig.js';
-import { spawnBurst, spawnSparks, spawnDust, spawnBlood } from '../systems/ParticleHelper.js';
+import { spawnBurst, spawnSparks, spawnDust, spawnBlood, spawnImpactRing } from '../systems/ParticleHelper.js';
 
 export default class Player {
   constructor(scene, x, y, level = 1, incomingHp = null) {
@@ -561,6 +561,22 @@ export default class Player {
     });
   }
 
+  /** Slide player to the surface of the boss — skipped during dashes so they phase through. */
+  _pushOutBoss() {
+    const boss = this.scene.boss;
+    if (!boss || !this.scene.bossAlive) return;
+    const PLAYER_RADIUS = 16;
+    const minDist = boss.size + PLAYER_RADIUS;
+    const dx = this.x - boss.x;
+    const dy = this.y - boss.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < minDist && dist > 0) {
+      const scale = minDist / dist;
+      this.x = boss.x + dx * scale;
+      this.y = boss.y + dy * scale;
+    }
+  }
+
   /**
    * Walk along the dash path and return the last world position that passes
    * arena.containsPoint. This prevents dashing through walls.
@@ -611,6 +627,7 @@ export default class Player {
         const step = Math.min(this.speed * speedMult * dt, dist);
         this._tryMove(this.x + Math.cos(angle) * step, this.y + Math.sin(angle) * step);
         this._pushOutObstacles();
+        this._pushOutBoss();
         this.container.x = this.x;
         this.container.y = this.y;
         this._legPhase += dt * 12;
@@ -715,13 +732,18 @@ export default class Player {
       // Hit boss
       if (scene.boss && scene.bossAlive) {
         const dist = Phaser.Math.Distance.Between(proj.x, proj.y, scene.boss.x, scene.boss.y);
-        if (dist < scene.boss.size + 6) {
+        if (dist < scene.boss.size + (proj._radius || 5)) {
           // Stamina regen on hit (basic attack only)
           if (!proj._isSkill) {
             this.stamina = Math.min(this.staminaMax, this.stamina + PLAYER.STAMINA_REGEN_PER_HIT);
           }
-          // D — directional spark streaks at impact point
-          spawnSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 10);
+          // D — sparks at boss surface edge (not deep inside body)
+          const hitAngle = Math.atan2(proj.y - scene.boss.y, proj.x - scene.boss.x);
+          const sx = scene.boss.x + Math.cos(hitAngle) * scene.boss.size;
+          const sy = scene.boss.y + Math.sin(hitAngle) * scene.boss.size;
+          spawnSparks(this.scene, sx, sy, proj._color || 0x88ddff, 10);
+          // Ring only for skill shots (Q) — differentiates from basic attack
+          if (proj._isSkill) spawnImpactRing(this.scene, sx, sy, proj._color || 0x88ddff);
           scene.boss.takeDamage(proj._damage);
           proj._alive = false;
           proj.destroy();

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { SCALING } from '../../config/gameConfig.js';
-import { spawnBurst, spawnBlood } from '../../systems/ParticleHelper.js';
+import { spawnBurst, spawnBlood, spawnSparks, spawnImpactRing } from '../../systems/ParticleHelper.js';
 
 /*
   BossBase — all bosses extend this.
@@ -248,6 +248,8 @@ export default class BossBase {
     proj._homing = homing;
     proj._alive = true;
     proj._radius = radius;
+    proj._color = color;
+    proj._isSpecial = radius >= 35;   // large shots get an impact ring on hit
     proj._distTraveled = 0;
 
     const _destroy = () => {
@@ -301,6 +303,12 @@ export default class BossBase {
       const p = this.scene.player;
       if (p && p.alive && !p.invincible) {
         if (Phaser.Math.Distance.Between(proj.x, proj.y, p.x, p.y) < radius + 16) {
+          // Impact sparks at player surface + ring for special shots
+          const hitAngle = Math.atan2(proj.y - p.y, proj.x - p.x);
+          const sx = p.x + Math.cos(hitAngle) * 16;
+          const sy = p.y + Math.sin(hitAngle) * 16;
+          spawnSparks(this.scene, sx, sy, proj._color || 0xff8800, 7);
+          if (proj._isSpecial) spawnImpactRing(this.scene, sx, sy, proj._color || 0xff8800);
           p.takeDamage(proj._damage);
           _destroy();
         }
