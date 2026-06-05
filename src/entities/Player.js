@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char5-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char6-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char5-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char6-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char5-${dir}`;
+      const key = `player-char6-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -190,7 +190,10 @@ export default class Player {
     // Helmet = TOP HALF of the head circle painted steel.
     // arc(ox, HC, HR, PI, 0, false) = clockwise left→right = goes UP = top semicircle.
     // closePath() draws the brim line straight across at y=HC.
-    const drawHelmet = (brimX, brimW, rivetCount = 5) => {
+    // Brim band always derived from HR so it never sticks out past the circle outline.
+    const drawHelmet = (rivetCount = 5) => {
+      const brimX = ox - HR;   // = 7  — exact left edge of circle at equator
+      const brimW = HR * 2;    // = 56 — exact diameter, no overhang
       const g = ctx.createRadialGradient(
         ox - HR * 0.25, HC - HR * 0.50, 2,
         ox, HC, HR * 1.05
@@ -226,7 +229,7 @@ export default class Player {
       ctx.strokeStyle = SHIELD; ctx.lineWidth = 1; ctx.stroke();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
 
-      // Brim band (dark steel bar at head center y)
+      // Brim band (dark steel bar at head center y — exactly circle width)
       ctx.fillStyle = HELM_LO;
       rrect(ctx, brimX, HC - 2, brimW, 5, 2);
       ctx.fill(); ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5; ctx.stroke();
@@ -243,8 +246,11 @@ export default class Player {
       ctx.lineWidth = 1.5; ctx.strokeStyle = OUTLINE;
     };
 
-    // Ear guard (side tab extending below the brim)
-    const drawEarGuard = (ex) => {
+    // Ear guard (side tab extending below the brim).
+    // side: 'left' anchors the right edge at ox-HR (left circle edge).
+    //        'right' anchors the left edge at ox+HR-9 (right circle edge).
+    const drawEarGuard = (side) => {
+      const ex = (side === 'left') ? (ox - HR - 1) : (ox + HR - 8);
       const g = ctx.createRadialGradient(ex + 2, HC + 4, 1, ex + 4, HC + 8, 8);
       g.addColorStop(0, HELM_HI); g.addColorStop(1, HELM_LO);
       ctx.fillStyle = g;
@@ -317,7 +323,7 @@ export default class Player {
 
     if (dir === 'down') {
       drawHead();
-      drawHelmet(ox - 30, 60, 5);
+      drawHelmet(5);
       drawEye(ox - 12, HC + 11);
       drawEye(ox + 12, HC + 11);
       // Cheeks
@@ -347,13 +353,13 @@ export default class Player {
 
     } else if (dir === 'up') {
       drawHead();
-      drawHelmet(ox - 32, 64, 5);
+      drawHelmet(5);
       // Center spine seam
       ctx.strokeStyle = HELM_LO; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.65;
       ctx.beginPath(); ctx.moveTo(ox, HC - HR + 2); ctx.lineTo(ox, HC); ctx.stroke();
       ctx.globalAlpha = 1.0; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
-      drawEarGuard(ox - 31);
-      drawEarGuard(ox + 22);
+      drawEarGuard('left');
+      drawEarGuard('right');
       const bxU = ox - 10;
       drawBody(bxU, 20, true);
       drawPauldron(bxU - 2, oy + 2);
@@ -361,8 +367,8 @@ export default class Player {
 
     } else { // left — side profile (mirrored for right via scaleX=-1)
       drawHead();
-      drawHelmet(ox - 31, 58, 3);
-      drawEarGuard(ox + 22);               // one ear guard on back side only
+      drawHelmet(3);
+      drawEarGuard('right');               // one ear guard on back side only
       drawEye(ox - 14, HC + 11);
       // One cheek
       ctx.fillStyle = 'rgba(255,120,120,0.50)';
@@ -510,7 +516,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char5-${dir}`);
+    this.characterSprite.setTexture(`player-char6-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
@@ -1010,7 +1016,7 @@ export default class Player {
     if (this.shadowG && this.shadowG.active) {
       this.shadowG.clear();
       this.shadowG.fillStyle(0x000000, 0.28);
-      this.shadowG.fillEllipse(this.x + 1, this.y + 18, 28, 7);
+      this.shadowG.fillEllipse(this.x + 1, this.y + 12, 28, 7);
     }
 
     // Update projectiles
