@@ -708,9 +708,8 @@ export default class Player {
         for (const obs of scene.obstacles) {
           const od = Phaser.Math.Distance.Between(proj.x, proj.y, obs.x, obs.y);
           if (od < obs.baseRadius + (proj._radius || 5)) {
-            // Spark ricochet + stone dust on obstacle hit
+            // Spark ricochet on obstacle hit — no dust circles
             spawnSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 8);
-            spawnDust(this.scene, proj.x, proj.y, 8);
             proj._alive = false;
             proj.destroy();
             return;

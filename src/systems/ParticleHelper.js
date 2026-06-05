@@ -60,20 +60,20 @@ export function spawnBurst(scene, x, y, {
 // Brief bright center flash at impact point.
 // Use for: projectile impacts on boss/obstacles.
 export function spawnSparks(scene, x, y, color, count = 10) {
-  // Center flash — hot white circle that expands and fades
+  // Center flash — tight bright pop, not a large circle
   const flash = scene.add.graphics();
-  flash.fillStyle(0xffffff, 0.9);
-  flash.fillCircle(0, 0, 6 + Math.random() * 4);
-  flash.fillStyle(color, 0.7);
-  flash.fillCircle(0, 0, 4 + Math.random() * 3);
+  flash.fillStyle(0xffffff, 0.95);
+  flash.fillCircle(0, 0, 3 + Math.random() * 2);   // 3–5px — stays small
+  flash.fillStyle(color, 0.8);
+  flash.fillCircle(0, 0, 2 + Math.random() * 1.5);
   flash.setPosition(x, y);
   flash.setDepth(23);
   scene.events.once('shutdown', () => { if (flash.active) flash.destroy(); });
   scene.tweens.add({
     targets: flash,
-    scaleX: 2.5, scaleY: 2.5,
+    scaleX: 1.3, scaleY: 1.3,   // barely expands — no soap bubble
     alpha: 0,
-    duration: 120,
+    duration: 80,
     ease: 'Quad.easeOut',
     onComplete: () => { if (flash.active) flash.destroy(); },
   });
@@ -86,10 +86,12 @@ export function spawnSparks(scene, x, y, color, count = 10) {
     const wid   = 1.5 + Math.random() * 1.5;     // 1.5–3px width
 
     const g = scene.add.graphics();
+    // Draw HORIZONTALLY in local space so setRotation(angle) aligns the long axis
+    // with the travel direction (perpendicular out from impact center)
     g.fillStyle(color, 1);
-    g.fillRect(-wid / 2, -len / 2, wid, len);
+    g.fillRect(-len / 2, -wid / 2, len, wid);
     g.fillStyle(0xffffff, 0.70);
-    g.fillRect(-0.8, -len * 0.45, 1.6, len * 0.45);   // white-hot core
+    g.fillRect(-len * 0.45, -0.8, len * 0.45, 1.6);   // white-hot core, also horizontal
     g.setPosition(x, y);
     g.setRotation(angle);
     g.setDepth(22);
@@ -100,7 +102,7 @@ export function spawnSparks(scene, x, y, color, count = 10) {
       x: x + Math.cos(angle) * dist,
       y: y + Math.sin(angle) * dist,
       alpha: 0,
-      scaleX: 0.2,    // taper to a point
+      scaleY: 0.2,    // narrow the WIDTH as it travels (tapers to a streak)
       duration: 180 + Math.random() * 160,    // 180–340ms
       ease: 'Quad.easeOut',
       onComplete: () => { if (g.active) g.destroy(); },
