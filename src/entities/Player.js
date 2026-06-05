@@ -82,6 +82,7 @@ export default class Player {
     this._idleTimer = 0;
     this._legPhase = 0;
     this._hitFlashTimer = 0;
+    this._weaponRecoil = 0;     // extra inward orbit offset, set on fire, decays to 0
   }
 
   setArenaBounds(rect) {
@@ -107,8 +108,9 @@ export default class Player {
     this.bodySprite = this.scene.add.image(0, 14, 'player-body-down');
     this.bodySprite.setOrigin(0.5, 0.5);
 
-    // Weapon: live rotating sprite — pivot at grip back end (texture x=4, mid-y)
-    this.weaponSprite = this.scene.add.image(0, 8, 'player-weapon');
+    // Weapon: orbits body center — position updated every frame in update().
+    // Origin at grip back-end so the barrel always extends outward from the orbit point.
+    this.weaponSprite = this.scene.add.image(0, 0, 'player-weapon');
     this.weaponSprite.setOrigin(4 / 30, 0.5);
 
     // Head sprite: huge chibi head + helmet — baked canvas.
@@ -338,7 +340,8 @@ export default class Player {
 
   // ─── Head canvas drawing ──────────────────────────────────────────────────
   // Canvas 80×80. ox=40 (center x), oy=40 (head circle center y).
-  // Draws huge chibi head + bucket helmet (+ face details when visible).
+  // Helmet is a spherical dome (true elliptical arc) sitting on the head.
+  // Face exposed below the brim — no visor cavity. Eyes are vertical ovals.
   _drawHeadToCanvas(ctx, dir, ox, oy) {
     const hx = n => '#' + n.toString(16).padStart(6, '0');
     const SKIN    = hx(COLORS.PLAYER_SKIN);
@@ -348,16 +351,18 @@ export default class Player {
     const HELM_HI = hx(COLORS.PLAYER_HELMET_HI);
     const HELM_LO = hx(COLORS.PLAYER_HELMET_LO);
     const HAIR    = hx(COLORS.PLAYER_HAIR);
+    const GOLD    = hx(COLORS.PLAYER_SHIELD);
+    const GOLD_HI = hx(COLORS.PLAYER_SHIELD_HI);
     const OUTLINE = '#1a1a2a';
-    const HEAD_R  = 24;     // chibi head radius
+    const HEAD_R  = 24;
 
     ctx.lineWidth = 2;
     ctx.strokeStyle = OUTLINE;
 
-    // ─ Head skin circle with radial gradient (sun upper-left) ─
+    // ─ Skin head circle — radial gradient (sun upper-left) ─
     const skinGrad = ctx.createRadialGradient(
-      ox - HEAD_R * 0.4, oy - HEAD_R * 0.5, HEAD_R * 0.15,
-      ox, oy + HEAD_R * 0.15, HEAD_R * 1.05
+      ox - HEAD_R * 0.35, oy - HEAD_R * 0.45, HEAD_R * 0.12,
+      ox, oy + HEAD_R * 0.1, HEAD_R * 1.05
     );
     skinGrad.addColorStop(0,    SKIN_HI);
     skinGrad.addColorStop(0.55, SKIN);
@@ -366,195 +371,177 @@ export default class Player {
     ctx.beginPath();
     ctx.arc(ox, oy, HEAD_R, 0, Math.PI * 2);
     ctx.fill();
-    ctx.lineWidth = 2;
     ctx.stroke();
 
-    // ─ Helmet dome helper (with radial gradient) ─
-    const drawDome = (domeX, domeY, domeW, domeH, cornerRadii) => {
-      const g = ctx.createRadialGradient(
-        domeX + domeW * 0.3, domeY + domeH * 0.25, 3,
-        domeX + domeW * 0.5, domeY + domeH * 0.5, domeW * 0.65
-      );
-      g.addColorStop(0,    HELM_HI);
-      g.addColorStop(0.55, HELM);
-      g.addColorStop(1.0,  HELM_LO);
-      ctx.fillStyle = g;
-      rrect(ctx, domeX, domeY, domeW, domeH, cornerRadii);
+    // ─ Vertical-oval eye helper ─
+    // Eyes are taller than wide — chibi style, not bug-eye circles.
+    const drawEye = (ex, ey) => {
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(ex, ey, 3.5, 5.5, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = '#2d4f8a';
+      ctx.beginPath();
+      ctx.ellipse(ex, ey + 0.5, 2.2, 3.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#0a0a14';
+      ctx.beginPath();
+      ctx.ellipse(ex, ey + 0.5, 1.2, 2.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(ex + 1.1, ey - 1.5, 1.0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = OUTLINE;
     };
 
-    // ─ Big chibi eye helper ─
-    const drawEye = (ex, ey) => {
-      // White sclera
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(ex, ey, 5.5, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.2; ctx.stroke();
-      // Navy iris
-      ctx.fillStyle = '#2d4f8a';
-      ctx.beginPath(); ctx.arc(ex, ey + 0.6, 3.5, 0, Math.PI * 2); ctx.fill();
-      // Black pupil
-      ctx.fillStyle = '#0a0a14';
-      ctx.beginPath(); ctx.arc(ex, ey + 0.6, 2.0, 0, Math.PI * 2); ctx.fill();
-      // White shine
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath(); ctx.arc(ex + 1.3, ey - 1.2, 1.2, 0, Math.PI * 2); ctx.fill();
-      // Tiny secondary shine
-      ctx.beginPath(); ctx.arc(ex - 1.8, ey + 1.6, 0.6, 0, Math.PI * 2); ctx.fill();
+    // ─ Spherical dome helper ─
+    // Draws a top-half ellipse (the dome), brim band, rivets, and gold spike.
+    // domeRx/domeRy: semi-axes of the ellipse. brimX/brimW: brim band rect.
+    const drawHelmet = (domeRx, domeRy, brimX, brimW) => {
+      // Dome: top half of ellipse (clockwise from π to 0 = goes up = dome)
+      const domeGrad = ctx.createRadialGradient(
+        ox - domeRx * 0.3, oy - domeRy * 0.55, 3,
+        ox, oy, domeRx
+      );
+      domeGrad.addColorStop(0,    HELM_HI);
+      domeGrad.addColorStop(0.55, HELM);
+      domeGrad.addColorStop(1.0,  HELM_LO);
+      ctx.fillStyle = domeGrad;
+      ctx.beginPath();
+      ctx.ellipse(ox, oy, domeRx, domeRy, 0, Math.PI, 0, false);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke();
+
+      // Specular hotspot (upper-left bright spot)
+      ctx.fillStyle = HELM_HI;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.ellipse(ox - domeRx * 0.28, oy - domeRy * 0.55, domeRx * 0.35, domeRy * 0.18, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // Gold spike at the crown (small diamond/teardrop)
+      const spikeY = oy - domeRy;
+      ctx.fillStyle = GOLD_HI;
+      ctx.beginPath();
+      ctx.moveTo(ox, spikeY - 7);
+      ctx.lineTo(ox + 3, spikeY - 1);
+      ctx.lineTo(ox, spikeY + 1);
+      ctx.lineTo(ox - 3, spikeY - 1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = GOLD; ctx.lineWidth = 1; ctx.stroke();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
+
+      // Brim band (slightly wider than dome base, darker steel)
+      ctx.fillStyle = HELM_LO;
+      rrect(ctx, brimX, oy - 2, brimW, 5, 2);
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.lineWidth = 2;
+
+      // Rivets along the brim (evenly spaced circles)
+      ctx.fillStyle = HELM_HI;
+      const rivetStep = brimW / 5;
+      for (let i = 0; i < 5; i++) {
+        const rx = brimX + rivetStep * (i + 0.5);
+        ctx.beginPath();
+        ctx.arc(rx, oy + 0.5, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = OUTLINE; ctx.lineWidth = 0.8; ctx.stroke();
+      }
       ctx.lineWidth = 2; ctx.strokeStyle = OUTLINE;
     };
 
     if (dir === 'down') {
-      // Hair tuft — drawn BEFORE helmet so the helmet brim overlaps its top edge
-      // A small fluffy clump at the forehead. Two overlapping arc shapes for volume.
+      // Hair tuft peeking below the helmet brim, at the forehead (front view only)
       ctx.fillStyle = HAIR;
       ctx.beginPath();
-      ctx.arc(ox - 3, oy - 10, 4.5, Math.PI, 0);   // left bump
-      ctx.arc(ox + 3, oy - 10, 4.5, Math.PI, 0);   // right bump
-      ctx.lineTo(ox + 7, oy - 7);
-      ctx.lineTo(ox - 7, oy - 7);
+      ctx.arc(ox - 4, oy + 1, 4, Math.PI, 0);
+      ctx.arc(ox + 4, oy + 1, 4, Math.PI, 0);
+      ctx.lineTo(ox + 8, oy + 4);
+      ctx.lineTo(ox - 8, oy + 4);
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1; ctx.stroke();
       ctx.lineWidth = 2;
 
-      // Helmet dome — wide bucket sitting on top of the head
-      // Domes is 44 wide × 24 tall, sits with top at oy-22
-      drawDome(ox - 22, oy - 22, 44, 24, { tl: 14, tr: 14, bl: 4, br: 4 });
+      // Spherical dome (rx=26, ry=26 = circular dome), brim slightly wider
+      drawHelmet(26, 26, ox - 28, 56);
 
-      // Specular highlight band on the dome
-      ctx.fillStyle = HELM_HI;
-      ctx.globalAlpha = 0.45;
-      rrect(ctx, ox - 18, oy - 20, 30, 6, { tl: 12, tr: 12, bl: 2, br: 2 });
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
+      // Eyes below the brim (vertical oval style)
+      drawEye(ox - 10, oy + 13);
+      drawEye(ox + 10, oy + 13);
 
-      // Helmet brim band (dark steel lip across forehead)
-      ctx.fillStyle = HELM_LO;
-      rrect(ctx, ox - 22, oy - 5, 44, 4, 2);
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // Visor cavity (large rectangular opening below the brim) — dark recess
-      ctx.fillStyle = '#1a1a26';
-      rrect(ctx, ox - 16, oy - 1, 32, 12, 2);
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // Eyes inside the visor cavity
-      drawEye(ox - 9, oy + 5);
-      drawEye(ox + 9, oy + 5);
-
-      // Rosy cheeks below the visor
-      ctx.fillStyle = 'rgba(255,120,120,0.50)';
-      ctx.beginPath(); ctx.ellipse(ox - 14, oy + 14, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(ox + 14, oy + 14, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+      // Rosy cheeks
+      ctx.fillStyle = 'rgba(255,120,120,0.52)';
+      ctx.beginPath(); ctx.ellipse(ox - 16, oy + 20, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ox + 16, oy + 20, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
 
       // Tiny nose dot
       ctx.fillStyle = SKIN_LO;
-      ctx.beginPath(); ctx.arc(ox, oy + 13, 1.3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ox, oy + 18, 1.3, 0, Math.PI * 2); ctx.fill();
 
-      // Subtle smile
+      // Slight smile
       ctx.strokeStyle = '#7a4830';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(ox, oy + 17, 4, 0.25, Math.PI - 0.25);
+      ctx.arc(ox, oy + 22, 4, 0.3, Math.PI - 0.3);
       ctx.stroke();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
 
     } else if (dir === 'up') {
-      // Back of helmet — taller dome that drops further (we see more of the back curve)
-      drawDome(ox - 22, oy - 22, 44, 32, { tl: 14, tr: 14, bl: 8, br: 8 });
+      // Back view: same dome shape, wider brim overhang at the sides
+      drawHelmet(26, 26, ox - 30, 60);
 
-      // Vertical seam line down the center
+      // Vertical spine seam (visible from behind)
       ctx.strokeStyle = HELM_LO;
-      ctx.lineWidth = 1;
-      ctx.globalAlpha = 0.65;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.70;
       ctx.beginPath();
-      ctx.moveTo(ox, oy - 20);
-      ctx.lineTo(ox, oy + 8);
+      ctx.moveTo(ox, oy - 24);
+      ctx.lineTo(ox, oy);
       ctx.stroke();
       ctx.globalAlpha = 1.0;
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 2;
-
-      // Specular highlight on the upper dome
-      ctx.fillStyle = HELM_HI;
-      ctx.globalAlpha = 0.40;
-      rrect(ctx, ox - 18, oy - 20, 30, 6, { tl: 12, tr: 12, bl: 2, br: 2 });
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
-
-      // Two ear-guard flares at the sides
-      ctx.fillStyle = HELM;
-      rrect(ctx, ox - 25, oy - 4, 5, 12, 2); ctx.fill(); ctx.stroke();
-      rrect(ctx, ox + 20, oy - 4, 5, 12, 2); ctx.fill(); ctx.stroke();
-
-    } else { // left — side profile
-      // Helmet dome — profile shape, longer at the back, brim extends forward
-      // Use a polygon for the back-extending bell shape
-      const domeG = ctx.createRadialGradient(
-        ox - 4, oy - 18, 3,
-        ox - 2, oy - 4, 28
-      );
-      domeG.addColorStop(0,    HELM_HI);
-      domeG.addColorStop(0.55, HELM);
-      domeG.addColorStop(1.0,  HELM_LO);
-      ctx.fillStyle = domeG;
-
-      ctx.beginPath();
-      ctx.moveTo(ox - 22, oy + 2);                                    // left front edge
-      ctx.quadraticCurveTo(ox - 22, oy - 22, ox - 8, oy - 24);        // front-top curve
-      ctx.quadraticCurveTo(ox + 14, oy - 22, ox + 18, oy - 8);        // top to back
-      ctx.quadraticCurveTo(ox + 22, oy + 6, ox + 12, oy + 8);         // back curve down
-      ctx.lineTo(ox - 16, oy + 8);                                    // brim line
-      ctx.closePath();
-      ctx.fill();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
-      ctx.stroke();
 
-      // Helmet specular highlight on the upper-left
-      ctx.fillStyle = HELM_HI;
-      ctx.globalAlpha = 0.42;
-      ctx.beginPath();
-      ctx.ellipse(ox - 8, oy - 17, 8, 3, -0.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
+      // Ear flaps extending down from the sides of the brim
+      const eFlap = (ex) => {
+        const g = ctx.createRadialGradient(ex + 1, oy + 4, 1, ex + 2, oy + 7, 8);
+        g.addColorStop(0, HELM_HI); g.addColorStop(1, HELM_LO);
+        ctx.fillStyle = g;
+        rrect(ctx, ex, oy + 2, 9, 16, 3); ctx.fill();
+        ctx.strokeStyle = OUTLINE; ctx.stroke();
+      };
+      eFlap(ox - 31);
+      eFlap(ox + 22);
 
-      // Brim band (dark steel)
-      ctx.fillStyle = HELM_LO;
-      rrect(ctx, ox - 22, oy - 1, 38, 4, 2);
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      ctx.lineWidth = 2;
+    } else { // left — side profile (mirrored for right via scaleX=-1)
+      // Side profile: circular dome appears as a circle from the side
+      // Brim extends more to the LEFT (front of the left-facing character)
+      drawHelmet(26, 26, ox - 30, 52);
 
-      // Visor cavity (one-eye sized opening, dark recess)
-      ctx.fillStyle = '#1a1a26';
-      rrect(ctx, ox - 18, oy + 3, 18, 11, 2);
-      ctx.fill();
-      ctx.strokeStyle = OUTLINE;
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      // Ear flap on the back (right) side only
+      const g = ctx.createRadialGradient(ox + 23, oy + 4, 1, ox + 24, oy + 8, 8);
+      g.addColorStop(0, HELM_HI); g.addColorStop(1, HELM_LO);
+      ctx.fillStyle = g;
+      rrect(ctx, ox + 22, oy + 2, 9, 16, 3); ctx.fill();
+      ctx.strokeStyle = OUTLINE; ctx.stroke();
 
-      // One eye visible
-      drawEye(ox - 9, oy + 8);
+      // Face visible on the left side (below the brim in the LEFT region of the circle)
+      // One eye, one cheek, a small nose bump
+      drawEye(ox - 12, oy + 13);
 
-      // Cheek
-      ctx.fillStyle = 'rgba(255,120,120,0.50)';
-      ctx.beginPath(); ctx.ellipse(ox - 12, oy + 17, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,120,120,0.52)';
+      ctx.beginPath(); ctx.ellipse(ox - 14, oy + 20, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
 
-      // Tiny nose bump on the cursor side (left)
+      // Tiny nose bump (on the left/front edge of the face)
       ctx.fillStyle = SKIN_LO;
       ctx.beginPath();
-      ctx.arc(ox - 22, oy + 13, 2, 0, Math.PI * 2);
+      ctx.arc(ox - 21, oy + 16, 1.8, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -779,17 +766,10 @@ export default class Player {
     const angle = Phaser.Math.Angle.Between(this.x, this.y, ptr.worldX, ptr.worldY);
     this._fireProjectile(angle, this.baseDamage, 0x88ddff, 7, PLAYER.BASIC_ATTACK_SPEED, false);
 
-    // Blunderbuss recoil — kick straight back along the firing axis, then snap forward
-    this.scene.tweens.add({
-      targets: this.weaponSprite,
-      x: -3 * Math.cos(angle),
-      y:  8 - 3 * Math.sin(angle),     // base y is 8 (set in _buildGraphics)
-      duration: 60,
-      yoyo: true,
-      onComplete: () => {
-        if (this.weaponSprite?.active) this.weaponSprite.setPosition(0, 8);
-      },
-    });
+    // Blunderbuss recoil — kick 3px inward from orbit, reset after 60ms.
+    // The orbit update in update() picks up _weaponRecoil each frame so no tween needed.
+    this._weaponRecoil = -3;
+    this.scene.time.delayedCall(60, () => { this._weaponRecoil = 0; });
   }
 
   _fireProjectile(angle, damage, color, radius, speed, isSkill) {
@@ -813,14 +793,11 @@ export default class Player {
       proj.strokeCircle(0, 0, radius * 1.15);
     }
 
-    // Spawn at the blunderbuss muzzle tip so bolts visibly emit from the weapon.
-    // Muzzle is at local x≈26 in the weapon texture, weapon origin pivot at x=4.
-    // Effective muzzle distance from container origin = (26 - 4) px in local space,
-    // scaled by container.scaleX (0.765) → ~17px in world space.
-    const MUZZLE_LOCAL = 22;
-    const muzzleDist = MUZZLE_LOCAL * this.container.scaleX;
-    proj.x = this.x + Math.cos(angle) * muzzleDist;
-    proj.y = this.y + Math.sin(angle) * muzzleDist;
+    // Spawn at the muzzle tip. Weapon orbits at 10px local, barrel adds 22px → 32px
+    // local total, × 0.765 scale ≈ 24px world-space from player center.
+    const MUZZLE_WORLD = 24;
+    proj.x = this.x + Math.cos(angle) * MUZZLE_WORLD;
+    proj.y = this.y + Math.sin(angle) * MUZZLE_WORLD;
     proj.setDepth(8);
 
     proj._vx = Math.cos(angle) * speed;
@@ -1193,7 +1170,11 @@ export default class Player {
     this._drawLegs(legSwing);
     this._updateFacing();
 
-    // Weapon tracks cursor — rotation transform only (no redraw)
+    // Weapon orbits body center at fixed radius, always pointing at cursor
+    const WEAPON_ORBIT_R = 10;
+    const orbitR = WEAPON_ORBIT_R + this._weaponRecoil;
+    this.weaponSprite.x = orbitR * Math.cos(this.facingAngle);
+    this.weaponSprite.y = orbitR * Math.sin(this.facingAngle);
     this.weaponSprite.rotation = this.facingAngle;
 
     // Update floating HP bar position
