@@ -271,8 +271,12 @@ export default class Player {
       proj.strokeCircle(0, 0, radius * 1.15);
     }
 
-    proj.x = this.x;
-    proj.y = this.y;
+    // Spawn offset: start projectile at the player's surface edge so it can never
+    // trigger boss hit detection on frame 1 (which would place the ring at the player).
+    const PLAYER_RADIUS = 16;
+    const spawnOffset = PLAYER_RADIUS + radius + 2;
+    proj.x = this.x + Math.cos(angle) * spawnOffset;
+    proj.y = this.y + Math.sin(angle) * spawnOffset;
     proj.setDepth(8);
 
     proj._vx = Math.cos(angle) * speed;
