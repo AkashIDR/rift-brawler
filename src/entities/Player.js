@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char11-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char12-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char11-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char12-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char11-${dir}`;
+      const key = `player-char12-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -288,13 +288,14 @@ export default class Player {
       ctx.fillRect(bx + 2, by + bh - 2, bw - 4, 2);   // belt line (inset to clear rounded corners)
     };
 
-    // Pauldron (tiny steel shoulder bump)
+    // Pauldron — flat wide disc sitting on the body corner, reads as a shoulder pad not an arm.
+    // rW > rH so it's wider than tall. Centered ON the body top edge, not outside it.
     const drawPauldron = (pcx, pcy) => {
-      const r = 4;
-      const g = ctx.createRadialGradient(pcx - 1, pcy - 1, 0.5, pcx, pcy, r);
+      const rW = 8, rH = 4;
+      const g = ctx.createRadialGradient(pcx - 2, pcy - 2, 0.5, pcx, pcy, rW);
       g.addColorStop(0, HELM_HI); g.addColorStop(0.6, HELM); g.addColorStop(1, HELM_LO);
       ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(pcx, pcy, r, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(pcx, pcy, rW, rH, 0, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5; ctx.stroke();
     };
 
@@ -351,8 +352,8 @@ export default class Player {
       ctx.strokeRect(ox - 1.5, oy + 3, 3, 6);
       ctx.strokeRect(ox - 4, oy + 5, 9, 3);
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
-      drawPauldron(bx - 2, oy + 2);      // left pauldron
-      drawPauldron(bx + 28, oy + 2);     // right pauldron (bx + bw + 2)
+      drawPauldron(bx + 4, oy + 1);       // left pauldron — on body corner, not outside
+      drawPauldron(bx + 22, oy + 1);     // right pauldron — on body corner
 
     } else if (dir === 'up') {
       drawHead();
@@ -364,9 +365,9 @@ export default class Player {
       drawEarGuard(ox - HR);        // left ear guard (flush with circle edge)
       drawEarGuard(ox + HR - 9);    // right ear guard (flush with circle edge)
       const bxU = ox - 13;   // bw=26 centered at ox
-      drawBody(bxU, 26, true);
-      drawPauldron(bxU - 2, oy + 2);    // left pauldron
-      drawPauldron(bxU + 28, oy + 2);   // right pauldron
+      drawBody(bxU, 26);               // no backLit — same top-bright gradient as all views
+      drawPauldron(bxU + 4, oy + 1);   // left pauldron — on body corner
+      drawPauldron(bxU + 22, oy + 1);  // right pauldron — on body corner
 
     } else { // left — side profile (mirrored for right via scaleX=-1)
       drawHead();
@@ -384,7 +385,7 @@ export default class Player {
       // Side body — same width as front/back (chibi style, no narrowing)
       const bxL = ox - 13;
       drawBody(bxL, 26);
-      drawPauldron(ox + 5, oy + 2);     // shoulder sits behind ear guard (x=40), not at front edge
+      drawPauldron(ox + 5, oy + 1);     // shoulder behind ear guard (x=40), on body top edge
     }
   }
 
@@ -522,7 +523,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char11-${dir}`);
+    this.characterSprite.setTexture(`player-char12-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
