@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char8-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char9-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char8-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char9-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char8-${dir}`;
+      const key = `player-char9-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -281,11 +281,11 @@ export default class Player {
       if (backLit) { g.addColorStop(0, BODY_LO); g.addColorStop(0.5, BODY); g.addColorStop(1, BODY_HI); }
       else          { g.addColorStop(0, BODY_HI); g.addColorStop(0.5, BODY); g.addColorStop(1, BODY_LO); }
       ctx.fillStyle = g;
-      rrect(ctx, bx, by, bw, bh, 3);
+      rrect(ctx, bx, by, bw, bh, 5);   // r=5 — noticeably rounded, not boxy
       ctx.fill();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = HELM_LO;
-      ctx.fillRect(bx, by + bh - 2, bw, 2);   // belt line
+      ctx.fillRect(bx + 2, by + bh - 2, bw - 4, 2);   // belt line (inset to clear rounded corners)
     };
 
     // Pauldron (tiny steel shoulder bump)
@@ -340,9 +340,9 @@ export default class Player {
       ctx.strokeStyle = '#7a4830'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(ox, HC + 21, 4, 0.3, Math.PI - 0.3); ctx.stroke();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
-      // Body
-      const bx = ox - 10;
-      drawBody(bx, 20);
+      // Body — bw=26, bx centered at ox
+      const bx = ox - 13;
+      drawBody(bx, 26);
       // Gold cross
       ctx.fillStyle = SHIELD;
       ctx.fillRect(ox - 1.5, oy + 3, 3, 6);
@@ -351,8 +351,8 @@ export default class Player {
       ctx.strokeRect(ox - 1.5, oy + 3, 3, 6);
       ctx.strokeRect(ox - 4, oy + 5, 9, 3);
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
-      drawPauldron(bx - 2, oy + 2);
-      drawPauldron(bx + 22, oy + 2);
+      drawPauldron(bx - 2, oy + 2);      // left pauldron
+      drawPauldron(bx + 28, oy + 2);     // right pauldron (bx + bw + 2)
 
     } else if (dir === 'up') {
       drawHead();
@@ -363,10 +363,10 @@ export default class Player {
       ctx.globalAlpha = 1.0; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
       drawEarGuard(ox - HR);        // left ear guard (flush with circle edge)
       drawEarGuard(ox + HR - 9);    // right ear guard (flush with circle edge)
-      const bxU = ox - 10;
-      drawBody(bxU, 20, true);
-      drawPauldron(bxU - 2, oy + 2);
-      drawPauldron(bxU + 22, oy + 2);
+      const bxU = ox - 13;   // bw=26 centered at ox
+      drawBody(bxU, 26, true);
+      drawPauldron(bxU - 2, oy + 2);    // left pauldron
+      drawPauldron(bxU + 28, oy + 2);   // right pauldron
 
     } else { // left — side profile (mirrored for right via scaleX=-1)
       drawHead();
@@ -381,10 +381,10 @@ export default class Player {
       ctx.beginPath(); ctx.arc(ox - 24, HC + 13, 1.5, 0, Math.PI * 2); ctx.fill();
       // Shield
       drawShield(ox - 30, oy + 2);
-      // Narrower body
-      const bxL = ox - 7;
-      drawBody(bxL, 15);
-      drawPauldron(bxL - 2, oy + 2);
+      // Narrower body for side profile — bw=19, centered at ox
+      const bxL = ox - 10;
+      drawBody(bxL, 19);
+      drawPauldron(bxL - 2, oy + 2);   // near-side shoulder
     }
   }
 
@@ -488,8 +488,11 @@ export default class Player {
     const boot = COLORS.PLAYER_BODY_LO;
     const outl = 0x1a1a2a;
 
-    const liftL = moving ? -Math.max(0,  Math.sin(legPhase)) * 3 : 0;
-    const liftR = moving ? -Math.max(0, -Math.sin(legPhase)) * 3 : 0;
+    const liftL  = moving ? -Math.max(0,  Math.sin(legPhase)) * 3 : 0;
+    const liftR  = moving ? -Math.max(0, -Math.sin(legPhase)) * 3 : 0;
+    // Horizontal swing: foot swings forward (toward center) when lifted
+    const swingL = moving ?  Math.sin(legPhase) * 3 : 0;
+    const swingR = moving ? -Math.sin(legPhase) * 3 : 0;
 
     const drawBlob = (g, cx, liftY) => {
       g.clear();
@@ -499,8 +502,8 @@ export default class Player {
       g.strokeEllipse(cx, 15 + liftY, 10, 8);
     };
 
-    drawBlob(this.gLegL, -7, liftL);
-    drawBlob(this.gLegR,  7, liftR);
+    drawBlob(this.gLegL, -7 + swingL, liftL);
+    drawBlob(this.gLegR,  7 + swingR, liftR);
   }
 
   // ─── Facing direction update ──────────────────────────────────────────────
@@ -519,7 +522,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char8-${dir}`);
+    this.characterSprite.setTexture(`player-char9-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
@@ -996,10 +999,25 @@ export default class Player {
       }
     }
 
-    // Idle bob — gentle whole-body y nudge (no redraw)
+    // Idle bob — nudge the entire container (body + legs move as one unit).
+    // Shadow stays at this.y (world space) so it doesn't float with the bob.
+    // Skip during dash — the tween owns container.y then.
     this._idleTimer += dt;
-    const bobOffset = this.moving ? 0 : Math.sin(this._idleTimer * 2.2) * 2;
-    this.characterSprite.y = bobOffset;
+    if (!this.isDodging) {
+      const bobOffset = this.moving ? 0 : Math.sin(this._idleTimer * 2.2) * 2;
+      this.container.y = this.y + bobOffset;
+    }
+
+    // Walk squish — scale-pulse the container in rhythm with foot landings.
+    // Squish peaks when |sin(legPhase)|≈0 (both feet on ground = landing moment).
+    // scaleX widens slightly, scaleY shortens — classic cartoon squash-and-stretch.
+    if (this.moving && !this.isDodging) {
+      const s = (1 - Math.abs(Math.sin(this._legPhase))) * 0.06;
+      this.container.scaleX = 0.765 * (1 + s);
+      this.container.scaleY = 0.765 * (1 - s * 0.65);
+    } else {
+      this.container.scaleX = this.container.scaleY = 0.765;
+    }
 
     // Leg marching bob + facing update
     this._drawLegs(this._legPhase, this.moving);
