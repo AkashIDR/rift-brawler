@@ -999,23 +999,26 @@ export default class Player {
       }
     }
 
-    // Idle bob — nudge the entire container (body + legs move as one unit).
-    // Shadow stays at this.y (world space) so it doesn't float with the bob.
-    // Skip during dash — the tween owns container.y then.
+    // Keep container Y locked to world position — no vertical bob (would drift over shadow).
     this._idleTimer += dt;
     if (!this.isDodging) {
-      const bobOffset = this.moving ? 0 : Math.sin(this._idleTimer * 2.2) * 2;
-      this.container.y = this.y + bobOffset;
+      this.container.y = this.y;
     }
 
-    // Walk squish — scale-pulse the container in rhythm with foot landings.
-    // Squish peaks when |sin(legPhase)|≈0 (both feet on ground = landing moment).
-    // scaleX widens slightly, scaleY shortens — classic cartoon squash-and-stretch.
+    // Scale animation — walk squish on foot-landings, idle breathe squish in place.
+    // Both operate purely on scale so the character stays grounded on its shadow.
     if (this.moving && !this.isDodging) {
+      // Walk squish: peaks when |sin(legPhase)|≈0 (both feet on ground = landing)
       const s = (1 - Math.abs(Math.sin(this._legPhase))) * 0.06;
       this.container.scaleX = 0.765 * (1 + s);
       this.container.scaleY = 0.765 * (1 - s * 0.65);
+    } else if (!this.isDodging) {
+      // Idle breathe: very subtle ±3% height pulse, ±1.2% width compensation
+      const breathe = Math.sin(this._idleTimer * 2.2) * 0.03;
+      this.container.scaleX = 0.765 * (1 + breathe * 0.4);
+      this.container.scaleY = 0.765 * (1 - breathe);
     } else {
+      // Dodging — flat scale; dash tween owns container position
       this.container.scaleX = this.container.scaleY = 0.765;
     }
 
