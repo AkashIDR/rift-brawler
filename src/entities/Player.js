@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char10-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char11-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char10-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char11-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char10-${dir}`;
+      const key = `player-char11-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -384,7 +384,7 @@ export default class Player {
       // Side body — same width as front/back (chibi style, no narrowing)
       const bxL = ox - 13;
       drawBody(bxL, 26);
-      drawPauldron(bxL - 2, oy + 2);   // near-side shoulder
+      drawPauldron(ox + 5, oy + 2);     // shoulder sits behind ear guard (x=40), not at front edge
     }
   }
 
@@ -522,7 +522,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char10-${dir}`);
+    this.characterSprite.setTexture(`player-char11-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
