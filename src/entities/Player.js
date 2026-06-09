@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char21-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char22-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char21-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char22-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char21-${dir}`;
+      const key = `player-char22-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -303,7 +303,18 @@ export default class Player {
       fg.addColorStop(0.55, SKIN);
       fg.addColorStop(1.0,  SKIN_LO);
       ctx.fillStyle = fg;
-      ctx.beginPath(); ctx.ellipse(ox, HC + 15, 19, 10.5, 0, 0, Math.PI * 2); ctx.fill();
+      // Wide flat top (hidden under the brim band) so skin reaches the rim between
+      // the eyes and the cheek guards — no steel bleed below the band; sides bulge
+      // to the guards, bottom is a flattened oval chin
+      ctx.beginPath();
+      ctx.moveTo(ox - 16, HC + 4);
+      ctx.quadraticCurveTo(ox - 20, HC + 5,  ox - 19, HC + 13);
+      ctx.quadraticCurveTo(ox - 18, HC + 22, ox - 7,  HC + 25);
+      ctx.quadraticCurveTo(ox,      HC + 26.5, ox + 7, HC + 25);
+      ctx.quadraticCurveTo(ox + 18, HC + 22, ox + 19, HC + 13);
+      ctx.quadraticCurveTo(ox + 20, HC + 5,  ox + 16, HC + 4);
+      ctx.closePath();
+      ctx.fill();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
 
       // Steel wedge filling the V notch — no skin/gap visible between the V band
@@ -663,7 +674,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char21-${dir}`);
+    this.characterSprite.setTexture(`player-char22-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
