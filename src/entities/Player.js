@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char18-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char19-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char18-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char19-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char18-${dir}`;
+      const key = `player-char19-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -290,34 +290,45 @@ export default class Player {
       }
       ctx.globalAlpha = 1.0;
 
-      // 2. Face window — skin ellipse carved into the lower center
+      // 2. Face window — wide skin oval carved into the lower center (wider than
+      // tall — the cuddly squashed-oval face of the reference, not a circle)
       const fg = ctx.createRadialGradient(
-        ox - 6, HC + 7, 3,
-        ox, HC + 13, 19
+        ox - 6, HC + 8, 3,
+        ox, HC + 14, 20
       );
       fg.addColorStop(0,    SKIN_HI);
       fg.addColorStop(0.55, SKIN);
       fg.addColorStop(1.0,  SKIN_LO);
       ctx.fillStyle = fg;
-      ctx.beginPath(); ctx.ellipse(ox, HC + 13, 18, 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ox, HC + 14, 19, 12, 0, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
+
+      // Steel wedge filling the V notch — no skin/gap visible between the V band
+      // and the dome behind it
+      ctx.fillStyle = HELM;
+      ctx.beginPath();
+      ctx.moveTo(ox - 13, HC + 2);
+      ctx.lineTo(ox, HC + 7);
+      ctx.lineTo(ox + 13, HC + 2);
+      ctx.closePath();
+      ctx.fill();
 
       // 5. Vertical crest band (drawn before the brim so the V overlaps its base)
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(ox, HC - HR - 1);
-      ctx.lineTo(ox, HC + 7);
+      ctx.lineTo(ox, HC + 6);
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 7.5; ctx.stroke();
       ctx.strokeStyle = HELM_LO; ctx.lineWidth = 4.5; ctx.stroke();
 
-      // 3. Brim band with V nasal point
+      // 3. Brim band with a shallow V nasal point; near-flat side sweeps
       const brimPath = () => {
         ctx.beginPath();
-        ctx.moveTo(ox - 23, HC + 14);
-        ctx.quadraticCurveTo(ox - 22, HC + 2, ox - 12, HC + 1);
-        ctx.lineTo(ox, HC + 9);
-        ctx.lineTo(ox + 12, HC + 1);
-        ctx.quadraticCurveTo(ox + 22, HC + 2, ox + 23, HC + 14);
+        ctx.moveTo(ox - 25, HC + 9);
+        ctx.quadraticCurveTo(ox - 21, HC + 3, ox - 13, HC + 2);
+        ctx.lineTo(ox, HC + 6.5);
+        ctx.lineTo(ox + 13, HC + 2);
+        ctx.quadraticCurveTo(ox + 21, HC + 3, ox + 25, HC + 9);
       };
       ctx.lineJoin = 'miter';
       brimPath();
@@ -328,10 +339,10 @@ export default class Player {
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
 
       // 4. Ring rivets — band sweeps and crest
-      drawRingRivet(ox - 19, HC + 8);
-      drawRingRivet(ox - 11, HC + 1.5);
-      drawRingRivet(ox + 11, HC + 1.5);
-      drawRingRivet(ox + 19, HC + 8);
+      drawRingRivet(ox - 19, HC + 4.5);
+      drawRingRivet(ox - 10, HC + 2.5);
+      drawRingRivet(ox + 10, HC + 2.5);
+      drawRingRivet(ox + 19, HC + 4.5);
       drawRingRivet(ox, HC - 19);
       drawRingRivet(ox, HC - 9);
 
@@ -432,8 +443,8 @@ export default class Player {
       drawEye(ox + 10, HC + 12);
       // Cheeks
       ctx.fillStyle = 'rgba(255,120,120,0.50)';
-      ctx.beginPath(); ctx.ellipse(ox - 15, HC + 19, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(ox + 15, HC + 19, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ox - 13, HC + 18, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ox + 13, HC + 18, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
       // Nose
       ctx.fillStyle = SKIN_LO;
       ctx.beginPath(); ctx.arc(ox, HC + 17, 1.3, 0, Math.PI * 2); ctx.fill();
@@ -623,7 +634,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char18-${dir}`);
+    this.characterSprite.setTexture(`player-char19-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
