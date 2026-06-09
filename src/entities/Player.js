@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char17-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char18-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char17-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char18-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char17-${dir}`;
+      const key = `player-char18-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -246,6 +246,109 @@ export default class Player {
       ctx.lineWidth = 1.5; ctx.strokeStyle = OUTLINE;
     };
 
+    // Ring rivet — chunky donut rivet (light disc + dark center hole)
+    const drawRingRivet = (rx, ry) => {
+      ctx.fillStyle = HELM_HI;
+      ctx.beginPath(); ctx.arc(rx, ry, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 0.8; ctx.stroke();
+      ctx.fillStyle = OUTLINE;
+      ctx.beginPath(); ctx.arc(rx, ry, 1.0, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 1.5;
+    };
+
+    // FRONT-VIEW helmet — steel wraps down the sides to the jaw; the face is a small
+    // window in the lower center. Brim band sweeps over the eyes into a center V nasal
+    // point, its ends curving down around the face window. Vertical riveted crest band
+    // up the dome center, gold finial at the crown.
+    const drawHelmFront = () => {
+      // 1. Full steel over the entire head circle
+      const g = ctx.createRadialGradient(
+        ox - HR * 0.25, HC - HR * 0.50, 2,
+        ox, HC, HR * 1.05
+      );
+      g.addColorStop(0,    HELM_HI);
+      g.addColorStop(0.55, HELM);
+      g.addColorStop(1.0,  HELM_LO);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(ox, HC, HR, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
+
+      // Specular hotspot (upper-left)
+      ctx.fillStyle = HELM_HI;
+      ctx.globalAlpha = 0.50;
+      ctx.beginPath();
+      ctx.ellipse(ox - HR * 0.28, HC - HR * 0.52, HR * 0.30, HR * 0.14, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+
+      // Speckle texture on the dome
+      ctx.fillStyle = HELM_HI;
+      ctx.globalAlpha = 0.35;
+      const speckles = [[-14, -12], [10, -16], [17, -6], [-19, -2], [6, -7]];
+      for (const [dx, dy] of speckles) {
+        ctx.beginPath(); ctx.arc(ox + dx, HC + dy, 1.1, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1.0;
+
+      // 2. Face window — skin ellipse carved into the lower center
+      const fg = ctx.createRadialGradient(
+        ox - 6, HC + 7, 3,
+        ox, HC + 13, 19
+      );
+      fg.addColorStop(0,    SKIN_HI);
+      fg.addColorStop(0.55, SKIN);
+      fg.addColorStop(1.0,  SKIN_LO);
+      ctx.fillStyle = fg;
+      ctx.beginPath(); ctx.ellipse(ox, HC + 13, 18, 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
+
+      // 5. Vertical crest band (drawn before the brim so the V overlaps its base)
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(ox, HC - HR - 1);
+      ctx.lineTo(ox, HC + 7);
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 7.5; ctx.stroke();
+      ctx.strokeStyle = HELM_LO; ctx.lineWidth = 4.5; ctx.stroke();
+
+      // 3. Brim band with V nasal point
+      const brimPath = () => {
+        ctx.beginPath();
+        ctx.moveTo(ox - 23, HC + 14);
+        ctx.quadraticCurveTo(ox - 22, HC + 2, ox - 12, HC + 1);
+        ctx.lineTo(ox, HC + 9);
+        ctx.lineTo(ox + 12, HC + 1);
+        ctx.quadraticCurveTo(ox + 22, HC + 2, ox + 23, HC + 14);
+      };
+      ctx.lineJoin = 'miter';
+      brimPath();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 8; ctx.stroke();
+      brimPath();
+      ctx.strokeStyle = HELM_LO; ctx.lineWidth = 5; ctx.stroke();
+      ctx.lineCap = 'butt'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+
+      // 4. Ring rivets — band sweeps and crest
+      drawRingRivet(ox - 19, HC + 8);
+      drawRingRivet(ox - 11, HC + 1.5);
+      drawRingRivet(ox + 11, HC + 1.5);
+      drawRingRivet(ox + 19, HC + 8);
+      drawRingRivet(ox, HC - 19);
+      drawRingRivet(ox, HC - 9);
+
+      // 6. Gold finial at the crown — round base with a pointed tip
+      const fy = HC - HR - 3;
+      ctx.fillStyle = SHIELD_HI;
+      ctx.beginPath();
+      ctx.moveTo(ox - 2.5, fy);
+      ctx.quadraticCurveTo(ox - 2, fy - 5, ox, fy - 7);
+      ctx.quadraticCurveTo(ox + 2, fy - 5, ox + 2.5, fy);
+      ctx.arc(ox, fy, 2.5, 0, Math.PI);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = SHIELD; ctx.lineWidth = 1; ctx.stroke();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+    };
+
     // Ear guard (side tab extending below the brim).
     // ex = left edge of the guard rect in canvas pixels.
     // Front/back views: ex = ox-HR (left) or ox+HR-9 (right) — flush with circle edges.
@@ -324,21 +427,19 @@ export default class Player {
 
     if (dir === 'down') {
       drawHead();
-      drawHelmet(5);
-      drawEarGuard(ox - HR);        // left ear guard (flush with circle edge)
-      drawEarGuard(ox + HR - 9);    // right ear guard (flush with circle edge)
-      drawEye(ox - 12, HC + 11);
-      drawEye(ox + 12, HC + 11);
+      drawHelmFront();
+      drawEye(ox - 10, HC + 12);
+      drawEye(ox + 10, HC + 12);
       // Cheeks
       ctx.fillStyle = 'rgba(255,120,120,0.50)';
-      ctx.beginPath(); ctx.ellipse(ox - 17, HC + 17, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(ox + 17, HC + 17, 5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ox - 15, HC + 19, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ox + 15, HC + 19, 4.5, 3, 0, 0, Math.PI * 2); ctx.fill();
       // Nose
       ctx.fillStyle = SKIN_LO;
-      ctx.beginPath(); ctx.arc(ox, HC + 14, 1.3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ox, HC + 17, 1.3, 0, Math.PI * 2); ctx.fill();
       // Smile
       ctx.strokeStyle = '#7a4830'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(ox, HC + 21, 4, 0.3, Math.PI - 0.3); ctx.stroke();
+      ctx.beginPath(); ctx.arc(ox, HC + 22, 4, 0.3, Math.PI - 0.3); ctx.stroke();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
       // Body — bw=26, bx centered at ox
       const bx = ox - 13;
@@ -522,7 +623,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char17-${dir}`);
+    this.characterSprite.setTexture(`player-char18-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
