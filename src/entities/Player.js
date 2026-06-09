@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char19-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char20-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char19-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char20-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char19-${dir}`;
+      const key = `player-char20-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -161,6 +161,9 @@ export default class Player {
     const HELM    = hx(COLORS.PLAYER_HELMET);
     const HELM_HI = hx(COLORS.PLAYER_HELMET_HI);
     const HELM_LO = hx(COLORS.PLAYER_HELMET_LO);
+    const CHAIN    = hx(COLORS.PLAYER_CHAINMAIL);
+    const CHAIN_HI = hx(COLORS.PLAYER_CHAINMAIL_HI);
+    const CHAIN_LO = hx(COLORS.PLAYER_CHAINMAIL_LO);
     const SHIELD  = hx(COLORS.PLAYER_SHIELD);
     const SHIELD_HI = hx(COLORS.PLAYER_SHIELD_HI);
     const SHIELD_LO = hx(COLORS.PLAYER_SHIELD_LO);
@@ -321,14 +324,42 @@ export default class Player {
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 7.5; ctx.stroke();
       ctx.strokeStyle = HELM_LO; ctx.lineWidth = 4.5; ctx.stroke();
 
-      // 3. Brim band with a shallow V nasal point; near-flat side sweeps
+      // Chainmail cheek guards — hang from the helmet rim, framing the face sides
+      // down to the jaw. Drawn BEFORE the brim band so the band overlaps their tops
+      // (they read as part of the helmet, not straps tied behind the head).
+      const drawCheekGuard = (side) => {   // side: -1 left, +1 right
+        const gx = side < 0 ? ox - 26 : ox + 16;   // 10 wide
+        const cg = ctx.createLinearGradient(gx, HC + 4, gx + 10, HC + 4);
+        if (side < 0) { cg.addColorStop(0, CHAIN_LO); cg.addColorStop(0.6, CHAIN); cg.addColorStop(1, CHAIN_HI); }
+        else          { cg.addColorStop(0, CHAIN_HI); cg.addColorStop(0.4, CHAIN); cg.addColorStop(1, CHAIN_LO); }
+        ctx.fillStyle = cg;
+        rrect(ctx, gx, HC + 4, 10, 18,
+          side < 0 ? { tl: 4, tr: 2, bl: 9, br: 6 } : { tl: 2, tr: 4, bl: 6, br: 9 });
+        ctx.fill();
+        ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
+        // Chainmail link hint — offset rows of small arcs
+        ctx.strokeStyle = CHAIN_LO; ctx.lineWidth = 0.8; ctx.globalAlpha = 0.55;
+        for (let row = 0; row < 4; row++) {
+          const ly = HC + 8 + row * 3.5;
+          for (let c = 0; c < 2; c++) {
+            const lx = gx + 3 + c * 4 + (row % 2 ? 2 : 0);
+            ctx.beginPath(); ctx.arc(lx, ly, 1.6, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = 1.0; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
+      };
+      drawCheekGuard(-1);
+      drawCheekGuard(1);
+
+      // 3. Brim band with a shallow V nasal point; near-flat ends landing on the
+      // cheek guards' tops
       const brimPath = () => {
         ctx.beginPath();
-        ctx.moveTo(ox - 25, HC + 9);
-        ctx.quadraticCurveTo(ox - 21, HC + 3, ox - 13, HC + 2);
+        ctx.moveTo(ox - 25, HC + 7);
+        ctx.quadraticCurveTo(ox - 20, HC + 3, ox - 13, HC + 2);
         ctx.lineTo(ox, HC + 6.5);
         ctx.lineTo(ox + 13, HC + 2);
-        ctx.quadraticCurveTo(ox + 21, HC + 3, ox + 25, HC + 9);
+        ctx.quadraticCurveTo(ox + 20, HC + 3, ox + 25, HC + 7);
       };
       ctx.lineJoin = 'miter';
       brimPath();
@@ -634,7 +665,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char19-${dir}`);
+    this.characterSprite.setTexture(`player-char20-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 

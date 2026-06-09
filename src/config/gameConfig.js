@@ -159,6 +159,9 @@ export const COLORS = {
   PLAYER_HELMET: 0x8faab8,  // steel base
   PLAYER_HELMET_HI: 0xc8d8e2, // steel highlight
   PLAYER_HELMET_LO: 0x556878, // steel shadow
+  PLAYER_CHAINMAIL: 0x6b7785,    // chainmail cheek guards — desaturated gray, darker than steel
+  PLAYER_CHAINMAIL_HI: 0x9aa5b0, // chainmail highlight
+  PLAYER_CHAINMAIL_LO: 0x3e4854, // chainmail shadow
   PLAYER_SHIELD: 0xf0c040,  // gold base
   PLAYER_SHIELD_HI: 0xffe480, // gold highlight
   PLAYER_SHIELD_LO: 0xa07810, // gold shadow
