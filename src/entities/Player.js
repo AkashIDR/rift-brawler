@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char20-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char21-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char20-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char21-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char20-${dir}`;
+      const key = `player-char21-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -303,7 +303,7 @@ export default class Player {
       fg.addColorStop(0.55, SKIN);
       fg.addColorStop(1.0,  SKIN_LO);
       ctx.fillStyle = fg;
-      ctx.beginPath(); ctx.ellipse(ox, HC + 14, 19, 12, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ox, HC + 15, 19, 10.5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
 
       // Steel wedge filling the V notch — no skin/gap visible between the V band
@@ -328,23 +328,21 @@ export default class Player {
       // down to the jaw. Drawn BEFORE the brim band so the band overlaps their tops
       // (they read as part of the helmet, not straps tied behind the head).
       const drawCheekGuard = (side) => {   // side: -1 left, +1 right
-        const gx = side < 0 ? ox - 26 : ox + 16;   // 10 wide
-        const cg = ctx.createLinearGradient(gx, HC + 4, gx + 10, HC + 4);
+        const gx = side < 0 ? ox - 26 : ox + 19;   // 7 wide, hugging the rim edge
+        const cg = ctx.createLinearGradient(gx, HC + 4, gx + 7, HC + 4);
         if (side < 0) { cg.addColorStop(0, CHAIN_LO); cg.addColorStop(0.6, CHAIN); cg.addColorStop(1, CHAIN_HI); }
         else          { cg.addColorStop(0, CHAIN_HI); cg.addColorStop(0.4, CHAIN); cg.addColorStop(1, CHAIN_LO); }
         ctx.fillStyle = cg;
-        rrect(ctx, gx, HC + 4, 10, 18,
-          side < 0 ? { tl: 4, tr: 2, bl: 9, br: 6 } : { tl: 2, tr: 4, bl: 6, br: 9 });
+        rrect(ctx, gx, HC + 4, 7, 18,
+          side < 0 ? { tl: 3, tr: 2, bl: 7, br: 5 } : { tl: 2, tr: 3, bl: 5, br: 7 });
         ctx.fill();
         ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
         // Chainmail link hint — offset rows of small arcs
         ctx.strokeStyle = CHAIN_LO; ctx.lineWidth = 0.8; ctx.globalAlpha = 0.55;
         for (let row = 0; row < 4; row++) {
           const ly = HC + 8 + row * 3.5;
-          for (let c = 0; c < 2; c++) {
-            const lx = gx + 3 + c * 4 + (row % 2 ? 2 : 0);
-            ctx.beginPath(); ctx.arc(lx, ly, 1.6, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
-          }
+          const lx = gx + 2.5 + (row % 2 ? 1.5 : 0);
+          ctx.beginPath(); ctx.arc(lx, ly, 1.6, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
         }
         ctx.globalAlpha = 1.0; ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
       };
@@ -665,7 +663,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char20-${dir}`);
+    this.characterSprite.setTexture(`player-char21-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
