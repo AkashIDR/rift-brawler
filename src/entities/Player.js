@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char23-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char24-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char23-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char24-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char23-${dir}`;
+      const key = `player-char24-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -438,17 +438,18 @@ export default class Player {
       }
       ctx.globalAlpha = 1.0;
 
-      // 2. Chainmail curtain — full-width aventail hanging below the rim
+      // 2. Chainmail curtain — narrow elliptical sliver hugging the rim band's curve,
+      // hanging just below the helmet silhouette (the dome owns most of the head)
       const curtainPath = () => {
         ctx.beginPath();
-        ctx.moveTo(ox - 25, HC + 5);
-        ctx.quadraticCurveTo(ox - 26, HC + 18,   ox - 20, HC + 24);
-        ctx.quadraticCurveTo(ox - 10, HC + 28.5, ox,      HC + 28.5);
-        ctx.quadraticCurveTo(ox + 10, HC + 28.5, ox + 20, HC + 24);
-        ctx.quadraticCurveTo(ox + 26, HC + 18,   ox + 25, HC + 5);
+        ctx.moveTo(ox - 24, HC + 11);
+        ctx.quadraticCurveTo(ox, HC + 25, ox + 24, HC + 11);    // top edge (under band)
+        ctx.quadraticCurveTo(ox + 25, HC + 16, ox + 22, HC + 19); // right hang
+        ctx.quadraticCurveTo(ox, HC + 35, ox - 22, HC + 19);    // bottom hem, same ellipse pulled lower
+        ctx.quadraticCurveTo(ox - 25, HC + 16, ox - 24, HC + 11); // left hang
         ctx.closePath();
       };
-      const cg = ctx.createLinearGradient(0, HC + 5, 0, HC + 28.5);
+      const cg = ctx.createLinearGradient(0, HC + 11, 0, HC + 28);
       cg.addColorStop(0,   CHAIN_HI);
       cg.addColorStop(0.45, CHAIN);
       cg.addColorStop(1,   CHAIN_LO);
@@ -461,8 +462,8 @@ export default class Player {
       curtainPath();
       ctx.clip();
       ctx.strokeStyle = CHAIN_LO; ctx.lineWidth = 0.8; ctx.globalAlpha = 0.55;
-      for (let row = 0; row < 6; row++) {
-        const ly = HC + 9 + row * 3.5;
+      for (let row = 0; row < 4; row++) {
+        const ly = HC + 16 + row * 3.5;
         for (let col = -5; col <= 5; col++) {
           const lx = ox + col * 5 + (row % 2 ? 2.5 : 0);
           ctx.beginPath(); ctx.arc(lx, ly, 1.6, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
@@ -475,15 +476,16 @@ export default class Player {
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(ox, HC - HR - 1);
-      ctx.lineTo(ox, HC + 9);
+      ctx.lineTo(ox, HC + 19);
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 7.5; ctx.stroke();
       ctx.strokeStyle = HELM_LO; ctx.lineWidth = 4.5; ctx.stroke();
 
-      // 4. ∪ rim band — oval curve pulled toward the bottom across the back
+      // 4. ∪ rim band — sits LOW on the head (dome stretched down); the curve's
+      // center dip nearly reaches the circle bottom
       const bandPath = () => {
         ctx.beginPath();
-        ctx.moveTo(ox - 26, HC + 3);
-        ctx.quadraticCurveTo(ox, HC + 14, ox + 26, HC + 3);
+        ctx.moveTo(ox - 24, HC + 12);
+        ctx.quadraticCurveTo(ox, HC + 26, ox + 24, HC + 12);
       };
       bandPath();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 8; ctx.stroke();
@@ -493,13 +495,14 @@ export default class Player {
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
 
       // 5. Ring rivets — along the ∪ midline + crest
-      drawRingRivet(ox - 20, HC + 5.2);
-      drawRingRivet(ox - 10, HC + 7.7);
-      drawRingRivet(ox,      HC + 8.5);
-      drawRingRivet(ox + 10, HC + 7.7);
-      drawRingRivet(ox + 20, HC + 5.2);
+      drawRingRivet(ox - 19, HC + 14.6);
+      drawRingRivet(ox - 10, HC + 17.8);
+      drawRingRivet(ox,      HC + 19);
+      drawRingRivet(ox + 10, HC + 17.8);
+      drawRingRivet(ox + 19, HC + 14.6);
       drawRingRivet(ox, HC - 19);
       drawRingRivet(ox, HC - 9);
+      drawRingRivet(ox, HC + 1);
 
       // 6. Gold finial
       drawFinial();
@@ -773,7 +776,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char23-${dir}`);
+    this.characterSprite.setTexture(`player-char24-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
