@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char27-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char28-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char27-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char28-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char27-${dir}`;
+      const key = `player-char28-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -443,12 +443,12 @@ export default class Player {
       const curtainPath = () => {
         ctx.beginPath();
         // Top edge = circular arc along the band (left→right through the dip):
-        // through (±24, HC+10) and (ox, HC+16) → R=51, center (ox, HC-35)
-        ctx.arc(ox, HC - 35, 51, Math.atan2(45, -24), Math.atan2(45, 24), true);
-        ctx.lineTo(ox + 23, HC + 21);                           // right edge, slight taper
-        // Hem = circular arc (right→left) through (±23, HC+21) and (ox, HC+28.5):
-        // R=39, center (ox, HC-10.5); lowest point clears the circle bottom
-        ctx.arc(ox, HC - 10.5, 39, Math.atan2(31.5, 23), Math.atan2(31.5, -23), false);
+        // through (±24, HC+8) and (ox, HC+16) → R=40, center (ox, HC-24)
+        ctx.arc(ox, HC - 24, 40, Math.atan2(32, -24), Math.atan2(32, 24), true);
+        ctx.lineTo(ox + 23, HC + 19);                           // right edge, slight taper
+        // Hem = circular arc (right→left) through (±23, HC+19) and (ox, HC+28.5):
+        // R=32.6, center (ox, HC-4.1); lowest point clears the circle bottom
+        ctx.arc(ox, HC - 4.1, 32.6, Math.atan2(23.1, 23), Math.atan2(23.1, -23), false);
         ctx.closePath();                                        // left edge
       };
       const cg = ctx.createLinearGradient(0, HC + 10, 0, HC + 30);
@@ -482,11 +482,11 @@ export default class Player {
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 7.5; ctx.stroke();
       ctx.strokeStyle = HELM_LO; ctx.lineWidth = 4.5; ctx.stroke();
 
-      // 4. ∪ rim band — circular arc: same endpoints (±24, HC+10) and same center dip
-      // (HC+16), curvature spread evenly across the whole band (not just the edges)
+      // 4. ∪ rim band — circular arc: ends raised to (±24, HC+8), center dip kept at
+      // (HC+16) — tighter R=40 arc, curvature spread evenly across the whole band
       const bandPath = () => {
         ctx.beginPath();
-        ctx.arc(ox, HC - 35, 51, Math.atan2(45, -24), Math.atan2(45, 24), true);
+        ctx.arc(ox, HC - 24, 40, Math.atan2(32, -24), Math.atan2(32, 24), true);
       };
       bandPath();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 8; ctx.stroke();
@@ -495,12 +495,12 @@ export default class Player {
       ctx.lineCap = 'butt';
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
 
-      // 5. Ring rivets — on the arc midline: y = HC-35 + sqrt(51² − x²)
-      drawRingRivet(ox - 19, HC + 12.3);
-      drawRingRivet(ox - 10, HC + 15);
+      // 5. Ring rivets — on the arc midline: y = HC-24 + sqrt(40² − x²)
+      drawRingRivet(ox - 19, HC + 11.2);
+      drawRingRivet(ox - 10, HC + 14.7);
       drawRingRivet(ox,      HC + 16);
-      drawRingRivet(ox + 10, HC + 15);
-      drawRingRivet(ox + 19, HC + 12.3);
+      drawRingRivet(ox + 10, HC + 14.7);
+      drawRingRivet(ox + 19, HC + 11.2);
       drawRingRivet(ox, HC - 19);
       drawRingRivet(ox, HC - 9);
       drawRingRivet(ox, HC + 1);
@@ -777,7 +777,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char27-${dir}`);
+    this.characterSprite.setTexture(`player-char28-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
