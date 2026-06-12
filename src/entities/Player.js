@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char24-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char25-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char24-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char25-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char24-${dir}`;
+      const key = `player-char25-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -442,14 +442,13 @@ export default class Player {
       // hanging just below the helmet silhouette (the dome owns most of the head)
       const curtainPath = () => {
         ctx.beginPath();
-        ctx.moveTo(ox - 24, HC + 11);
-        ctx.quadraticCurveTo(ox, HC + 25, ox + 24, HC + 11);    // top edge (under band)
-        ctx.quadraticCurveTo(ox + 25, HC + 16, ox + 22, HC + 19); // right hang
-        ctx.quadraticCurveTo(ox, HC + 35, ox - 22, HC + 19);    // bottom hem, same ellipse pulled lower
-        ctx.quadraticCurveTo(ox - 25, HC + 16, ox - 24, HC + 11); // left hang
-        ctx.closePath();
+        ctx.moveTo(ox - 24, HC + 10);
+        ctx.quadraticCurveTo(ox, HC + 22, ox + 24, HC + 10);   // top edge = band curve (hidden)
+        ctx.lineTo(ox + 23, HC + 18);                           // right edge, slight taper
+        ctx.quadraticCurveTo(ox, HC + 30, ox - 23, HC + 18);   // hem parallel to the band ellipse
+        ctx.closePath();                                        // left edge
       };
-      const cg = ctx.createLinearGradient(0, HC + 11, 0, HC + 28);
+      const cg = ctx.createLinearGradient(0, HC + 10, 0, HC + 28);
       cg.addColorStop(0,   CHAIN_HI);
       cg.addColorStop(0.45, CHAIN);
       cg.addColorStop(1,   CHAIN_LO);
@@ -476,16 +475,16 @@ export default class Player {
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(ox, HC - HR - 1);
-      ctx.lineTo(ox, HC + 19);
+      ctx.lineTo(ox, HC + 16);
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 7.5; ctx.stroke();
       ctx.strokeStyle = HELM_LO; ctx.lineWidth = 4.5; ctx.stroke();
 
-      // 4. ∪ rim band — sits LOW on the head (dome stretched down); the curve's
-      // center dip nearly reaches the circle bottom
+      // 4. ∪ rim band — sits low on the head (dome stretched down), center dip
+      // about two-thirds of the way to the circle bottom
       const bandPath = () => {
         ctx.beginPath();
-        ctx.moveTo(ox - 24, HC + 12);
-        ctx.quadraticCurveTo(ox, HC + 26, ox + 24, HC + 12);
+        ctx.moveTo(ox - 24, HC + 10);
+        ctx.quadraticCurveTo(ox, HC + 22, ox + 24, HC + 10);
       };
       bandPath();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 8; ctx.stroke();
@@ -495,11 +494,11 @@ export default class Player {
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
 
       // 5. Ring rivets — along the ∪ midline + crest
-      drawRingRivet(ox - 19, HC + 14.6);
-      drawRingRivet(ox - 10, HC + 17.8);
-      drawRingRivet(ox,      HC + 19);
-      drawRingRivet(ox + 10, HC + 17.8);
-      drawRingRivet(ox + 19, HC + 14.6);
+      drawRingRivet(ox - 19, HC + 12.2);
+      drawRingRivet(ox - 10, HC + 15);
+      drawRingRivet(ox,      HC + 16);
+      drawRingRivet(ox + 10, HC + 15);
+      drawRingRivet(ox + 19, HC + 12.2);
       drawRingRivet(ox, HC - 19);
       drawRingRivet(ox, HC - 9);
       drawRingRivet(ox, HC + 1);
@@ -776,7 +775,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char24-${dir}`);
+    this.characterSprite.setTexture(`player-char25-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
