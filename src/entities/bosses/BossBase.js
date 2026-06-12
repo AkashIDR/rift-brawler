@@ -326,7 +326,7 @@ export default class BossBase {
     return proj;
   }
 
-  // Draw a telegraph zone on the floor
+  // Draw a telegraph zone on the floor — expand with overshoot, glow ring, urgency pulse
   _drawTelegraphZone(x, y, radius, duration, color = 0xff4400) {
     const zone = this.scene.add.graphics();
     zone.x = x;
@@ -338,28 +338,61 @@ export default class BossBase {
       onUpdate: (tween) => {
         const t = tween.getValue();
         zone.clear();
-        zone.fillStyle(color, 0.15 + t * 0.2);
-        zone.fillCircle(0, 0, radius);
-        zone.lineStyle(3, color, 0.5 + t * 0.5);
-        zone.strokeCircle(0, 0, radius);
+
+        // Animated radius: expand → overshoot → settle
+        let rMult;
+        if      (t < 0.35) { rMult = (t / 0.35) * 1.12; }
+        else if (t < 0.55) { rMult = 1.12 - 0.12 * ((t - 0.35) / 0.20); }
+        else               { rMult = 1.0; }
+        const r = radius * rMult;
+
+        // Interior tint — concentric fills simulate edge-bright gradient
+        zone.fillStyle(color, 0.04); zone.fillCircle(0, 0, r);
+        zone.fillStyle(color, 0.05); zone.fillCircle(0, 0, r * 0.75);
+        zone.fillStyle(color, 0.03); zone.fillCircle(0, 0, r * 0.45);
+
+        // Pulse signal: starts after settle, frequency doubles in urgency window
+        const pulsePhase = Math.max(0, (t - 0.55) / 0.45);
+        const freq = t > 0.85 ? 10 : 5;
+        const pulse = pulsePhase * 0.25 * Math.abs(Math.sin(pulsePhase * freq * Math.PI));
+
+        // Outer glow halo
+        zone.lineStyle(6, color, 0.08 + pulse * 0.3); zone.strokeCircle(0, 0, r + 3);
+        zone.lineStyle(4, color, 0.15 + pulse * 0.4); zone.strokeCircle(0, 0, r + 1);
+
+        // Main ring
+        zone.lineStyle(2.5 + pulse * 1.5, color, Math.min(1, 0.55 + t * 0.35 + pulse));
+        zone.strokeCircle(0, 0, r);
+
+        // Inner accent ring — fades in after settle
+        if (t > 0.5) {
+          zone.lineStyle(1.2, color, (t - 0.5) / 0.5 * 0.35);
+          zone.strokeCircle(0, 0, r - 9);
+        }
+
+        // Urgency edge flash → white tinge on ring
+        if (t > 0.85) {
+          zone.lineStyle(2, 0xffffff, ((t - 0.85) / 0.15) * 0.5);
+          zone.strokeCircle(0, 0, r);
+        }
       },
       onComplete: () => zone.destroy()
     });
     return zone;
   }
 
-  // Draw a telegraph rectangle showing the exact hitbox path of a charge attack.
+  // Draw a telegraph rectangle — slash-expand from center, leading edge + corner markers, urgency pulse
   // fromX/Y = boss position, toX/Y = charge destination, halfWidth = contact radius.
   _drawTelegraphRect(fromX, fromY, toX, toY, halfWidth, duration, color = 0xff4400) {
     const angle = Phaser.Math.Angle.Between(fromX, fromY, toX, toY);
     const px = Math.cos(angle + Math.PI / 2);
     const py = Math.sin(angle + Math.PI / 2);
 
-    const corners = () => [
-      { x: fromX + px * halfWidth, y: fromY + py * halfWidth },
-      { x: fromX - px * halfWidth, y: fromY - py * halfWidth },
-      { x: toX   - px * halfWidth, y: toY   - py * halfWidth },
-      { x: toX   + px * halfWidth, y: toY   + py * halfWidth },
+    const corners = (hw) => [
+      { x: fromX + px * hw, y: fromY + py * hw },
+      { x: fromX - px * hw, y: fromY - py * hw },
+      { x: toX   - px * hw, y: toY   - py * hw },
+      { x: toX   + px * hw, y: toY   + py * hw },
     ];
 
     const rect = this.scene.add.graphics();
@@ -370,10 +403,43 @@ export default class BossBase {
       onUpdate: (tween) => {
         const t = tween.getValue();
         rect.clear();
-        rect.fillStyle(color, 0.08 + t * 0.18);
-        rect.fillPoints(corners(), true);
-        rect.lineStyle(2, color, 0.45 + t * 0.55);
-        rect.strokePoints(corners(), true);
+
+        // Animated halfWidth: slash open → overshoot → settle
+        let hwMult;
+        if      (t < 0.30) { hwMult = (t / 0.30) * 1.15; }
+        else if (t < 0.50) { hwMult = 1.15 - 0.15 * ((t - 0.30) / 0.20); }
+        else               { hwMult = 1.0; }
+        const pts = corners(halfWidth * hwMult);
+
+        // Pulse signal: starts after settle, frequency doubles in urgency window
+        const pulsePhase = Math.max(0, (t - 0.50) / 0.50);
+        const freq = t > 0.85 ? 10 : 5;
+        const pulse = pulsePhase * 0.3 * Math.abs(Math.sin(pulsePhase * freq * Math.PI));
+
+        // Interior fill
+        rect.fillStyle(color, 0.06 + t * 0.10);
+        rect.fillPoints(pts, true);
+
+        // Main outline
+        rect.lineStyle(2 + pulse, color, Math.min(1, 0.5 + t * 0.4 + pulse));
+        rect.strokePoints(pts, true);
+
+        // Leading edge (far end) — brighter accent line
+        rect.lineStyle(2.5 + pulse, color, Math.min(1, 0.7 + pulse));
+        rect.lineBetween(pts[2].x, pts[2].y, pts[3].x, pts[3].y);
+
+        // Corner markers
+        const dotAlpha = Math.min(1, 0.4 + t * 0.5 + pulse);
+        for (const pt of pts) {
+          rect.fillStyle(color, dotAlpha);
+          rect.fillCircle(pt.x, pt.y, 2.5 + pulse);
+        }
+
+        // Urgency white flash on outline
+        if (t > 0.85) {
+          rect.lineStyle(1.5, 0xffffff, ((t - 0.85) / 0.15) * 0.45);
+          rect.strokePoints(pts, true);
+        }
       },
       onComplete: () => rect.destroy(),
     });
