@@ -64,6 +64,19 @@ export const PLAYER = {
   HP_BAR_OFFSET_Y: -52,   // clears the helmet dome top (~world y-43 at container scale)
 };
 
+// Player weapon float/held feel
+export const WEAPON = {
+  ANCHOR_X: 0,          // local px — weapon midpoint anchor relative to waist
+  ANCHOR_Y: 2,          // sits at mid-torso height
+  AIM_SHIFT: 3,         // px the anchor leans toward the aim direction
+  TILT_LERP: 0.3,       // per-frame rotation lerp factor (shortest arc)
+  BOB_AMPLITUDE: 1.5,   // px idle float bob
+  BOB_SPEED: 2.2,       // rad/s
+  RECOIL_KICK: 4,       // px backward kick along the aim axis on fire
+  RECOIL_DECAY: 0.85,   // per-frame decay multiplier
+  MUZZLE_OFFSET: 15,    // px from weapon midpoint to muzzle tip (half canvas length)
+};
+
 // Skill base stats (default Knight class)
 export const SKILLS = {
   Q: {

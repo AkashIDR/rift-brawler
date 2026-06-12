@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import {
-  PLAYER, SKILLS, COLORS, SCALING,
+  PLAYER, SKILLS, COLORS, SCALING, WEAPON,
   GAME_WIDTH, GAME_HEIGHT
 } from '../config/gameConfig.js';
 import { spawnBurst, spawnSparks, spawnDust, spawnBlood, spawnImpactRing } from '../systems/ParticleHelper.js';
@@ -82,7 +82,8 @@ export default class Player {
     this._idleTimer = 0;
     this._legPhase = 0;
     this._hitFlashTimer = 0;
-    this._weaponRecoil = 0;     // extra inward orbit offset, set on fire, decays to 0
+    this._weaponRecoil = 0;     // backward kick along the aim axis, decays each frame
+    this._weaponAngle = 0;      // smoothed weapon tilt — lerps toward facingAngle
   }
 
   setArenaBounds(rect) {
@@ -109,9 +110,10 @@ export default class Player {
     this.characterSprite = this.scene.add.image(0, 0, 'player-char37-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
-    // Weapon: orbits body center — position updated every frame in update().
+    // Weapon: hugs the body and tilts about its own midpoint — position/rotation
+    // updated every frame in update(). Centered origin = see-saw pivot.
     this.weaponSprite = this.scene.add.image(0, 0, 'player-weapon');
-    this.weaponSprite.setOrigin(4 / 30, 0.5);
+    this.weaponSprite.setOrigin(0.5, 0.5);
 
     // Z-order: legs → character → weapon (weapon floats over the body)
     this.container.add([this.gLegL, this.gLegR, this.characterSprite, this.weaponSprite]);
@@ -820,6 +822,11 @@ export default class Player {
     const flip = (f === 'right') ? -1 : 1;
     this.characterSprite.setTexture(`player-char37-${dir}`);
     this.characterSprite.setScale(flip, 1);
+
+    // Weapon passes behind the character when aiming away from camera (up),
+    // in front otherwise. Legs stay at the bottom either way.
+    if (f === 'up') this.container.moveBelow(this.weaponSprite, this.characterSprite);
+    else            this.container.moveAbove(this.weaponSprite, this.characterSprite);
   }
 
   _buildFloatingHPBar() {
@@ -901,10 +908,17 @@ export default class Player {
     const angle = Phaser.Math.Angle.Between(this.x, this.y, ptr.worldX, ptr.worldY);
     this._fireProjectile(angle, this.baseDamage, 0x88ddff, 7, PLAYER.BASIC_ATTACK_SPEED, false);
 
-    // Blunderbuss recoil — kick 3px inward from orbit, reset after 60ms.
-    // The orbit update in update() picks up _weaponRecoil each frame so no tween needed.
-    this._weaponRecoil = -3;
-    this.scene.time.delayedCall(60, () => { this._weaponRecoil = 0; });
+    // Recoil — backward kick along the aim axis; update() decays it each frame.
+    this._weaponRecoil = WEAPON.RECOIL_KICK;
+  }
+
+  // Muzzle tip world position — derived from the weapon sprite's live local position
+  // plus the barrel half-length along the fire angle, scaled by the container.
+  _muzzleWorldPos(angle = this._weaponAngle) {
+    return {
+      x: this.container.x + (this.weaponSprite.x + Math.cos(angle) * WEAPON.MUZZLE_OFFSET) * this.container.scaleX,
+      y: this.container.y + (this.weaponSprite.y + Math.sin(angle) * WEAPON.MUZZLE_OFFSET) * this.container.scaleY,
+    };
   }
 
   _fireProjectile(angle, damage, color, radius, speed, isSkill) {
@@ -928,11 +942,11 @@ export default class Player {
       proj.strokeCircle(0, 0, radius * 1.15);
     }
 
-    // Spawn at the muzzle tip. Weapon orbits at 10px local, barrel adds 22px → 32px
-    // local total, × 0.765 scale ≈ 24px world-space from player center.
-    const MUZZLE_WORLD = 24;
-    proj.x = this.x + Math.cos(angle) * MUZZLE_WORLD;
-    proj.y = this.y + Math.sin(angle) * MUZZLE_WORLD;
+    // Spawn at the muzzle tip — same anchor math as the float update, so the
+    // projectile always emerges from the visible muzzle.
+    const m = this._muzzleWorldPos(angle);
+    proj.x = m.x;
+    proj.y = m.y;
     proj.setDepth(8);
 
     proj._vx = Math.cos(angle) * speed;
@@ -1322,12 +1336,22 @@ export default class Player {
     this._drawLegs(this._legPhase, this.moving);
     this._updateFacing();
 
-    // Weapon orbits body center at fixed radius, always pointing at cursor
-    const WEAPON_ORBIT_R = 10;
-    const orbitR = WEAPON_ORBIT_R + this._weaponRecoil;
-    this.weaponSprite.x = orbitR * Math.cos(this.facingAngle);
-    this.weaponSprite.y = orbitR * Math.sin(this.facingAngle);
-    this.weaponSprite.rotation = this.facingAngle;
+    // Weapon hugs the body and tilts about its midpoint toward the cursor.
+    // Smoothed angle (shortest arc) → slight follow lag instead of an instant snap.
+    const tiltDelta = Phaser.Math.Angle.Wrap(this.facingAngle - this._weaponAngle);
+    this._weaponAngle = Phaser.Math.Angle.Wrap(this._weaponAngle + tiltDelta * WEAPON.TILT_LERP);
+
+    // Recoil decays exponentially back to rest
+    this._weaponRecoil *= WEAPON.RECOIL_DECAY;
+    if (this._weaponRecoil < 0.05) this._weaponRecoil = 0;
+
+    const wa  = this._weaponAngle;
+    const bob = Math.sin(this._idleTimer * WEAPON.BOB_SPEED) * WEAPON.BOB_AMPLITUDE;
+    const lean = WEAPON.AIM_SHIFT - this._weaponRecoil;   // recoil kicks backward along the aim axis
+    this.weaponSprite.x = WEAPON.ANCHOR_X + Math.cos(wa) * lean;
+    this.weaponSprite.y = WEAPON.ANCHOR_Y + Math.sin(wa) * lean + bob;
+    this.weaponSprite.rotation = wa;
+    this.weaponSprite.flipY = Math.cos(wa) < 0;   // top of the weapon always faces up
 
     // Update floating HP bar position
     this._updateFloatingHP();
