@@ -1356,8 +1356,10 @@ export default class Player {
     else if (this._weaponSide < 0 && c >  WEAPON.SIDE_SWITCH_MARGIN) this._weaponSide = 1;
     const spread = WEAPON.SIDE_GAP + Math.abs(c) * (WEAPON.ORBIT_X - WEAPON.SIDE_GAP);
     this.weaponSprite.x = this._weaponSide * spread - c * this._weaponRecoil;
-    this.weaponSprite.y = WEAPON.ANCHOR_Y + Math.sin(wa) * WEAPON.ORBIT_Y + bob
-                          - Math.sin(wa) * this._weaponRecoil * 0.5;
+    const s = Math.sin(wa);
+    const orbitY = s > 0 ? WEAPON.ORBIT_Y_DOWN : WEAPON.ORBIT_Y_UP;  // deeper bottom half
+    this.weaponSprite.y = WEAPON.ANCHOR_Y + s * orbitY + bob
+                          - s * this._weaponRecoil * 0.5;
     this.weaponSprite.rotation = wa;
     this.weaponSprite.flipY = this._weaponSide < 0;   // mirror exactly when it crosses sides
 
