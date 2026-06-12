@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char29-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char30-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char29-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char30-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char29-${dir}`;
+      const key = `player-char30-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -496,11 +496,11 @@ export default class Player {
       fg.addColorStop(1.0,  SKIN_LO);
       ctx.fillStyle = fg;
       ctx.beginPath();
-      ctx.moveTo(ox - 25, HC + 4);                              // top-front, under band
+      ctx.moveTo(ox - 25, HC + 1);                              // top-front, under band
       ctx.quadraticCurveTo(ox - 27, HC + 14, ox - 20, HC + 21); // rounded forehead→cheek
       ctx.quadraticCurveTo(ox - 13, HC + 26, ox - 6,  HC + 25); // chin
       ctx.quadraticCurveTo(ox - 2,  HC + 24, ox - 2,  HC + 18); // jaw corner
-      ctx.lineTo(ox - 2, HC + 6);                               // jaw edge (against chain)
+      ctx.lineTo(ox - 2, HC + 3);                               // jaw edge (against chain)
       ctx.closePath();                                          // top edge, hidden under band
       ctx.fill();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
@@ -509,8 +509,8 @@ export default class Player {
       // to the neck with a flat hem (drawn after the face so it frames the jaw)
       const chainPath = () => {
         ctx.beginPath();
-        ctx.moveTo(ox - 2, HC + 5);                              // front-top, behind face
-        ctx.lineTo(ox + 23, HC + 9);                             // top edge under the band
+        ctx.moveTo(ox - 2, HC + 2);                              // front-top, behind face
+        ctx.lineTo(ox + 23, HC + 6);                             // top edge under the band
         ctx.quadraticCurveTo(ox + 28, HC + 13, ox + 27, HC + 18); // back of skull bulge
         ctx.lineTo(ox + 26, HC + 24);                            // straight down (angular)
         ctx.quadraticCurveTo(ox + 26, HC + 28, ox + 21, HC + 28.5); // small back corner
@@ -544,8 +544,8 @@ export default class Player {
       // 4. Tilted rim band — high over the brow (front), dipping toward the back
       const bandPath = () => {
         ctx.beginPath();
-        ctx.moveTo(ox - 26, HC + 3);
-        ctx.quadraticCurveTo(ox - 2, HC + 13, ox + 25, HC + 10);
+        ctx.moveTo(ox - 26, HC + 0);
+        ctx.quadraticCurveTo(ox - 2, HC + 10, ox + 25, HC + 7);
       };
       ctx.lineCap = 'round';
       bandPath();
@@ -556,10 +556,10 @@ export default class Player {
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.5;
 
       // 5. Ring rivets along the band midline
-      drawRingRivet(ox - 19, HC + 5.7);
-      drawRingRivet(ox - 4,  HC + 9.4);
-      drawRingRivet(ox + 12, HC + 10.7);
-      drawRingRivet(ox + 21, HC + 10.4);
+      drawRingRivet(ox - 19, HC + 2.7);
+      drawRingRivet(ox - 4,  HC + 6.4);
+      drawRingRivet(ox + 12, HC + 7.7);
+      drawRingRivet(ox + 21, HC + 7.4);
 
       // 6. Gold finial — apex shifted back (helmet tilt)
       drawFinial(ox + 5, HC - HR - 1.5);
@@ -818,7 +818,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char29-${dir}`);
+    this.characterSprite.setTexture(`player-char30-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
