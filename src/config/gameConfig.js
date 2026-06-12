@@ -66,9 +66,10 @@ export const PLAYER = {
 
 // Player weapon float/held feel
 export const WEAPON = {
-  ANCHOR_X: 0,          // local px — weapon midpoint anchor relative to waist
-  ANCHOR_Y: 2,          // sits at mid-torso height
-  AIM_SHIFT: 3,         // px the anchor leans toward the aim direction
+  ORBIT_R: 24,            // local px — midpoint distance from the waist toward the aim
+  ANCHOR_Y: 0,            // orbit center vertical offset from the waist
+  BEHIND_ENTER_DEG: 26,   // within this of straight-up → weapon renders behind the body
+  BEHIND_EXIT_DEG: 36,    // must leave this cone to come back in front (hysteresis)
   TILT_LERP: 0.3,       // per-frame rotation lerp factor (shortest arc)
   BOB_AMPLITUDE: 1.5,   // px idle float bob
   BOB_SPEED: 2.2,       // rad/s

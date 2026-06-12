@@ -84,6 +84,7 @@ export default class Player {
     this._hitFlashTimer = 0;
     this._weaponRecoil = 0;     // backward kick along the aim axis, decays each frame
     this._weaponAngle = 0;      // smoothed weapon tilt — lerps toward facingAngle
+    this._weaponBehind = false; // true while the weapon renders behind the character
   }
 
   setArenaBounds(rect) {
@@ -822,11 +823,6 @@ export default class Player {
     const flip = (f === 'right') ? -1 : 1;
     this.characterSprite.setTexture(`player-char37-${dir}`);
     this.characterSprite.setScale(flip, 1);
-
-    // Weapon passes behind the character when aiming away from camera (up),
-    // in front otherwise. Legs stay at the bottom either way.
-    if (f === 'up') this.container.moveBelow(this.weaponSprite, this.characterSprite);
-    else            this.container.moveAbove(this.weaponSprite, this.characterSprite);
   }
 
   _buildFloatingHPBar() {
@@ -1347,11 +1343,22 @@ export default class Player {
 
     const wa  = this._weaponAngle;
     const bob = Math.sin(this._idleTimer * WEAPON.BOB_SPEED) * WEAPON.BOB_AMPLITUDE;
-    const lean = WEAPON.AIM_SHIFT - this._weaponRecoil;   // recoil kicks backward along the aim axis
-    this.weaponSprite.x = WEAPON.ANCHOR_X + Math.cos(wa) * lean;
-    this.weaponSprite.y = WEAPON.ANCHOR_Y + Math.sin(wa) * lean + bob;
+    const reach = WEAPON.ORBIT_R - this._weaponRecoil;   // recoil kicks backward along the aim axis
+    this.weaponSprite.x = Math.cos(wa) * reach;
+    this.weaponSprite.y = WEAPON.ANCHOR_Y + Math.sin(wa) * reach + bob;
     this.weaponSprite.rotation = wa;
     this.weaponSprite.flipY = Math.cos(wa) < 0;   // top of the weapon always faces up
+
+    // Z-order: behind the character only within a narrow cone of straight-up,
+    // with hysteresis so it doesn't flicker at the cone edge.
+    const offUp = Math.abs(Phaser.Math.Angle.Wrap(wa + Math.PI / 2));  // 0 = straight up
+    if (!this._weaponBehind && offUp < Phaser.Math.DegToRad(WEAPON.BEHIND_ENTER_DEG)) {
+      this._weaponBehind = true;
+      this.container.moveBelow(this.weaponSprite, this.characterSprite);
+    } else if (this._weaponBehind && offUp > Phaser.Math.DegToRad(WEAPON.BEHIND_EXIT_DEG)) {
+      this._weaponBehind = false;
+      this.container.moveAbove(this.weaponSprite, this.characterSprite);
+    }
 
     // Update floating HP bar position
     this._updateFloatingHP();
