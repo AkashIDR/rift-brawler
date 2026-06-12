@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char30-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char31-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char30-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char31-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char30-${dir}`;
+      const key = `player-char31-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -511,14 +511,14 @@ export default class Player {
         ctx.beginPath();
         ctx.moveTo(ox - 2, HC + 2);                              // front-top, behind face
         ctx.lineTo(ox + 23, HC + 6);                             // top edge under the band
-        ctx.quadraticCurveTo(ox + 28, HC + 13, ox + 27, HC + 18); // back of skull bulge
-        ctx.lineTo(ox + 26, HC + 24);                            // straight down (angular)
-        ctx.quadraticCurveTo(ox + 26, HC + 28, ox + 21, HC + 28.5); // small back corner
-        ctx.lineTo(ox + 3, HC + 27.5);                           // flat hem forward
-        ctx.quadraticCurveTo(ox - 2, HC + 27, ox - 2, HC + 22);  // front-bottom corner
+        ctx.quadraticCurveTo(ox + 28, HC + 10, ox + 27, HC + 15); // back of skull bulge
+        ctx.lineTo(ox + 26, HC + 21);                            // straight down (angular)
+        ctx.quadraticCurveTo(ox + 26, HC + 25, ox + 21, HC + 25.5); // small back corner
+        ctx.lineTo(ox + 3, HC + 24.5);                           // flat hem forward
+        ctx.quadraticCurveTo(ox - 2, HC + 24, ox - 2, HC + 19);  // front-bottom corner
         ctx.closePath();                                         // front edge up the jaw
       };
-      const cg = ctx.createLinearGradient(0, HC + 5, 0, HC + 29);
+      const cg = ctx.createLinearGradient(0, HC + 2, 0, HC + 26);
       cg.addColorStop(0,   CHAIN_HI);
       cg.addColorStop(0.45, CHAIN);
       cg.addColorStop(1,   CHAIN_LO);
@@ -532,7 +532,7 @@ export default class Player {
       ctx.clip();
       ctx.strokeStyle = CHAIN_LO; ctx.lineWidth = 0.8; ctx.globalAlpha = 0.55;
       for (let row = 0; row < 5; row++) {
-        const ly = HC + 12 + row * 3.5;
+        const ly = HC + 9 + row * 3.5;
         for (let col = 0; col <= 5; col++) {
           const lx = ox + col * 5 + (row % 2 ? 2.5 : 0);
           ctx.beginPath(); ctx.arc(lx, ly, 1.6, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
@@ -818,7 +818,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char30-${dir}`);
+    this.characterSprite.setTexture(`player-char31-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
