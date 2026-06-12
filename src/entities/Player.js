@@ -85,6 +85,7 @@ export default class Player {
     this._weaponRecoil = 0;     // backward kick along the aim axis, decays each frame
     this._weaponAngle = 0;      // smoothed weapon tilt — lerps toward facingAngle
     this._weaponBehind = false; // true while the weapon renders behind the character
+    this._weaponSide = 1;       // 1 = right of the body, -1 = left; jumps across at vertical aim
   }
 
   setArenaBounds(rect) {
@@ -1343,14 +1344,19 @@ export default class Player {
 
     const wa  = this._weaponAngle;
     const bob = Math.sin(this._idleTimer * WEAPON.BOB_SPEED) * WEAPON.BOB_AMPLITUDE;
-    // Squashed-ellipse swivel: midpoint slides mostly horizontally across the body
-    // (chest height) as the aim sweeps; the tilt about the midpoint does the pointing.
-    const reachX = WEAPON.ORBIT_X - this._weaponRecoil;        // recoil pulls back along the aim axis
-    const reachY = WEAPON.ORBIT_Y - this._weaponRecoil * 0.5;
-    this.weaponSprite.x = Math.cos(wa) * reachX;
-    this.weaponSprite.y = WEAPON.ANCHOR_Y + Math.sin(wa) * reachY + bob;
+    // Split half-ellipse swivel: the weapon lives on the cursor's side of the body,
+    // sliding between SIDE_GAP (vertical aim) and ORBIT_X (horizontal aim), and
+    // JUMPS across the body when the aim crosses vertical — its midpoint never
+    // overlaps the body center, so it is never fully hidden behind the character.
+    const c = Math.cos(wa);
+    if      (this._weaponSide > 0 && c < -WEAPON.SIDE_SWITCH_MARGIN) this._weaponSide = -1;
+    else if (this._weaponSide < 0 && c >  WEAPON.SIDE_SWITCH_MARGIN) this._weaponSide = 1;
+    const spread = WEAPON.SIDE_GAP + Math.abs(c) * (WEAPON.ORBIT_X - WEAPON.SIDE_GAP);
+    this.weaponSprite.x = this._weaponSide * spread - c * this._weaponRecoil;
+    this.weaponSprite.y = WEAPON.ANCHOR_Y + Math.sin(wa) * WEAPON.ORBIT_Y + bob
+                          - Math.sin(wa) * this._weaponRecoil * 0.5;
     this.weaponSprite.rotation = wa;
-    this.weaponSprite.flipY = Math.cos(wa) < 0;   // top of the weapon always faces up
+    this.weaponSprite.flipY = this._weaponSide < 0;   // mirror exactly when it crosses sides
 
     // Z-order: the giant head draws above the weapon for most angles — the weapon
     // comes in front of the body only when aiming down-ish, with hysteresis so it

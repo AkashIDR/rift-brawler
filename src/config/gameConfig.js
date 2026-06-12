@@ -66,8 +66,10 @@ export const PLAYER = {
 
 // Player weapon float/held feel
 export const WEAPON = {
-  ORBIT_X: 24,            // local px — horizontal swivel radius (midpoint slides across the body)
+  ORBIT_X: 24,            // local px — outer horizontal extreme of the half-ellipse swivel
   ORBIT_Y: 7,             // local px — small vertical shift with aim
+  SIDE_GAP: 13,           // local px — half-gap between the two half-ellipses (≈ body half-width)
+  SIDE_SWITCH_MARGIN: 0.12, // |cos(aim)| must exceed this on the new side before jumping (anti-jitter)
   ANCHOR_Y: -4,           // orbit center at chest height (slightly above the waist)
   FRONT_ENTER_DEG: 55,    // within this of straight-down → weapon renders in front of the body
   FRONT_EXIT_DEG: 65,     // must leave this cone to go back behind (hysteresis)
