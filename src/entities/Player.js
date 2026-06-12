@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char25-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char26-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char25-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char26-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char25-${dir}`;
+      const key = `player-char26-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -444,11 +444,11 @@ export default class Player {
         ctx.beginPath();
         ctx.moveTo(ox - 24, HC + 10);
         ctx.quadraticCurveTo(ox, HC + 22, ox + 24, HC + 10);   // top edge = band curve (hidden)
-        ctx.lineTo(ox + 23, HC + 18);                           // right edge, slight taper
-        ctx.quadraticCurveTo(ox, HC + 30, ox - 23, HC + 18);   // hem parallel to the band ellipse
+        ctx.lineTo(ox + 23, HC + 21);                           // right edge, slight taper
+        ctx.quadraticCurveTo(ox, HC + 35, ox - 23, HC + 21);   // hem parallel to the band ellipse, clears the circle bottom
         ctx.closePath();                                        // left edge
       };
-      const cg = ctx.createLinearGradient(0, HC + 10, 0, HC + 28);
+      const cg = ctx.createLinearGradient(0, HC + 10, 0, HC + 30);
       cg.addColorStop(0,   CHAIN_HI);
       cg.addColorStop(0.45, CHAIN);
       cg.addColorStop(1,   CHAIN_LO);
@@ -775,7 +775,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char25-${dir}`);
+    this.characterSprite.setTexture(`player-char26-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
