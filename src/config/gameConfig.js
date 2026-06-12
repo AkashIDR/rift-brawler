@@ -66,8 +66,9 @@ export const PLAYER = {
 
 // Player weapon float/held feel
 export const WEAPON = {
-  ORBIT_R: 24,            // local px — midpoint distance from the waist toward the aim
-  ANCHOR_Y: 0,            // orbit center vertical offset from the waist
+  ORBIT_X: 13,            // local px — horizontal swivel radius (midpoint slides across the body)
+  ORBIT_Y: 7,             // local px — small vertical shift with aim
+  ANCHOR_Y: -4,           // orbit center at chest height (slightly above the waist)
   BEHIND_ENTER_DEG: 26,   // within this of straight-up → weapon renders behind the body
   BEHIND_EXIT_DEG: 36,    // must leave this cone to come back in front (hysteresis)
   TILT_LERP: 0.3,       // per-frame rotation lerp factor (shortest arc)

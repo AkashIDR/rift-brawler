@@ -1343,9 +1343,12 @@ export default class Player {
 
     const wa  = this._weaponAngle;
     const bob = Math.sin(this._idleTimer * WEAPON.BOB_SPEED) * WEAPON.BOB_AMPLITUDE;
-    const reach = WEAPON.ORBIT_R - this._weaponRecoil;   // recoil kicks backward along the aim axis
-    this.weaponSprite.x = Math.cos(wa) * reach;
-    this.weaponSprite.y = WEAPON.ANCHOR_Y + Math.sin(wa) * reach + bob;
+    // Squashed-ellipse swivel: midpoint slides mostly horizontally across the body
+    // (chest height) as the aim sweeps; the tilt about the midpoint does the pointing.
+    const reachX = WEAPON.ORBIT_X - this._weaponRecoil;        // recoil pulls back along the aim axis
+    const reachY = WEAPON.ORBIT_Y - this._weaponRecoil * 0.5;
+    this.weaponSprite.x = Math.cos(wa) * reachX;
+    this.weaponSprite.y = WEAPON.ANCHOR_Y + Math.sin(wa) * reachY + bob;
     this.weaponSprite.rotation = wa;
     this.weaponSprite.flipY = Math.cos(wa) < 0;   // top of the weapon always faces up
 
