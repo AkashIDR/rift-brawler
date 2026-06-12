@@ -70,7 +70,7 @@ export const WEAPON = {
   ORBIT_Y: 7,             // local px — small vertical shift with aim
   SIDE_GAP: 14,           // local px — half-gap between the two half-ellipses
   SIDE_SWITCH_MARGIN: 0.12, // |cos(aim)| must exceed this on the new side before jumping (anti-jitter)
-  ANCHOR_Y: -4,           // orbit center at chest height (slightly above the waist)
+  ANCHOR_Y: 2,            // orbit center just below the waist
   FRONT_ENTER_DEG: 55,    // within this of straight-down → weapon renders in front of the body
   FRONT_EXIT_DEG: 65,     // must leave this cone to go back behind (hysteresis)
   TILT_LERP: 0.3,       // per-frame rotation lerp factor (shortest arc)
