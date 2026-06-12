@@ -1352,15 +1352,16 @@ export default class Player {
     this.weaponSprite.rotation = wa;
     this.weaponSprite.flipY = Math.cos(wa) < 0;   // top of the weapon always faces up
 
-    // Z-order: behind the character only within a narrow cone of straight-up,
-    // with hysteresis so it doesn't flicker at the cone edge.
-    const offUp = Math.abs(Phaser.Math.Angle.Wrap(wa + Math.PI / 2));  // 0 = straight up
-    if (!this._weaponBehind && offUp < Phaser.Math.DegToRad(WEAPON.BEHIND_ENTER_DEG)) {
-      this._weaponBehind = true;
-      this.container.moveBelow(this.weaponSprite, this.characterSprite);
-    } else if (this._weaponBehind && offUp > Phaser.Math.DegToRad(WEAPON.BEHIND_EXIT_DEG)) {
+    // Z-order: the giant head draws above the weapon for most angles — the weapon
+    // comes in front of the body only when aiming down-ish, with hysteresis so it
+    // doesn't flicker at the cone edge.
+    const offDown = Math.abs(Phaser.Math.Angle.Wrap(wa - Math.PI / 2));  // 0 = straight down
+    if (this._weaponBehind && offDown < Phaser.Math.DegToRad(WEAPON.FRONT_ENTER_DEG)) {
       this._weaponBehind = false;
       this.container.moveAbove(this.weaponSprite, this.characterSprite);
+    } else if (!this._weaponBehind && offDown > Phaser.Math.DegToRad(WEAPON.FRONT_EXIT_DEG)) {
+      this._weaponBehind = true;
+      this.container.moveBelow(this.weaponSprite, this.characterSprite);
     }
 
     // Update floating HP bar position
