@@ -114,7 +114,7 @@ export default class Player {
 
     // Weapon: hugs the body and tilts about its own midpoint — position/rotation
     // updated every frame in update(). Centered origin = see-saw pivot.
-    this.weaponSprite = this.scene.add.image(0, 0, 'player-weapon');
+    this.weaponSprite = this.scene.add.image(0, 0, 'player-weapon2');
     this.weaponSprite.setOrigin(0.5, 0.5);
 
     // Z-order: legs → character → weapon (weapon floats over the body)
@@ -142,10 +142,10 @@ export default class Player {
 
   // ─── Weapon texture baking ────────────────────────────────────────────────
   _buildWeaponTexture() {
-    const key = 'player-weapon';
+    const key = 'player-weapon2';
     if (this.scene.textures.exists(key)) return;
-    const tex = this.scene.textures.createCanvas(key, 30, 16);
-    this._drawWeaponToCanvas(tex.getContext(), 0, 8);
+    const tex = this.scene.textures.createCanvas(key, 48, 22);
+    this._drawWeaponToCanvas(tex.getContext(), 0, 11);
     tex.refresh();
   }
 
@@ -689,93 +689,96 @@ export default class Player {
   }
 
 
-  // ─── Weapon canvas drawing — stubby brass blunderbuss ─────────────────────
-  // Canvas 30×16. Origin: grip back-end at canvas x=4, muzzle tip at canvas x=26.
+  // ─── Weapon canvas drawing — dark iron hand-cannon with brass bands ───────
+  // Canvas 48×22, oy=11 = vertical center. Cascabel knob at the back (x≈1-9),
+  // breech block, straight barrel, chunky muzzle rim with a dark bore at x≈46.
+  // Midpoint origin (0.5, 0.5) — the float system tilts it about the center.
   _drawWeaponToCanvas(ctx, _ox, oy) {
     const hx = n => '#' + n.toString(16).padStart(6, '0');
     const BRASS    = hx(COLORS.PLAYER_BRASS);
     const BRASS_HI = hx(COLORS.PLAYER_BRASS_HI);
     const BRASS_LO = hx(COLORS.PLAYER_BRASS_LO);
-    const WOOD     = hx(COLORS.PLAYER_WOOD);
-    const GOLD     = hx(COLORS.PLAYER_SHIELD);
-    const GOLD_HI  = hx(COLORS.PLAYER_SHIELD_HI);
     const OUTLINE  = '#1a1a2a';
 
+    const IRON     = hx(COLORS.PLAYER_IRON);
+    const IRON_HI  = hx(COLORS.PLAYER_IRON_HI);
+    const IRON_LO  = hx(COLORS.PLAYER_IRON_LO);
+
     ctx.strokeStyle = OUTLINE;
     ctx.lineWidth = 1.2;
 
-    // Wood grip (dark brown, back end)
-    ctx.fillStyle = WOOD;
-    rrect(ctx, 1, oy - 3, 6, 6, { tl: 2, tr: 1, bl: 2, br: 1 });
+    // Shared top-lit iron gradient builder
+    const ironGrad = (top, bottom) => {
+      const g = ctx.createLinearGradient(0, top, 0, bottom);
+      g.addColorStop(0,    IRON_HI);
+      g.addColorStop(0.45, IRON);
+      g.addColorStop(1,    IRON_LO);
+      return g;
+    };
+
+    // 1. Cascabel knob (back) — the cartoon cannon butt: small ball + short neck
+    ctx.fillStyle = ironGrad(oy - 4, oy + 4);
+    ctx.beginPath(); ctx.arc(4, oy, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = IRON;
+    ctx.fillRect(6, oy - 2.5, 3, 5);   // neck connecting knob to breech
+    ctx.strokeRect(6, oy - 2.5, 3, 5);
+
+    // 2. Breech block — thickest mass at the back
+    ctx.fillStyle = ironGrad(oy - 8, oy + 8);
+    rrect(ctx, 8, oy - 8, 8, 16, { tl: 4, tr: 1, bl: 4, br: 1 });
     ctx.fill();
     ctx.stroke();
-    // Grip top highlight streak
-    ctx.fillStyle = '#8a5430';
-    ctx.fillRect(2, oy - 2, 4, 1);
 
-    // Gold trim band between grip and barrel
-    ctx.fillStyle = GOLD;
-    ctx.fillRect(7, oy - 4, 2, 8);
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 1.2;
-    ctx.strokeRect(7, oy - 4, 2, 8);
-    // Gold trim shine
-    ctx.fillStyle = GOLD_HI;
-    ctx.fillRect(7, oy - 4, 2, 1.5);
-
-    // Brass barrel (linear vertical gradient, top-lit)
-    const barrelGrad = ctx.createLinearGradient(0, oy - 4, 0, oy + 4);
-    barrelGrad.addColorStop(0,    BRASS_HI);
-    barrelGrad.addColorStop(0.45, BRASS);
-    barrelGrad.addColorStop(1,    BRASS_LO);
-    ctx.fillStyle = barrelGrad;
-    // Tapered barrel: starts at grip x=9 width 7, ends at muzzle x=22 width 9
+    // 3. Main barrel — straight iron cylinder, slight forward taper, NO flare
+    ctx.fillStyle = ironGrad(oy - 7.5, oy + 7.5);
     ctx.beginPath();
-    ctx.moveTo(9,  oy - 3);    // top back
-    ctx.lineTo(22, oy - 4.5);  // top front
-    ctx.lineTo(22, oy + 4.5);  // bottom front
-    ctx.lineTo(9,  oy + 3);    // bottom back
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
-
-    // Muzzle bell — wide flared opening at the front
-    const muzzleGrad = ctx.createLinearGradient(0, oy - 7, 0, oy + 7);
-    muzzleGrad.addColorStop(0,    BRASS_HI);
-    muzzleGrad.addColorStop(0.45, BRASS);
-    muzzleGrad.addColorStop(1,    BRASS_LO);
-    ctx.fillStyle = muzzleGrad;
-    ctx.beginPath();
-    ctx.moveTo(22, oy - 4.5);
-    ctx.lineTo(27, oy - 7);
-    ctx.lineTo(28, oy);
-    ctx.lineTo(27, oy + 7);
-    ctx.lineTo(22, oy + 4.5);
+    ctx.moveTo(16, oy - 7.5);   // top back
+    ctx.lineTo(40, oy - 6.5);   // top front (taper)
+    ctx.lineTo(40, oy + 6.5);   // bottom front
+    ctx.lineTo(16, oy + 7.5);   // bottom back
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Inner muzzle cavity (dark)
+    // 5. Muzzle lip — chunky swollen ring at the front (a rim, not a flare)
+    ctx.fillStyle = ironGrad(oy - 8, oy + 8);
+    rrect(ctx, 40, oy - 8, 6, 16, 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // 6. Bore — deep dark barrel hole on the muzzle face
+    ctx.fillStyle = IRON_LO;
+    ctx.beginPath(); ctx.ellipse(44.5, oy, 2.4, 6, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#0a0a14';
-    ctx.beginPath();
-    ctx.ellipse(27, oy, 1.5, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = OUTLINE;
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(44.8, oy, 1.7, 4.6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1; ctx.stroke();
+    ctx.lineWidth = 1.2;
 
-    // Subtle top highlight along the entire barrel for extra metal pop
+    // 4. Brass reinforcing bands — breech joint, mid-barrel, behind the muzzle lip
+    const drawBand = (bx, h) => {
+      const g = ctx.createLinearGradient(0, oy - h / 2, 0, oy + h / 2);
+      g.addColorStop(0, BRASS_HI);
+      g.addColorStop(0.5, BRASS);
+      g.addColorStop(1, BRASS_LO);
+      ctx.fillStyle = g;
+      rrect(ctx, bx, oy - h / 2, 3, h, 1);
+      ctx.fill();
+      ctx.strokeStyle = OUTLINE; ctx.lineWidth = 1.1; ctx.stroke();
+      ctx.lineWidth = 1.2;
+    };
+    drawBand(15, 17);   // breech/barrel joint
+    drawBand(26, 16);   // mid-barrel
+    drawBand(36, 15.5); // behind the muzzle lip
+
+    // 7. Specular streak along the top of the barrel — metal pop
     ctx.fillStyle = '#ffffff';
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = 0.30;
     ctx.beginPath();
-    ctx.moveTo(10, oy - 2.5);
-    ctx.lineTo(22, oy - 3.7);
-    ctx.lineTo(26, oy - 5.2);
-    ctx.lineTo(26, oy - 4);
-    ctx.lineTo(22, oy - 2.8);
-    ctx.lineTo(10, oy - 1.5);
+    ctx.moveTo(17, oy - 5.8);
+    ctx.lineTo(39, oy - 5.0);
+    ctx.lineTo(39, oy - 3.6);
+    ctx.lineTo(17, oy - 4.2);
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1.0;

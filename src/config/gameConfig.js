@@ -78,7 +78,7 @@ export const WEAPON = {
   BOB_SPEED: 2.2,       // rad/s
   RECOIL_KICK: 4,       // px backward kick along the aim axis on fire
   RECOIL_DECAY: 0.85,   // per-frame decay multiplier
-  MUZZLE_OFFSET: 15,    // px from weapon midpoint to muzzle tip (half canvas length)
+  MUZZLE_OFFSET: 22,    // px from weapon midpoint to muzzle tip (half canvas length)
 };
 
 // Skill base stats (default Knight class)
@@ -186,7 +186,10 @@ export const COLORS = {
   PLAYER_SKIN_HI: 0xffe4c0, // skin highlight
   PLAYER_SKIN_LO: 0xc48868, // skin shadow
   PLAYER_HAIR: 0x4a3020,    // dark brown hair tuft
-  PLAYER_BRASS: 0xd4a040,   // blunderbuss barrel base
+  PLAYER_IRON: 0x4a4f58,    // cannon barrel base
+  PLAYER_IRON_HI: 0x7a818c, // iron highlight (top-lit)
+  PLAYER_IRON_LO: 0x262a32, // iron shadow
+  PLAYER_BRASS: 0xd4a040,   // cannon band base
   PLAYER_BRASS_HI: 0xf4d870, // brass highlight
   PLAYER_BRASS_LO: 0x8a6020, // brass shadow
   PLAYER_WOOD: 0x6a4020,    // weapon grip wood
