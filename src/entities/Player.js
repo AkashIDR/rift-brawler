@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char32-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char35-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char32-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char35-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char32-${dir}`;
+      const key = `player-char35-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -489,7 +489,7 @@ export default class Player {
       // the band, rounded cheek, soft chin, vertical jaw edge against the chainmail
       const fg = ctx.createRadialGradient(
         ox - 18, HC + 9, 3,
-        ox - 13, HC + 15, 18
+        ox - 10, HC + 15, 26
       );
       fg.addColorStop(0,    SKIN_HI);
       fg.addColorStop(0.55, SKIN);
@@ -498,24 +498,12 @@ export default class Player {
       ctx.beginPath();
       ctx.moveTo(ox - 25, HC + 1);                              // top-front, under band
       ctx.quadraticCurveTo(ox - 27, HC + 14, ox - 20, HC + 21); // rounded forehead→cheek
-      ctx.quadraticCurveTo(ox - 13, HC + 26, ox - 6,  HC + 25); // chin
-      ctx.quadraticCurveTo(ox - 2,  HC + 24, ox - 2,  HC + 18); // jaw corner
-      ctx.lineTo(ox - 2, HC + 3);                               // jaw edge (against chain)
+      ctx.quadraticCurveTo(ox - 13, HC + 26, ox - 4,  HC + 26.5); // chin
+      ctx.quadraticCurveTo(ox + 8,  HC + 29.5, ox + 18, HC + 22); // continues along the head bottom (nape)
+      ctx.quadraticCurveTo(ox + 26, HC + 16, ox + 25, HC + 6);  // back edge, up under the chain
       ctx.closePath();                                          // top edge, hidden under band
       ctx.fill();
       ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 1.5;
-
-      // 2b. Skin under the chain hem — the back-bottom of the head circle is skin
-      // (neck/nape), not steel, so the sliver visible below the lifted chain guard
-      // reads as skin. Clipped to the head circle; the chain covers most of it.
-      ctx.save();
-      ctx.beginPath(); ctx.arc(ox, HC, HR, 0, Math.PI * 2); ctx.clip();
-      const ng = ctx.createLinearGradient(0, HC + 16, 0, HC + HR);
-      ng.addColorStop(0, SKIN);
-      ng.addColorStop(1, SKIN_LO);
-      ctx.fillStyle = ng;
-      ctx.fillRect(ox - 3, HC + 16, HR + 4, HR - 15);
-      ctx.restore();
 
       // 3. Chainmail guard — angular mass over the back of the head, hanging down
       // to the neck with a flat hem (drawn after the face so it frames the jaw)
@@ -830,7 +818,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char32-${dir}`);
+    this.characterSprite.setTexture(`player-char35-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
