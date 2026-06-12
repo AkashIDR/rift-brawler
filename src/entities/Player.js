@@ -106,7 +106,7 @@ export default class Player {
     // Single merged character sprite — full character in one 70×82 canvas.
     // Canvas pixel (35, 60) = local (0, 0) = waist. setOrigin(0.5, 60/82) so
     // that specific pixel is the container-local position anchor.
-    this.characterSprite = this.scene.add.image(0, 0, 'player-char35-down');
+    this.characterSprite = this.scene.add.image(0, 0, 'player-char36-down');
     this.characterSprite.setOrigin(0.5, 60 / 82);
 
     // Weapon: orbits body center — position updated every frame in update().
@@ -124,11 +124,11 @@ export default class Player {
 
   // ─── Facing texture baking ────────────────────────────────────────────────
   // Creates three 70×82 canvas textures (one per direction). Canvas pixel (35, 60)
-  // = character waist = container local (0, 0). Key 'player-char35-{dir}' avoids
+  // = character waist = container local (0, 0). Key 'player-char36-{dir}' avoids
   // any cached v1-v4 textures.
   _buildFacingTextures() {
     for (const dir of ['down', 'up', 'left']) {
-      const key = `player-char35-${dir}`;
+      const key = `player-char36-${dir}`;
       if (this.scene.textures.exists(key)) continue;
       const tex = this.scene.textures.createCanvas(key, 70, 82);
       this._drawCharToCanvas(tex.getContext(), dir, 35, 60);
@@ -498,8 +498,8 @@ export default class Player {
       ctx.beginPath();
       ctx.moveTo(ox - 25, HC + 1);                              // top-front, under band
       ctx.quadraticCurveTo(ox - 27, HC + 14, ox - 20, HC + 21); // rounded forehead→cheek
-      ctx.quadraticCurveTo(ox - 13, HC + 26, ox - 4,  HC + 26.5); // chin
-      ctx.quadraticCurveTo(ox + 8,  HC + 29.5, ox + 18, HC + 22); // continues along the head bottom (nape)
+      ctx.quadraticCurveTo(ox - 14, HC + 25.5, ox - 4, HC + 27);  // chin
+      ctx.quadraticCurveTo(ox + 6,  HC + 28.5, ox + 18, HC + 22); // nape — control collinear with chin tangent (no kink)
       ctx.quadraticCurveTo(ox + 26, HC + 16, ox + 25, HC + 6);  // back edge, up under the chain
       ctx.closePath();                                          // top edge, hidden under band
       ctx.fill();
@@ -818,7 +818,7 @@ export default class Player {
 
     const dir  = (f === 'right') ? 'left' : f;
     const flip = (f === 'right') ? -1 : 1;
-    this.characterSprite.setTexture(`player-char35-${dir}`);
+    this.characterSprite.setTexture(`player-char36-${dir}`);
     this.characterSprite.setScale(flip, 1);
   }
 
