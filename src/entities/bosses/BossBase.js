@@ -346,29 +346,23 @@ export default class BossBase {
         else               { rMult = 1.0; }
         const r = radius * rMult;
 
-        // Base tint — whole interior
+        // Edge-bright fill: base tint everywhere + thick inner-edge bands
         zone.fillStyle(color, 0.08 + t * 0.05); zone.fillCircle(0, 0, r);
-
-        // Tapered fill: 7 concentric rings, thick+bright at edge → thin+faint at center
-        const bands = [
-          [0.95, 7.0, 0.20], [0.86, 5.5, 0.15], [0.76, 4.0, 0.11],
-          [0.64, 3.0, 0.08], [0.52, 2.0, 0.06], [0.39, 1.5, 0.04], [0.26, 1.0, 0.03],
-        ];
-        for (const [frac, lw, a] of bands) {
-          zone.lineStyle(lw, color, a + t * a * 0.6);
-          zone.strokeCircle(0, 0, r * frac);
-        }
+        zone.lineStyle(r * 0.28, color, 0.20 + t * 0.08); zone.strokeCircle(0, 0, r * 0.86);
+        zone.lineStyle(r * 0.18, color, 0.08 + t * 0.04); zone.strokeCircle(0, 0, r * 0.68);
 
         // Pulse signal: starts after settle, frequency doubles in urgency window
         const pulsePhase = Math.max(0, (t - 0.55) / 0.45);
         const freq = t > 0.85 ? 10 : 5;
         const pulse = pulsePhase * 0.25 * Math.abs(Math.sin(pulsePhase * freq * Math.PI));
 
-        // Gradient ring: wide soft glow → tight bright core, all centered on radius r
-        zone.lineStyle(14, color, 0.06 + pulse * 0.06); zone.strokeCircle(0, 0, r);
-        zone.lineStyle(8,  color, 0.14 + pulse * 0.10); zone.strokeCircle(0, 0, r);
-        zone.lineStyle(4,  color, 0.30 + pulse * 0.15); zone.strokeCircle(0, 0, r);
-        zone.lineStyle(1.5, color, Math.min(1, 0.75 + t * 0.20 + pulse)); zone.strokeCircle(0, 0, r);
+        // Outer glow halo
+        zone.lineStyle(6, color, 0.08 + pulse * 0.3); zone.strokeCircle(0, 0, r + 3);
+        zone.lineStyle(4, color, 0.15 + pulse * 0.4); zone.strokeCircle(0, 0, r + 1);
+
+        // Main ring
+        zone.lineStyle(2.5 + pulse * 1.5, color, Math.min(1, 0.55 + t * 0.35 + pulse));
+        zone.strokeCircle(0, 0, r);
 
         // Inner accent ring — fades in after settle
         if (t > 0.5) {
