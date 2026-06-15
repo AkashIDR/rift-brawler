@@ -346,10 +346,13 @@ export default class BossBase {
         else               { rMult = 1.0; }
         const r = radius * rMult;
 
-        // Interior tint — concentric fills simulate edge-bright gradient
-        zone.fillStyle(color, 0.04); zone.fillCircle(0, 0, r);
-        zone.fillStyle(color, 0.05); zone.fillCircle(0, 0, r * 0.75);
-        zone.fillStyle(color, 0.03); zone.fillCircle(0, 0, r * 0.45);
+        // Edge-bright fill: base tint everywhere + thick inner-edge bands
+        // Center stays at base alpha only; edge accumulates all layers
+        zone.fillStyle(color, 0.08 + t * 0.05); zone.fillCircle(0, 0, r);
+        // Band centered at r*0.86, lineWidth r*0.28 → spans ~r*0.72 to ~r
+        zone.lineStyle(r * 0.28, color, 0.20 + t * 0.08); zone.strokeCircle(0, 0, r * 0.86);
+        // Secondary softer band further inward
+        zone.lineStyle(r * 0.18, color, 0.08 + t * 0.04); zone.strokeCircle(0, 0, r * 0.68);
 
         // Pulse signal: starts after settle, frequency doubles in urgency window
         const pulsePhase = Math.max(0, (t - 0.55) / 0.45);
@@ -416,9 +419,12 @@ export default class BossBase {
         const freq = t > 0.85 ? 10 : 5;
         const pulse = pulsePhase * 0.3 * Math.abs(Math.sin(pulsePhase * freq * Math.PI));
 
-        // Interior fill
-        rect.fillStyle(color, 0.06 + t * 0.10);
+        // Edge-bright fill: visible base + inset band brightens the sides
+        rect.fillStyle(color, 0.12 + t * 0.10);
         rect.fillPoints(pts, true);
+        const ptsInset = corners(halfWidth * hwMult * 0.72);
+        rect.lineStyle(3, color, 0.18 + t * 0.10);
+        rect.strokePoints(ptsInset, true);
 
         // Main outline
         rect.lineStyle(2 + pulse, color, Math.min(1, 0.5 + t * 0.4 + pulse));
