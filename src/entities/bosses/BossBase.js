@@ -326,18 +326,74 @@ export default class BossBase {
     return proj;
   }
 
-  // Draw a telegraph zone on the floor — expand with overshoot, glow ring, urgency pulse
+  // Bake a gradient fill texture for telegraphs using Canvas 2D API.
+  // Generated once per (shape, color) pair and cached as a Phaser texture.
+  _getTelegraphTexture(shape, color) {
+    const key = `tele-${shape}-${color.toString(16)}`;
+    if (this.scene.textures.exists(key)) return key;
+
+    const SIZE = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = SIZE; canvas.height = SIZE;
+    const ctx = canvas.getContext('2d');
+    const R = (color >> 16) & 0xff;
+    const G = (color >> 8)  & 0xff;
+    const B =  color        & 0xff;
+
+    if (shape === 'circle') {
+      const cx = SIZE / 2, cy = SIZE / 2, r = SIZE / 2;
+      // Clip to circle so outside stays transparent
+      ctx.save();
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grad.addColorStop(0.00, `rgba(${R},${G},${B},0.00)`);
+      grad.addColorStop(0.55, `rgba(${R},${G},${B},0.03)`);
+      grad.addColorStop(0.75, `rgba(${R},${G},${B},0.10)`);
+      grad.addColorStop(0.88, `rgba(${R},${G},${B},0.28)`);
+      grad.addColorStop(0.95, `rgba(${R},${G},${B},0.55)`);
+      grad.addColorStop(1.00, `rgba(${R},${G},${B},0.00)`);
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, SIZE, SIZE);
+      ctx.restore();
+      // Baked ring strokes (inner glow + bright edge)
+      ctx.strokeStyle = `rgba(${R},${G},${B},0.25)`; ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.arc(cx, cy, r - 4, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = `rgba(${R},${G},${B},0.85)`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(cx, cy, r - 3, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    if (shape === 'rect') {
+      // Symmetric horizontal gradient: bright at x=0 and x=512, dark at x=256
+      const grad = ctx.createLinearGradient(0, 0, SIZE, 0);
+      grad.addColorStop(0.00, `rgba(${R},${G},${B},0.55)`);
+      grad.addColorStop(0.15, `rgba(${R},${G},${B},0.28)`);
+      grad.addColorStop(0.35, `rgba(${R},${G},${B},0.10)`);
+      grad.addColorStop(0.50, `rgba(${R},${G},${B},0.03)`);
+      grad.addColorStop(0.65, `rgba(${R},${G},${B},0.10)`);
+      grad.addColorStop(0.85, `rgba(${R},${G},${B},0.28)`);
+      grad.addColorStop(1.00, `rgba(${R},${G},${B},0.55)`);
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, SIZE, SIZE);
+    }
+
+    this.scene.textures.addCanvas(key, canvas);
+    return key;
+  }
+
+  // Draw a telegraph zone on the floor — Canvas 2D gradient fill + animated ring overlay
   _drawTelegraphZone(x, y, radius, duration, color = 0xff4400) {
-    const zone = this.scene.add.graphics();
-    zone.x = x;
-    zone.y = y;
-    zone.setDepth(5);
+    const texKey = this._getTelegraphTexture('circle', color);
+    const container = this.scene.add.container(x, y);
+    container.setDepth(5);
+
+    // Gradient fill sprite (texture half-size = 256, scaled to match radius)
+    const spr = this.scene.add.image(0, 0, texKey).setAlpha(0);
+    // Ring overlay Graphics — only pulsing strokes, no fill drawn here
+    const ring = this.scene.add.graphics();
+    container.add([spr, ring]);
 
     this.scene.tweens.addCounter({
       from: 0, to: 1, duration,
       onUpdate: (tween) => {
         const t = tween.getValue();
-        zone.clear();
 
         // Animated radius: expand → overshoot → settle
         let rMult;
@@ -346,47 +402,46 @@ export default class BossBase {
         else               { rMult = 1.0; }
         const r = radius * rMult;
 
-        // Edge-bright fill: base tint everywhere + thick inner-edge bands
-        zone.fillStyle(color, 0.08 + t * 0.05); zone.fillCircle(0, 0, r);
-        zone.lineStyle(r * 0.28, color, 0.20 + t * 0.08); zone.strokeCircle(0, 0, r * 0.86);
-        zone.lineStyle(r * 0.18, color, 0.08 + t * 0.04); zone.strokeCircle(0, 0, r * 0.68);
+        // Scale sprite to current radius (texture radius = 256px)
+        spr.setScale(r / 256);
 
         // Pulse signal: starts after settle, frequency doubles in urgency window
         const pulsePhase = Math.max(0, (t - 0.55) / 0.45);
         const freq = t > 0.85 ? 10 : 5;
         const pulse = pulsePhase * 0.25 * Math.abs(Math.sin(pulsePhase * freq * Math.PI));
 
-        // Outer glow halo
-        zone.lineStyle(6, color, 0.08 + pulse * 0.3); zone.strokeCircle(0, 0, r + 3);
-        zone.lineStyle(4, color, 0.15 + pulse * 0.4); zone.strokeCircle(0, 0, r + 1);
+        // Ramp sprite alpha in during expand, add slight pulse boost after settle
+        spr.setAlpha(Math.min(1, t * 2.2 + pulse * 0.15));
 
-        // Main ring
-        zone.lineStyle(2.5 + pulse * 1.5, color, Math.min(1, 0.55 + t * 0.35 + pulse));
-        zone.strokeCircle(0, 0, r);
-
-        // Inner accent ring — fades in after settle
+        // Ring overlay: pulsing halo + bright ring + inner accent + urgency flash
+        ring.clear();
+        ring.lineStyle(6, color, 0.08 + pulse * 0.3); ring.strokeCircle(0, 0, r + 3);
+        ring.lineStyle(4, color, 0.15 + pulse * 0.4); ring.strokeCircle(0, 0, r + 1);
+        ring.lineStyle(2.5 + pulse * 1.5, color, Math.min(1, 0.55 + t * 0.35 + pulse));
+        ring.strokeCircle(0, 0, r);
         if (t > 0.5) {
-          zone.lineStyle(1.2, color, (t - 0.5) / 0.5 * 0.35);
-          zone.strokeCircle(0, 0, r - 9);
+          ring.lineStyle(1.2, color, (t - 0.5) / 0.5 * 0.35);
+          ring.strokeCircle(0, 0, r - 9);
         }
-
-        // Urgency edge flash → white tinge on ring
         if (t > 0.85) {
-          zone.lineStyle(2, 0xffffff, ((t - 0.85) / 0.15) * 0.5);
-          zone.strokeCircle(0, 0, r);
+          ring.lineStyle(2, 0xffffff, ((t - 0.85) / 0.15) * 0.5);
+          ring.strokeCircle(0, 0, r);
         }
       },
-      onComplete: () => zone.destroy()
+      onComplete: () => container.destroy(true)
     });
-    return zone;
+    return container;
   }
 
-  // Draw a telegraph rectangle — slash-expand from center, leading edge + corner markers, urgency pulse
+  // Draw a telegraph rectangle — Canvas 2D gradient fill sprite + Graphics outline/markers
   // fromX/Y = boss position, toX/Y = charge destination, halfWidth = contact radius.
   _drawTelegraphRect(fromX, fromY, toX, toY, halfWidth, duration, color = 0xff4400) {
     const angle = Phaser.Math.Angle.Between(fromX, fromY, toX, toY);
     const px = Math.cos(angle + Math.PI / 2);
     const py = Math.sin(angle + Math.PI / 2);
+    const len = Phaser.Math.Distance.Between(fromX, fromY, toX, toY);
+    const mx = (fromX + toX) / 2;
+    const my = (fromY + toY) / 2;
 
     const corners = (hw) => [
       { x: fromX + px * hw, y: fromY + py * hw },
@@ -395,8 +450,17 @@ export default class BossBase {
       { x: toX   + px * hw, y: toY   + py * hw },
     ];
 
+    // Gradient fill sprite — X axis = width direction (gradient), Y axis = length direction
+    // rotation = angle - π/2 maps texture X → perpendicular-to-attack in world space
+    const texKey = this._getTelegraphTexture('rect', color);
+    const spr = this.scene.add.image(mx, my, texKey);
+    spr.setDepth(5).setAlpha(0);
+    spr.setRotation(angle - Math.PI / 2);
+    spr.setScale((halfWidth * 2) / 512, len / 512);
+
+    // Graphics for outline, corner markers, leading edge, urgency flash only
     const rect = this.scene.add.graphics();
-    rect.setDepth(5);
+    rect.setDepth(6);
 
     this.scene.tweens.addCounter({
       from: 0, to: 1, duration,
@@ -409,35 +473,17 @@ export default class BossBase {
         if      (t < 0.30) { hwMult = (t / 0.30) * 1.15; }
         else if (t < 0.50) { hwMult = 1.15 - 0.15 * ((t - 0.30) / 0.20); }
         else               { hwMult = 1.0; }
-        const pts = corners(halfWidth * hwMult);
+        const hw = halfWidth * hwMult;
+        const pts = corners(hw);
 
         // Pulse signal: starts after settle, frequency doubles in urgency window
         const pulsePhase = Math.max(0, (t - 0.50) / 0.50);
         const freq = t > 0.85 ? 10 : 5;
         const pulse = pulsePhase * 0.3 * Math.abs(Math.sin(pulsePhase * freq * Math.PI));
 
-        // Edge-bright fill: thin base + side-strip polygons building up alpha near edges
-        const hw = halfWidth * hwMult;
-        const tAlpha = 0.8 + t * 0.5;
-        rect.fillStyle(color, 0.06 + t * 0.06);
-        rect.fillPoints(pts, true);
-        // Three strip tiers per side: [outer boundary, inner boundary, alpha]
-        const tiers = [[1.00, 0.78, 0.16], [0.78, 0.60, 0.10], [0.60, 0.46, 0.06]];
-        for (const [outer, inner, a] of tiers) {
-          rect.fillStyle(color, Math.min(1, a * tAlpha));
-          rect.fillPoints([
-            { x: fromX + px*hw*outer, y: fromY + py*hw*outer },
-            { x: fromX + px*hw*inner, y: fromY + py*hw*inner },
-            { x: toX   + px*hw*inner, y: toY   + py*hw*inner },
-            { x: toX   + px*hw*outer, y: toY   + py*hw*outer },
-          ], true);
-          rect.fillPoints([
-            { x: fromX - px*hw*inner, y: fromY - py*hw*inner },
-            { x: fromX - px*hw*outer, y: fromY - py*hw*outer },
-            { x: toX   - px*hw*outer, y: toY   - py*hw*outer },
-            { x: toX   - px*hw*inner, y: toY   - py*hw*inner },
-          ], true);
-        }
+        // Animate gradient sprite width (scaleX) with hwMult for slash-open effect
+        spr.scaleX = (hw * 2) / 512;
+        spr.setAlpha(Math.min(1, t * 2 + pulse * 0.1));
 
         // Main outline
         rect.lineStyle(2 + pulse, color, Math.min(1, 0.5 + t * 0.4 + pulse));
@@ -460,7 +506,7 @@ export default class BossBase {
           rect.strokePoints(pts, true);
         }
       },
-      onComplete: () => rect.destroy(),
+      onComplete: () => { spr.destroy(); rect.destroy(); },
     });
     return rect;
   }
