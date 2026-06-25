@@ -3,7 +3,8 @@ import {
   PLAYER, SKILLS, COLORS, SCALING, WEAPON,
   GAME_WIDTH, GAME_HEIGHT
 } from '../config/gameConfig.js';
-import { spawnBurst, spawnSparks, spawnDust, spawnBlood, spawnImpactRing } from '../systems/ParticleHelper.js';
+import { getSettings, saveSetting } from '../config/settings.js';
+import { spawnBurst, spawnSparks, spawnDust, spawnBlood, spawnImpactRing, spawnGroundSlamDust, spawnDashBurst, spawnDashTrailPuff } from '../systems/ParticleHelper.js';
 
 // ─── Canvas 2D helper ─────────────────────────────────────────────────────────
 // Draws a rounded rectangle path onto a Canvas 2D context.
@@ -860,40 +861,63 @@ export default class Player {
   _setupInput() {
     const scene = this.scene;
 
-    // Right-click: move (use worldX/Y so coordinates work in large camera-followed worlds)
+    // Pointer: move on right-click, attack on left-click, always track facing angle
     scene.input.on('pointerdown', (ptr) => {
       if (ptr.rightButtonDown()) {
         this.targetX = ptr.worldX;
         this.targetY = ptr.worldY;
-        this.moving = true;
+        this.moving  = true;
       }
-      if (ptr.leftButtonDown()) {
-        this._handleLeftClick(ptr);
-      }
+      if (ptr.leftButtonDown()) this._handleLeftClick(ptr);
     });
-
     scene.input.on('pointermove', (ptr) => {
-      // Continuous right-click hold movement
       if (ptr.rightButtonDown()) {
         this.targetX = ptr.worldX;
         this.targetY = ptr.worldY;
-        this.moving = true;
+        this.moving  = true;
       }
-      // Always track facing angle (world coords)
       this.facingAngle = Phaser.Math.Angle.Between(this.x, this.y, ptr.worldX, ptr.worldY);
     });
 
-    // Do NOT stop movement on right-click release —
-    // player continues to the last registered target and stops on arrival.
+    // WASD keys for movement (polled in update when movementMode === 'wasd')
+    this.wasdKeys = scene.input.keyboard.addKeys('W,A,S,D');
 
-    // Skill keys
-    scene.input.keyboard.on('keydown-Q', () => this._useSkill('Q'));
-    scene.input.keyboard.on('keydown-W', () => this._useSkill('W'));
-    scene.input.keyboard.on('keydown-E', () => this._useSkill('E'));
-    scene.input.keyboard.on('keydown-SPACE', (e) => {
-      e.preventDefault();
-      this._dodge();
-    });
+    // Skill / dodge keys — registered from settings so they survive rebinds
+    this._skillKeyHandlers = [];
+    this._movementMode = getSettings().movementMode;
+    this._registerSkillKeys();
+  }
+
+  // Re-registers skill/dodge keyboard listeners from current settings.
+  // Called on init and whenever the player rebinds a key or changes movement mode.
+  _registerSkillKeys() {
+    // Remove previous listeners
+    for (const [evt, fn] of this._skillKeyHandlers) {
+      this.scene.input.keyboard.off(evt, fn);
+    }
+    this._skillKeyHandlers = [];
+
+    const { keys } = getSettings();
+    const bind = (slot, skillId, isDodge = false) => {
+      const evt = `keydown-${keys[slot]}`;
+      const fn  = isDodge
+        ? (e) => { e.preventDefault(); this._dodge(); }
+        : ()  => this._useSkill(skillId);
+      this.scene.input.keyboard.on(evt, fn);
+      this._skillKeyHandlers.push([evt, fn]);
+    };
+
+    bind('skill1', 'Q');
+    bind('skill2', 'W');
+    bind('skill3', 'E');
+    bind('dodge',  null, true);
+  }
+
+  // Called by the settings overlay whenever the player changes a binding or mode.
+  applySettings() {
+    const s = getSettings();
+    this._movementMode = s.movementMode;
+    this._registerSkillKeys();
   }
 
   _handleLeftClick(ptr) {
@@ -921,33 +945,67 @@ export default class Player {
     };
   }
 
-  _fireProjectile(angle, damage, color, radius, speed, isSkill) {
-    const proj = this.scene.add.graphics();
+  _getPlayerProjTexture(color, radius, isSkill) {
+    const key = `fx-pproj-${color.toString(16)}-${radius}${isSkill ? '-s' : ''}`;
+    if (this.scene.textures.exists(key)) return key;
 
-    // Outer glow
-    proj.fillStyle(color, 0.18);
-    proj.fillCircle(0, 0, radius * 3.2);
-    // Mid glow
-    proj.fillStyle(color, 0.42);
-    proj.fillCircle(0, 0, radius * 1.9);
-    // Main body
-    proj.fillStyle(color, 1);
-    proj.fillCircle(0, 0, radius);
-    // Bright white core
-    proj.fillStyle(0xffffff, 0.9);
-    proj.fillCircle(0, 0, radius * 0.42);
+    const GLOW = radius * 3.2;
+    const S = Math.ceil(GLOW) * 2 + 4;
+    const canvas = document.createElement('canvas');
+    canvas.width = S; canvas.height = S;
+    const ctx = canvas.getContext('2d');
+    const cx = S / 2, cy = S / 2;
+    const R = (color >> 16) & 0xff;
+    const G = (color >> 8)  & 0xff;
+    const B =  color        & 0xff;
+    const lr = Math.min(255, Math.round(R * 1.5 + 80));
+    const lg = Math.min(255, Math.round(G * 1.5 + 80));
+    const lb = Math.min(255, Math.round(B * 1.5 + 80));
+    const dr = Math.round(R * 0.3), dg = Math.round(G * 0.3), db = Math.round(B * 0.3);
 
+    // Layer 1 — outer soft glow cloud
+    const outerGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, GLOW);
+    outerGlow.addColorStop(0.00, `rgba(${R},${G},${B},0.30)`);
+    outerGlow.addColorStop(0.40, `rgba(${R},${G},${B},0.18)`);
+    outerGlow.addColorStop(0.75, `rgba(${R},${G},${B},0.07)`);
+    outerGlow.addColorStop(1.00, `rgba(${R},${G},${B},0.00)`);
+    ctx.fillStyle = outerGlow; ctx.fillRect(0, 0, S, S);
+
+    // Layer 2 — mid glow
+    const midGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.9);
+    midGlow.addColorStop(0.00, `rgba(${R},${G},${B},0.65)`);
+    midGlow.addColorStop(0.60, `rgba(${R},${G},${B},0.30)`);
+    midGlow.addColorStop(1.00, `rgba(${R},${G},${B},0.00)`);
+    ctx.fillStyle = midGlow; ctx.fillRect(0, 0, S, S);
+
+    // Layer 3 — sphere body (clipped, offset focal point for 3D shading)
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.clip();
+    const sphere = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, 0, cx, cy, radius);
+    sphere.addColorStop(0.00, 'rgba(255,255,255,1.00)');
+    sphere.addColorStop(0.20, `rgba(${lr},${lg},${lb},1.00)`);
+    sphere.addColorStop(0.55, `rgba(${R},${G},${B},1.00)`);
+    sphere.addColorStop(0.85, `rgba(${dr},${dg},${db},0.90)`);
+    sphere.addColorStop(1.00, `rgba(${dr},${dg},${db},0.00)`);
+    ctx.fillStyle = sphere; ctx.fillRect(0, 0, S, S);
+    ctx.restore();
+
+    // Q skill ring accent — baked white stroke around the sphere
     if (isSkill) {
-      proj.lineStyle(2.5, 0xffffff, 0.75);
-      proj.strokeCircle(0, 0, radius * 1.15);
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(cx, cy, radius * 1.15, 0, Math.PI * 2); ctx.stroke();
     }
 
-    // Spawn at the muzzle tip — same anchor math as the float update, so the
-    // projectile always emerges from the visible muzzle.
+    this.scene.textures.addCanvas(key, canvas);
+    return key;
+  }
+
+  _fireProjectile(angle, damage, color, radius, speed, isSkill) {
+    const texKey = this._getPlayerProjTexture(color, radius, isSkill);
     const m = this._muzzleWorldPos(angle);
-    proj.x = m.x;
-    proj.y = m.y;
-    proj.setDepth(8);
+    const proj = this.scene.add.image(m.x, m.y, texKey);
+    proj.setOrigin(0.5, 0.5).setDepth(8);
 
     proj._vx = Math.cos(angle) * speed;
     proj._vy = Math.sin(angle) * speed;
@@ -988,7 +1046,8 @@ export default class Player {
         duration: 180,
       });
     } else if (key === 'W') {
-      // Shield Dash — dash + i-frames + contact damage
+      // Shield Dash — gradient puff burst backward at launch, then dash
+      spawnDashBurst(this.scene, this.x, this.y, angle, 0x44aaff);
       this._doDash(angle, SKILLS.W.dashDistance, SKILLS.W.dashSpeed, SKILLS.W.iframeDuration, dmg, 0x44aaff);
     } else if (key === 'E') {
       // Ground Slam — AoE around player
@@ -1021,6 +1080,10 @@ export default class Player {
 
     // One-hit flag — contact damage fires at most once per dash
     let dashHitLanded = false;
+    // Distance-throttled smoke trail — spawn puffs every ~16px of travel
+    let trailLastX = this.container.x;
+    let trailLastY = this.container.y;
+    const TRAIL_STEP_SQ = 10 * 10;
 
     this.scene.tweens.add({
       targets: this.container,
@@ -1035,6 +1098,14 @@ export default class Player {
         // Contact damage on dash through boss — only once per dash
         if (contactDmg > 0 && !dashHitLanded) {
           if (this._checkContactDamage(contactDmg)) dashHitLanded = true;
+        }
+        // Smoke trail — throttle by distance so density stays even
+        const dx = this.container.x - trailLastX;
+        const dy = this.container.y - trailLastY;
+        if (dx * dx + dy * dy >= TRAIL_STEP_SQ) {
+          spawnDashTrailPuff(this.scene, this.container.x, this.container.y, angle, trailColor);
+          trailLastX = this.container.x;
+          trailLastY = this.container.y;
         }
       },
       onComplete: () => {
@@ -1072,14 +1143,35 @@ export default class Player {
 
   _spawnGhostTrail(color) {
     for (let i = 0; i < 4; i++) {
-      const delay = i * 50;
-      this.scene.time.delayedCall(delay, () => {
-        const ghost = this.scene.add.graphics();
-        ghost.fillStyle(color, 0.35);
-        ghost.fillRoundedRect(this.x - 16, this.y - 10, 32, 28, 6);
-        ghost.fillCircle(this.x, this.y - 18, 13);
-        ghost.setDepth(7);
-        this.scene.tweens.add({ targets: ghost, alpha: 0, duration: 300, onComplete: () => ghost.destroy() });
+      this.scene.time.delayedCall(i * 45, () => {
+        if (!this.alive) return;
+
+        const cx  = this.container.x;
+        const cy  = this.container.y;
+        const csx = this.container.scaleX * this.characterSprite.scaleX;
+        const csy = this.container.scaleY;
+        const wx  = cx + this.weaponSprite.x * this.container.scaleX;
+        const wy  = cy + this.weaponSprite.y * this.container.scaleY;
+        const startAlpha = 0.45 - i * 0.06;
+
+        const gc = this.scene.add.image(cx, cy, this.characterSprite.texture.key);
+        gc.setOrigin(0.5, 60 / 82).setScale(csx, csy)
+          .setTint(color).setAlpha(startAlpha).setDepth(7);
+        this.scene.tweens.add({
+          targets: gc, alpha: 0, duration: 260,
+          onComplete: () => gc.destroy(),
+        });
+
+        const gw = this.scene.add.image(wx, wy, 'player-weapon2');
+        gw.setOrigin(0.5, 0.5)
+          .setScale(this.container.scaleX, this.container.scaleY)
+          .setRotation(this.weaponSprite.rotation)
+          .setFlipY(this.weaponSprite.flipY)
+          .setTint(color).setAlpha(startAlpha - 0.05).setDepth(7);
+        this.scene.tweens.add({
+          targets: gw, alpha: 0, duration: 260,
+          onComplete: () => gw.destroy(),
+        });
       });
     }
   }
@@ -1102,6 +1194,8 @@ export default class Player {
   }
 
   _groundSlam(dmg, radius) {
+    spawnGroundSlamDust(this.scene, this.x, this.y);
+
     // Visual: expanding ring
     const ring = this.scene.add.graphics();
     ring.x = this.x;
@@ -1121,8 +1215,6 @@ export default class Player {
       },
       onComplete: () => {
         ring.destroy();
-        // F — ground dust cloud on slam landing
-        spawnDust(this.scene, this.x, this.y, 16);
       }
     });
 
@@ -1280,6 +1372,25 @@ export default class Player {
 
     // Passive stamina regen
     this.stamina = Math.min(this.staminaMax, this.stamina + PLAYER.STAMINA_REGEN_RATE * dt);
+
+    // WASD movement — overrides target position each frame when keys are held
+    if (this._movementMode === 'wasd' && !this.isDodging) {
+      let dx = 0, dy = 0;
+      if (this.wasdKeys.W.isDown) dy -= 1;
+      if (this.wasdKeys.S.isDown) dy += 1;
+      if (this.wasdKeys.A.isDown) dx -= 1;
+      if (this.wasdKeys.D.isDown) dx += 1;
+      if (dx !== 0 || dy !== 0) {
+        const len = Math.hypot(dx, dy);
+        this.targetX = this.x + (dx / len) * 200;
+        this.targetY = this.y + (dy / len) * 200;
+        this.moving  = true;
+      } else {
+        this.moving  = false;
+        this.targetX = this.x;
+        this.targetY = this.y;
+      }
+    }
 
     // Movement — skip while dash tween owns the container
     if (this.moving && !this.isDodging) {

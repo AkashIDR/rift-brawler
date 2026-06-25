@@ -592,8 +592,56 @@ export default class Gunner extends BossBase {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // RIFT TELEGRAPH HELPERS (logic identical to original)
+  // RIFT TELEGRAPH HELPERS
   // ─────────────────────────────────────────────────────────────────────────
+
+  // Bake a gradient rift-slit texture using Canvas 2D.
+  // Generated once per (color, projDiameter) pair and cached.
+  _getRiftTexture(color, projDiameter) {
+    const key = `fx-rift-${color.toString(16)}-${projDiameter}`;
+    if (this.scene.textures.exists(key)) return key;
+
+    const w = projDiameter;
+    const h = Math.max(8, Math.round(w * 0.22));
+    const CW = w + 20, CH = h + 14;
+    const canvas = document.createElement('canvas');
+    canvas.width = CW; canvas.height = CH;
+    const ctx = canvas.getContext('2d');
+    const cx = CW / 2, cy = CH / 2;
+    const R = (color >> 16) & 0xff;
+    const G = (color >> 8)  & 0xff;
+    const B =  color        & 0xff;
+    const lr = Math.min(255, Math.round(R * 1.4 + 60));
+    const lg = Math.min(255, Math.round(G * 1.4 + 60));
+    const lb = Math.min(255, Math.round(B * 1.4 + 60));
+
+    // Layer 1 — outer glow halo
+    ctx.save();
+    ctx.translate(cx, cy); ctx.scale(CW / CH, 1);
+    const outerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, CH / 2);
+    outerGlow.addColorStop(0.30, `rgba(${R},${G},${B},0.85)`);
+    outerGlow.addColorStop(0.68, `rgba(${R},${G},${B},0.40)`);
+    outerGlow.addColorStop(1.00, `rgba(${R},${G},${B},0.00)`);
+    ctx.fillStyle = outerGlow;
+    ctx.beginPath(); ctx.arc(0, 0, CH / 2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // Layer 2 — solid bright slit core (white center → full color, fully opaque body)
+    ctx.save();
+    ctx.translate(cx, cy); ctx.scale(w / h, 1);
+    ctx.beginPath(); ctx.arc(0, 0, h / 2, 0, Math.PI * 2); ctx.clip();
+    const core = ctx.createRadialGradient(0, 0, 0, 0, 0, h / 2);
+    core.addColorStop(0.00, 'rgba(255,255,255,1.00)');
+    core.addColorStop(0.28, `rgba(${lr},${lg},${lb},1.00)`);
+    core.addColorStop(0.65, `rgba(${R},${G},${B},1.00)`);
+    core.addColorStop(0.88, `rgba(${R},${G},${B},0.70)`);
+    core.addColorStop(1.00, `rgba(${R},${G},${B},0.00)`);
+    ctx.fillStyle = core; ctx.fillRect(-CW, -CH, CW * 2, CH * 2);
+    ctx.restore();
+
+    this.scene.textures.addCanvas(key, canvas);
+    return key;
+  }
 
   /** World position just beyond the boss outline in the given direction. */
   _riftPos(angle) {
@@ -602,18 +650,11 @@ export default class Gunner extends BossBase {
   }
 
   _spawnRiftTelegraph(x, y, angle, duration, color = 0xaa44ff, projDiameter = 22) {
-    const g = this.scene.add.graphics();
-    g.x = x; g.y = y;
+    const texKey = this._getRiftTexture(color, projDiameter);
+    const g = this.scene.add.image(x, y, texKey);
+    g.setOrigin(0.5, 0.5);
     g.angle = Phaser.Math.RadToDeg(angle) + 90;
     g.setDepth(6).setScale(0);
-
-    const w = projDiameter;
-    const h = Math.max(8, Math.round(w * 0.22));
-
-    g.fillStyle(color, 0.20); g.fillEllipse(0, 0, w + 24, h + 10);
-    g.fillStyle(color, 0.50); g.fillEllipse(0, 0, w + 10, h + 5);
-    g.fillStyle(0xffffff, 0.90); g.fillEllipse(0, 0, w, h);
-    g.lineStyle(1, 0xffffff, 0.70); g.strokeEllipse(0, 0, w, h);
 
     this.scene.tweens.add({
       targets: g, scaleX: 1, scaleY: 1, duration: 200, ease: 'Back.easeOut',

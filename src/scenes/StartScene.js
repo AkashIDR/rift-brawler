@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../config/gameConfig.js';
+import { getSettings, displayKey } from '../config/settings.js';
+import { openSettingsOverlay } from '../ui/SettingsOverlay.js';
+import { S, stoneTextStyle, makeStoneTexture, FONT, LETTER_SPACING } from '../ui/StoneStyle.js';
 
 const CX = GAME_WIDTH / 2;
 const CY = GAME_HEIGHT / 2;
@@ -250,8 +253,9 @@ export default class StartScene extends Phaser.Scene {
 
     const glowLayers = glowConfigs.map(({ scale, color, alpha }) => {
       const t = this.add.text(CX, titleY, 'RIFT BRAWLER', {
-        fontFamily: "'Fredoka One', sans-serif",
+        fontFamily: FONT,
         fontSize: '148px',
+        letterSpacing: LETTER_SPACING,
         color,
         stroke: color,
         strokeThickness: 20,
@@ -261,15 +265,17 @@ export default class StartScene extends Phaser.Scene {
 
     // ── Drop shadow ─────────────────────────────────────────────────────────────
     this.add.text(CX + 6, titleY + 8, 'RIFT BRAWLER', {
-      fontFamily: "'Fredoka One', sans-serif",
+      fontFamily: FONT,
       fontSize: '148px',
+      letterSpacing: LETTER_SPACING,
       color: '#110022',
     }).setOrigin(0.5).setAlpha(0.8);
 
     // ── Main title ──────────────────────────────────────────────────────────────
     const title = this.add.text(CX, titleY, 'RIFT BRAWLER', {
-      fontFamily: "'Fredoka One', sans-serif",
+      fontFamily: FONT,
       fontSize: '148px',
+      letterSpacing: LETTER_SPACING,
       color: '#ffffff',
       stroke: '#cc44ff',
       strokeThickness: 8,
@@ -322,10 +328,10 @@ export default class StartScene extends Phaser.Scene {
 
     // ── Subtitle ────────────────────────────────────────────────────────────────
     const sub = this.add.text(CX, subtitleY, 'Summon. Slay. Survive.', {
-      fontFamily: "'Nunito', sans-serif",
+      fontFamily: FONT,
       fontSize: '34px',
+      letterSpacing: LETTER_SPACING,
       color: '#d4a96a',
-      fontStyle: 'italic',
       stroke: '#1a0a08',
       strokeThickness: 3,
     }).setOrigin(0.5).setAlpha(0);
@@ -351,52 +357,42 @@ export default class StartScene extends Phaser.Scene {
     this._makeButton(CX, startY + gap * 2, 'SETTINGS', 0x1a0e06, 0xd4a96a, () => this._showSettings(), false);
   }
 
-  _makeButton(x, y, label, bgColor, textColor, onClick, isPrimary = false) {
-    const w = 360, h = 66, r = 16;
-    const GOLD = 0xd4a96a;
+  _makeButton(x, y, label, _bgColor, _textColor, onClick, isPrimary = false) {
+    const w = 360, h = 66, r = 12, bevel = 6;
     const container = this.add.container(x, y);
+    const idx = ['START', 'CONTROLS', 'SETTINGS'].indexOf(label);
 
-    // Drop shadow
-    const shadow = this.add.graphics();
-    shadow.fillStyle(0x000000, 0.55);
-    shadow.fillRoundedRect(-w / 2 + 5, -h / 2 + 5, w, h, r);
+    // Canvas-baked stone texture with true gradient shading (rounded for buttons).
+    // Unique key + seed per button so the mottle differs on each one.
+    const texKey = `stone-btn-${idx}`;
+    makeStoneTexture(this, texKey, {
+      w, h, shape: 'rounded', radius: r, bevel,
+      seed: idx * 7 + 3,
+    });
+    const img = this.add.image(0, 0, texKey).setOrigin(0.5);
 
-    const bg = this.add.graphics();
-    bg.fillStyle(bgColor, 1);
-    bg.fillRoundedRect(-w / 2, -h / 2, w, h, r);
-    // Warm cream shine strip
-    bg.fillStyle(0xfff5d0, 0.10);
-    bg.fillRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, h / 2 - 2, { tl: r - 1, tr: r - 1, bl: 0, br: 0 });
-    // Gold border
-    bg.lineStyle(2, GOLD, isPrimary ? 0.95 : 0.75);
-    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, r);
-
-    // Outer glow ring for the primary START button
+    // Primary glow ring (live — 1 stroke object, negligible cost)
+    const glowG = this.add.graphics();
     if (isPrimary) {
-      bg.lineStyle(3, 0xffd080, 0.55);
-      bg.strokeRoundedRect(-w / 2 - 2, -h / 2 - 2, w + 4, h + 4, r + 1);
+      glowG.lineStyle(3, S.BOLT_SHINE, 0.40);
+      glowG.strokeRoundedRect(-w / 2 - 2, -h / 2 - 2, w + 4, h + 4, r + 1);
     }
 
+    // Hover overlay (shown/hidden on pointer events)
     const hoverG = this.add.graphics();
-    hoverG.fillStyle(GOLD, 0.18);
+    hoverG.fillStyle(S.BEVEL_LIGHT, 0.14);
     hoverG.fillRoundedRect(-w / 2, -h / 2, w, h, r);
     hoverG.setAlpha(0);
 
-    const text = this.add.text(0, 1, label, {
-      fontFamily: "'Fredoka One', sans-serif",
-      fontSize: '34px',
-      color: Phaser.Display.Color.IntegerToColor(textColor).rgba,
-      stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5);
+    const textColor = isPrimary ? '#f0e8d0' : S.TEXT;
+    const text = this.add.text(0, 1, label, stoneTextStyle(32, textColor)).setOrigin(0.5);
 
-    container.add([shadow, bg, hoverG, text]);
+    container.add([img, glowG, hoverG, text]);
     container.setSize(w, h);
     container.setInteractive({ cursor: 'pointer' });
     container.setAlpha(0);
 
     // Staggered fade-in
-    const idx = ['START', 'CONTROLS', 'SETTINGS'].indexOf(label);
     this.tweens.add({ targets: container, alpha: 1, duration: 500, delay: 600 + idx * 120, ease: 'Quad.easeOut' });
 
     container.on('pointerover', () => {
@@ -483,60 +479,57 @@ export default class StartScene extends Phaser.Scene {
   _showControls() {
     if (this.controlsOpen) return;
     this.controlsOpen = true;
+    const s = getSettings();
+    const moveRow = s.movementMode === 'wasd'
+      ? [['W / A / S / D', 'Move']]
+      : [['Right-click', 'Move to position'], ['Right-click + Hold', 'Continuous movement']];
     this._openOverlay('CONTROLS', [
-      ['Right-click',       'Move to position'],
-      ['Right-click + Hold','Continuous movement'],
-      ['Left-click',        'Basic attack'],
-      ['Altar',             'Walk up or attack to summon'],
-      ['Portal',            'Walk into to advance'],
-      ['Spacebar',          'Dodge (i-frames)'],
-      ['Q',                 'Skill 1 — Power Strike'],
-      ['W',                 'Skill 2 — Shield Dash'],
-      ['E',                 'Skill 3 — Ground Slam'],
-      ['ESC',               'Pause / Unpause'],
+      ...moveRow,
+      ['Left-click',                     'Basic attack'],
+      [displayKey(s.keys.skill1),        'Skill 1 — Power Strike'],
+      [displayKey(s.keys.skill2),        'Skill 2 — Shield Dash'],
+      [displayKey(s.keys.skill3),        'Skill 3 — Ground Slam'],
+      [displayKey(s.keys.dodge),         'Dodge (i-frames)'],
+      ['Altar',                          'Walk up or attack to summon'],
+      ['Portal',                         'Walk into to advance'],
+      ['ESC',                            'Pause / Unpause'],
     ], () => { this.controlsOpen = false; });
   }
 
   _showSettings() {
     if (this.settingsOpen) return;
     this.settingsOpen = true;
-    this._openOverlay('SETTINGS', [
-      ['Master Volume', '— coming soon —'],
-      ['Music Volume',  '— coming soon —'],
-      ['SFX Volume',    '— coming soon —'],
-    ], () => { this.settingsOpen = false; });
+    openSettingsOverlay(this, { onClose: () => { this.settingsOpen = false; } });
   }
 
   _openOverlay(title, rows, onClose) {
     const rowSpacing = 42;
-    const w = 680, r = 20;
+    const w = 680;
     const h = 100 + rows.length * rowSpacing + 80;
     const container = this.add.container(CX, CY);
 
-    // Backdrop blur panel
+    // Backdrop
     const backdrop = this.add.graphics();
     backdrop.fillStyle(0x000000, 0.55);
     backdrop.fillRect(-GAME_WIDTH / 2, -GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT);
 
-    const bg = this.add.graphics();
-    bg.fillStyle(0x0d0d1e, 0.97);
-    bg.fillRoundedRect(-w / 2, -h / 2, w, h, r);
-    bg.lineStyle(2, 0xaa44ff, 0.85);
-    bg.strokeRoundedRect(-w / 2, -h / 2, w, h, r);
-    bg.lineStyle(1, 0xdd88ff, 0.12);
-    bg.strokeRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, h - 4, r - 1);
-    // Shine strip
-    bg.fillStyle(0xffffff, 0.03);
-    bg.fillRoundedRect(-w / 2 + 2, -h / 2 + 2, w - 4, 18, { tl: r - 1, tr: r - 1, bl: 0, br: 0 });
+    // Canvas-baked chamfered/faceted stone slab (height varies per row count → keyed by size)
+    const texKey = `stone-overlay-${w}x${h}`;
+    makeStoneTexture(this, texKey, {
+      w, h, shape: 'chamfered', chamfer: 24, bevel: 12,
+      seed: 42,
+    });
+    const bg = this.add.image(0, 0, texKey).setOrigin(0.5);
 
-    const titleText = this.add.text(0, -h / 2 + 42, title, {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '36px', color: '#ccaaff',
-      stroke: '#33004d', strokeThickness: 4,
-    }).setOrigin(0.5);
+    const titleText = this.add.text(0, -h / 2 + 42, title,
+      stoneTextStyle(42, '#e8e0ff')).setOrigin(0.5);
 
+    // Carved groove divider
     const divider = this.add.graphics();
-    divider.lineStyle(1, 0xaa44ff, 0.35);
+    divider.lineStyle(1, S.CRACK, 0.6);
     divider.lineBetween(-w / 2 + 30, -h / 2 + 72, w / 2 - 30, -h / 2 + 72);
+    divider.lineStyle(1, S.BEVEL_LIGHT, 0.3);
+    divider.lineBetween(-w / 2 + 30, -h / 2 + 73, w / 2 - 30, -h / 2 + 73);
 
     container.add([backdrop, bg, titleText, divider]);
 
@@ -549,36 +542,30 @@ export default class StartScene extends Phaser.Scene {
         container.add(rowBg);
       }
       container.add(this.add.text(-w / 2 + 30, y, key, {
-        fontFamily: "'Nunito', sans-serif", fontSize: '22px', color: '#ffffff', fontStyle: 'bold',
+        fontFamily: FONT, fontSize: '26px', letterSpacing: LETTER_SPACING, color: S.TEXT,
       }).setOrigin(0, 0.5));
       container.add(this.add.text(w / 2 - 30, y, val, {
-        fontFamily: "'Nunito', sans-serif", fontSize: '22px', color: '#aa88ff',
+        fontFamily: FONT, fontSize: '26px', letterSpacing: LETTER_SPACING, color: '#9090b8',
       }).setOrigin(1, 0.5));
     });
 
-    // Close button
-    const closeBg = this.add.graphics();
-    closeBg.fillStyle(0xaa44ff, 1);
-    closeBg.fillRoundedRect(-70, -24, 140, 48, 12);
-    closeBg.lineStyle(1.5, 0xdd88ff, 0.5);
-    closeBg.strokeRoundedRect(-70, -24, 140, 48, 12);
-    const closeText = this.add.text(0, 0, 'CLOSE', {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '26px', color: '#ffffff',
-    }).setOrigin(0.5);
+    // Stone close button — same canvas gradient stone as the menu buttons
+    makeStoneTexture(this, 'stone-btn-close', {
+      w: 140, h: 48, shape: 'rounded', radius: 10, bevel: 5,
+      seed: 9,
+    });
+    const closeBg = this.add.image(0, 0, 'stone-btn-close').setOrigin(0.5);
+    const closeHoverG = this.add.graphics();
+    closeHoverG.fillStyle(S.BEVEL_LIGHT, 0.14);
+    closeHoverG.fillRoundedRect(-70, -24, 140, 48, 10);
+    closeHoverG.setAlpha(0);
+    const closeText = this.add.text(0, 0, 'CLOSE', stoneTextStyle(28)).setOrigin(0.5);
 
-    const closeBtn = this.add.container(0, h / 2 - 42, [closeBg, closeText]);
+    const closeBtn = this.add.container(0, h / 2 - 42, [closeBg, closeHoverG, closeText]);
     closeBtn.setSize(140, 48);
     closeBtn.setInteractive({ cursor: 'pointer' });
-    closeBtn.on('pointerover', () => {
-      closeBg.clear();
-      closeBg.fillStyle(0xcc66ff, 1);
-      closeBg.fillRoundedRect(-70, -24, 140, 48, 12);
-    });
-    closeBtn.on('pointerout', () => {
-      closeBg.clear();
-      closeBg.fillStyle(0xaa44ff, 1);
-      closeBg.fillRoundedRect(-70, -24, 140, 48, 12);
-    });
+    closeBtn.on('pointerover',  () => this.tweens.add({ targets: closeHoverG, alpha: 1, duration: 100 }));
+    closeBtn.on('pointerout',   () => this.tweens.add({ targets: closeHoverG, alpha: 0, duration: 100 }));
     closeBtn.on('pointerdown', () => { container.destroy(true); onClose(); });
     container.add(closeBtn);
 

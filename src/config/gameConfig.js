@@ -86,6 +86,7 @@ export const WEAPON = {
 export const SKILLS = {
   Q: {
     name: 'Power Strike',
+    description: 'Launch a piercing energy bolt toward your cursor.',
     staminaCost: 25,
     cooldown: 1200,
     damage: 400,
@@ -94,6 +95,7 @@ export const SKILLS = {
   },
   W: {
     name: 'Shield Dash',
+    description: 'Charge forward with your shield, dealing damage and granting brief invincibility.',
     staminaCost: 35,
     cooldown: 2000,
     damage: 300,
@@ -104,6 +106,7 @@ export const SKILLS = {
   },
   E: {
     name: 'Ground Slam',
+    description: 'Slam the ground to unleash a shockwave in a wide area around you.',
     staminaCost: 40,
     cooldown: 2500,
     damage: 550,

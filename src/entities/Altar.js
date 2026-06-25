@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { COLORS } from '../config/gameConfig.js';
 import { spawnBurst } from '../systems/ParticleHelper.js';
+import { FONT, LETTER_SPACING } from '../ui/StoneStyle.js';
 
 export default class Altar {
   constructor(scene, x, y) {
@@ -22,8 +23,9 @@ export default class Altar {
     this.container.add(this.g);
 
     this.label = this.scene.add.text(0, -67, 'Summon Boss', {
-      fontFamily: "'Fredoka One', sans-serif",
-      fontSize: '18px',
+      fontFamily: FONT,
+      fontSize: '21px',
+      letterSpacing: LETTER_SPACING,
       color: '#ffe8c0',
       stroke: '#2a0000',
       strokeThickness: 4,

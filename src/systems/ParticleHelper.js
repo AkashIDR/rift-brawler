@@ -195,6 +195,211 @@ export function spawnBlood(scene, x, y, count = 10) {
   }
 }
 
+// ─── Ground slam landing ──────────────────────────────────────────────────────
+// Layers: impact flash → soft gradient dust cloud.
+// Dust = many overlapping tinted radial-gradient Images (Canvas 2D baked once).
+export function spawnGroundSlamDust(scene, x, y) {
+  // Bake puff texture once per session — white radial gradient, transparent edge.
+  // Tint at spawn time gives each puff its earthy color without extra textures.
+  const PUFF_KEY = 'fx-dust-puff';
+  if (!scene.textures.exists(PUFF_KEY)) {
+    const SIZE = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = SIZE; canvas.height = SIZE;
+    const ctx = canvas.getContext('2d');
+    const cx = SIZE / 2, cy = SIZE / 2, r = SIZE / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0.00, 'rgba(255,255,255,0.80)');
+    grad.addColorStop(0.30, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(0.60, 'rgba(255,255,255,0.22)');
+    grad.addColorStop(0.85, 'rgba(255,255,255,0.06)');
+    grad.addColorStop(1.00, 'rgba(255,255,255,0.00)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    scene.textures.addCanvas(PUFF_KEY, canvas);
+  }
+
+  // 1. Central impact flash — snaps open and vanishes in 130ms
+  const flash = scene.add.graphics();
+  flash.fillStyle(0xffffff, 0.90); flash.fillCircle(0, 0, 7);
+  flash.fillStyle(0xff6600, 0.65); flash.fillCircle(0, 0, 13);
+  flash.lineStyle(2.5, 0xff6600, 0.95); flash.strokeCircle(0, 0, 13);
+  flash.setPosition(x, y).setDepth(10);
+  scene.events.once('shutdown', () => { if (flash.active) flash.destroy(); });
+  scene.tweens.add({
+    targets: flash, scaleX: 3.5, scaleY: 3.5, alpha: 0,
+    duration: 130, ease: 'Quad.easeOut',
+    onComplete: () => { if (flash.active) flash.destroy(); },
+  });
+
+  // 2. Dust cloud — overlapping tinted soft-edged blobs at random sizes/positions.
+  const TINTS = [0xb8a880, 0xa09070, 0xc8b898, 0x907858, 0xd4c0a0, 0x8a7050];
+  const count = 10 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < count; i++) {
+    const angle       = Math.random() * Math.PI * 2;
+    const startDist   = 3 + Math.random() * 14;
+    const travelDist  = 22 + Math.random() * 33;
+    const baseScale   = 0.38 + Math.random() * 0.34;
+    const aspect      = 0.45 + Math.random() * 0.55;
+    const startScaleX = Math.random() < 0.5 ? baseScale : baseScale * aspect;
+    const startScaleY = Math.random() < 0.5 ? baseScale * aspect : baseScale;
+    const expandRatio = 2.0 + Math.random() * 1.2;
+    const tint        = TINTS[Math.floor(Math.random() * TINTS.length)];
+    const startAlpha  = 0.75 + Math.random() * 0.20;
+    const duration    = 350 + Math.random() * 350;
+
+    const puff = scene.add.image(
+      x + Math.cos(angle) * startDist,
+      y + Math.sin(angle) * startDist,
+      PUFF_KEY,
+    );
+    puff.setOrigin(0.5, 0.5)
+      .setScale(startScaleX, startScaleY)
+      .setRotation(Math.random() * Math.PI * 2)
+      .setTint(tint)
+      .setAlpha(startAlpha)
+      .setDepth(8);
+
+    scene.events.once('shutdown', () => { if (puff.active) puff.destroy(); });
+    scene.tweens.add({
+      targets: puff,
+      x: x + Math.cos(angle) * (startDist + travelDist),
+      y: y + Math.sin(angle) * (startDist + travelDist),
+      scaleX: startScaleX * expandRatio,
+      scaleY: startScaleY * expandRatio,
+      alpha: 0,
+      duration,
+      ease: 'Quad.easeOut',
+      onComplete: () => { if (puff.active) puff.destroy(); },
+    });
+  }
+}
+
+// ─── Directional dash burst ───────────────────────────────────────────────────
+// Gradient puff cloud that shoots backward (opposite the dash direction) in a
+// tight fan. Shares the fx-dust-puff texture with spawnGroundSlamDust.
+// Quick fade, small travel — reads as propulsion exhaust, not an explosion.
+export function spawnDashBurst(scene, x, y, angle, color) {
+  const PUFF_KEY = 'fx-dust-puff';
+  if (!scene.textures.exists(PUFF_KEY)) {
+    const SIZE = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = SIZE; canvas.height = SIZE;
+    const ctx = canvas.getContext('2d');
+    const cx = SIZE / 2, cy = SIZE / 2, r = SIZE / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0.00, 'rgba(255,255,255,0.80)');
+    grad.addColorStop(0.30, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(0.60, 'rgba(255,255,255,0.22)');
+    grad.addColorStop(0.85, 'rgba(255,255,255,0.06)');
+    grad.addColorStop(1.00, 'rgba(255,255,255,0.00)');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, SIZE, SIZE);
+    scene.textures.addCanvas(PUFF_KEY, canvas);
+  }
+
+  const backAngle = angle + Math.PI;
+  const count = 10 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < count; i++) {
+    const spread      = (Math.random() - 0.5) * 1.0;
+    const puffAngle   = backAngle + spread;
+    const startDist   = 3 + Math.random() * 12;
+    const travelDist  = 28 + Math.random() * 32;
+    const baseScale   = 0.38 + Math.random() * 0.30;
+    const aspect      = 0.50 + Math.random() * 0.50;
+    const startScaleX = Math.random() < 0.5 ? baseScale : baseScale * aspect;
+    const startScaleY = Math.random() < 0.5 ? baseScale * aspect : baseScale;
+    const expandRatio = 1.8 + Math.random() * 1.2;
+    const startAlpha  = 0.75 + Math.random() * 0.20;
+    const duration    = 260 + Math.random() * 180;
+
+    const puff = scene.add.image(
+      x + Math.cos(puffAngle) * startDist,
+      y + Math.sin(puffAngle) * startDist,
+      PUFF_KEY,
+    );
+    puff.setOrigin(0.5, 0.5)
+      .setScale(startScaleX, startScaleY)
+      .setRotation(Math.random() * Math.PI * 2)
+      .setTint(color)
+      .setAlpha(startAlpha)
+      .setDepth(8);
+    scene.events.once('shutdown', () => { if (puff.active) puff.destroy(); });
+    scene.tweens.add({
+      targets: puff,
+      x: x + Math.cos(puffAngle) * (startDist + travelDist),
+      y: y + Math.sin(puffAngle) * (startDist + travelDist),
+      scaleX: startScaleX * expandRatio,
+      scaleY: startScaleY * expandRatio,
+      alpha: 0,
+      duration,
+      ease: 'Quad.easeOut',
+      onComplete: () => { if (puff.active) puff.destroy(); },
+    });
+  }
+}
+
+// ─── Dash smoke trail (per-step) ─────────────────────────────────────────────
+// 2 small puffs spawned at current player position while dashing.
+// Called from _doDash's onUpdate every ~16px of travel.
+// Smaller & more transparent than spawnDashBurst so they read as trailing smoke.
+export function spawnDashTrailPuff(scene, x, y, angle, color) {
+  const PUFF_KEY = 'fx-dust-puff';
+  if (!scene.textures.exists(PUFF_KEY)) {
+    const SIZE = 64;
+    const canvas = document.createElement('canvas');
+    canvas.width = SIZE; canvas.height = SIZE;
+    const ctx = canvas.getContext('2d');
+    const cx = SIZE / 2, cy = SIZE / 2, r = SIZE / 2;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0.00, 'rgba(255,255,255,0.80)');
+    grad.addColorStop(0.30, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(0.60, 'rgba(255,255,255,0.22)');
+    grad.addColorStop(0.85, 'rgba(255,255,255,0.06)');
+    grad.addColorStop(1.00, 'rgba(255,255,255,0.00)');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, SIZE, SIZE);
+    scene.textures.addCanvas(PUFF_KEY, canvas);
+  }
+
+  const backAngle = angle + Math.PI;
+  for (let i = 0; i < 3; i++) {
+    const spread      = (Math.random() - 0.5) * 0.8;
+    const puffAngle   = backAngle + spread;
+    const startDist   = 2 + Math.random() * 8;
+    const travelDist  = 18 + Math.random() * 20;
+    const baseScale   = 0.28 + Math.random() * 0.24;
+    const aspect      = 0.50 + Math.random() * 0.50;
+    const startScaleX = Math.random() < 0.5 ? baseScale : baseScale * aspect;
+    const startScaleY = Math.random() < 0.5 ? baseScale * aspect : baseScale;
+    const expandRatio = 1.8 + Math.random() * 1.0;
+    const startAlpha  = 0.60 + Math.random() * 0.25;
+    const duration    = 240 + Math.random() * 160;
+
+    const puff = scene.add.image(
+      x + Math.cos(puffAngle) * startDist,
+      y + Math.sin(puffAngle) * startDist,
+      PUFF_KEY,
+    );
+    puff.setOrigin(0.5, 0.5)
+      .setScale(startScaleX, startScaleY)
+      .setRotation(Math.random() * Math.PI * 2)
+      .setTint(color)
+      .setAlpha(startAlpha)
+      .setDepth(7);
+    scene.events.once('shutdown', () => { if (puff.active) puff.destroy(); });
+    scene.tweens.add({
+      targets: puff,
+      x: x + Math.cos(puffAngle) * (startDist + travelDist),
+      y: y + Math.sin(puffAngle) * (startDist + travelDist),
+      scaleX: startScaleX * expandRatio,
+      scaleY: startScaleY * expandRatio,
+      alpha: 0,
+      duration,
+      ease: 'Quad.easeOut',
+      onComplete: () => { if (puff.active) puff.destroy(); },
+    });
+  }
+}
+
 // ─── Impact ring ─────────────────────────────────────────────────────────────
 // Expanding halo ring — marks skill/special projectile impacts.
 // Distinguishes power shots from basic attacks.

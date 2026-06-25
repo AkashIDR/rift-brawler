@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/gameConfig.js';
+import { FONT, LETTER_SPACING } from '../ui/StoneStyle.js';
 
 export default class GameOverScene extends Phaser.Scene {
   constructor() {
@@ -46,8 +47,9 @@ export default class GameOverScene extends Phaser.Scene {
 
     // GAME OVER title — bigger and bolder
     const title = this.add.text(cx, py + 64, 'GAME OVER', {
-      fontFamily: "'Fredoka One', sans-serif",
+      fontFamily: FONT,
       fontSize: '72px',
+      letterSpacing: LETTER_SPACING,
       color: '#ff4444',
       stroke: '#2a0000',
       strokeThickness: 7,
@@ -77,16 +79,18 @@ export default class GameOverScene extends Phaser.Scene {
 
     // Stats — warm parchment text
     this.add.text(cx, py + 168, `Levels Completed: ${this.finalLevel - 1}`, {
-      fontFamily: "'Nunito', sans-serif",
-      fontSize: '26px',
+      fontFamily: FONT,
+      fontSize: '30px',
+      letterSpacing: LETTER_SPACING,
       color: '#ffe8c0',
       stroke: '#1a0a08',
       strokeThickness: 2,
     }).setOrigin(0.5);
 
     this.add.text(cx, py + 212, `Final Score: ${this.finalScore}`, {
-      fontFamily: "'Fredoka One', sans-serif",
-      fontSize: '34px',
+      fontFamily: FONT,
+      fontSize: '38px',
+      letterSpacing: LETTER_SPACING,
       color: '#d4a96a',
       stroke: '#1a0a08',
       strokeThickness: 3,
@@ -130,8 +134,9 @@ export default class GameOverScene extends Phaser.Scene {
     hoverG.setAlpha(0);
 
     const txt = this.add.text(0, 0, label, {
-      fontFamily: "'Fredoka One', sans-serif",
-      fontSize: '26px',
+      fontFamily: FONT,
+      fontSize: '30px',
+      letterSpacing: LETTER_SPACING,
       color: '#ffe8c0',
       stroke: '#1a0a08',
       strokeThickness: 3,

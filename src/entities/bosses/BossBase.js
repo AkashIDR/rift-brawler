@@ -237,14 +237,9 @@ export default class BossBase {
   // Spawn a boss projectile. maxDist=0 means unlimited range.
   // spawnX/spawnY default to boss center; pass rift position for projectile attacks.
   _spawnProjectile(angle, speed, color, radius, damage, homing = false, maxDist = 0, spawnX = null, spawnY = null) {
-    const proj = this.scene.add.graphics();
-    proj.fillStyle(color, 1);
-    proj.fillCircle(0, 0, radius);
-    proj.lineStyle(2, 0xffffff, 0.4);
-    proj.strokeCircle(0, 0, radius);
-    proj.x = spawnX ?? this.x;
-    proj.y = spawnY ?? this.y;
-    proj.setDepth(8);
+    const texKey = this._getProjectileTexture(color, radius);
+    const proj = this.scene.add.image(spawnX ?? this.x, spawnY ?? this.y, texKey);
+    proj.setOrigin(0.5, 0.5).setDepth(8);
 
     proj._vx = Math.cos(angle) * speed;
     proj._vy = Math.sin(angle) * speed;
@@ -373,6 +368,49 @@ export default class BossBase {
       grad.addColorStop(1.00, `rgba(${R},${G},${B},0.55)`);
       ctx.fillStyle = grad; ctx.fillRect(0, 0, SIZE, SIZE);
     }
+
+    this.scene.textures.addCanvas(key, canvas);
+    return key;
+  }
+
+  // Bake a sphere-shaded texture for projectiles using Canvas 2D API.
+  // Generated once per (color, radius) pair and cached as a Phaser texture.
+  _getProjectileTexture(color, radius) {
+    const key = `fx-proj-${color.toString(16)}-${radius}`;
+    if (this.scene.textures.exists(key)) return key;
+
+    const PAD = 14;
+    const S = (radius + PAD) * 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = S; canvas.height = S;
+    const ctx = canvas.getContext('2d');
+    const cx = S / 2, cy = S / 2;
+    const R = (color >> 16) & 0xff;
+    const G = (color >> 8)  & 0xff;
+    const B =  color        & 0xff;
+
+    // Layer 1 — outer energy halo
+    const glow = ctx.createRadialGradient(cx, cy, radius * 0.5, cx, cy, radius + PAD);
+    glow.addColorStop(0, `rgba(${R},${G},${B},0.50)`);
+    glow.addColorStop(1, `rgba(${R},${G},${B},0.00)`);
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, S, S);
+
+    // Layer 2 — sphere body (offset focal point for 3D shading)
+    const sx = cx - radius * 0.3, sy = cy - radius * 0.3;
+    const lr = Math.min(255, Math.round(R * 1.5 + 80));
+    const lg = Math.min(255, Math.round(G * 1.5 + 80));
+    const lb = Math.min(255, Math.round(B * 1.5 + 80));
+    const dr = Math.round(R * 0.3), dg = Math.round(G * 0.3), db = Math.round(B * 0.3);
+    const sphere = ctx.createRadialGradient(sx, sy, 0, cx, cy, radius);
+    sphere.addColorStop(0.00, 'rgba(255,255,255,0.95)');
+    sphere.addColorStop(0.18, `rgba(${lr},${lg},${lb},0.90)`);
+    sphere.addColorStop(0.48, `rgba(${R},${G},${B},0.95)`);
+    sphere.addColorStop(0.80, `rgba(${dr},${dg},${db},0.90)`);
+    sphere.addColorStop(1.00, `rgba(${dr},${dg},${db},0.00)`);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.clip();
+    ctx.fillStyle = sphere; ctx.fillRect(0, 0, S, S);
+    ctx.restore();
 
     this.scene.textures.addCanvas(key, canvas);
     return key;

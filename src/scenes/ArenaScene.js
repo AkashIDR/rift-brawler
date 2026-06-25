@@ -121,16 +121,11 @@ export default class ArenaScene extends Phaser.Scene {
     voidG.lineStyle(6, t.wallHighlight, 0.08);
     voidG.strokePoints(perimeter, true);
 
-    // ── DEPTH 1: Floor (filled all the way to perimeter — no top-down ring) ──
-    const floorG = this.add.graphics().setDepth(1);
-    floorG.fillStyle(t.floor, 1);
-    floorG.fillPoints(perimeter, true);
-
-    // ── DEPTH 1: Floor patches (organic ellipses, self-clip via containsPoint) ──
-    // Geometry masks removed entirely from the RT pipeline — Phaser 3 WebGL
-    // stencil masks produce visible boundary artifacts at polygon segment edges
-    // that scale with north-facing angle (most visible at the arena top).
-    // _drawFloorPatches uses arena.containsPoint() to self-clip, so no mask needed.
+    // ── DEPTH 1: Floor — baked gradient texture (radial vignette + soft natural patches) ──
+    // Canvas 2D clips to the polygon (clean AA edges, no Phaser stencil artifacts) and lays
+    // down a real gradient for depth — Graphics can't gradient-fill. Baked once per arena.
+    const floorKey = this._bakeFloorTexture(this.arena, t);
+    const floorImg = this.add.image(bounds.x, bounds.y, floorKey).setOrigin(0, 0).setDepth(1);
 
     // ── DEPTH 3 & 4: Wall front faces + top caps (the 2.5D wall geometry) ────
     const wallFrontG = this.add.graphics().setDepth(3);
@@ -145,8 +140,6 @@ export default class ArenaScene extends Phaser.Scene {
     _drawMedallion(detailG, cx, cy, t.accent, t.accentDim);
 
     _drawThemeDetails(detailG, themeIdx, this.arena, bounds, t.accent, t.accentDim, 15);
-    // Floor patches drawn here (no mask needed — self-clips via arena.containsPoint)
-    _drawFloorPatches(detailG, this.arena, bounds, t.floorLight, t.floorDark, 22);
 
     const scatter = [
       [bounds.x + 110, bounds.y + 90], [bounds.x + bounds.w - 110, bounds.y + 90],
@@ -176,7 +169,7 @@ export default class ArenaScene extends Phaser.Scene {
     arenaRT.setDepth(0).setOrigin(0, 0);
 
     arenaRT.draw(voidG);
-    arenaRT.draw(floorG);
+    arenaRT.draw(floorImg);
     arenaRT.draw(wallFrontG);
     arenaRT.draw(wallCapG);
     arenaRT.draw(detailG);
@@ -184,7 +177,7 @@ export default class ArenaScene extends Phaser.Scene {
 
     // Destroy all live Graphics — the RT now holds their rendered output
     voidG.destroy();
-    floorG.destroy();
+    floorImg.destroy();
     wallFrontG.destroy();
     wallCapG.destroy();
     detailG.destroy();
@@ -193,6 +186,81 @@ export default class ArenaScene extends Phaser.Scene {
     // ── DEPTH 7: Ambient particles ───────────────────────────────────────────
     this._initParticles(t.particle);
     this.events.once('shutdown', () => this._cleanupParticles());
+  }
+
+  // ── Floor texture bake ───────────────────────────────────────────────────────
+  // Canvas-baked gradient floor: trace the arena polygon → clip → flat base → radial
+  // vignette (lit center, shadowed walls) → soft natural patches. Returns the texture key.
+  // Themes are global to the Phaser TextureManager, so the key is freed + rebaked per level.
+  _bakeFloorTexture(arena, theme) {
+    const { shape } = arena;
+    const bounds = shape.bounds;
+    const perimeter = shape.getPerimeterPolygon();
+    const w = Math.ceil(bounds.w), h = Math.ceil(bounds.h);
+    const key = 'arena-floor';
+    if (this.textures.exists(key)) this.textures.remove(key);
+    const tex = this.textures.createCanvas(key, w, h);
+    const ctx = tex.getContext();
+    const ox = -bounds.x, oy = -bounds.y; // world → canvas-local
+
+    // Clip to the arena polygon — clean AA edges, confines every fill to the floor shape.
+    ctx.save();
+    ctx.beginPath();
+    perimeter.forEach((p, i) => {
+      const px = p.x + ox, py = p.y + oy;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+    ctx.clip();
+
+    // Base flat floor.
+    ctx.fillStyle = hexToRgba(theme.floor, 1);
+    ctx.fillRect(0, 0, w, h);
+
+    // Radial vignette — lit center fading to darker near the walls (overall depth).
+    // Outer radius kept near half the arena (not the full diagonal) so the falloff is
+    // visible across the play area, with a black ambient-occlusion edge for clear depth.
+    const cx = w / 2, cy = h / 2, outer = 0.60 * Math.max(w, h);
+    const vg = ctx.createRadialGradient(cx, cy, outer * 0.10, cx, cy, outer);
+    vg.addColorStop(0,    hexToRgba(theme.floorLight, 0.35));
+    vg.addColorStop(0.45, hexToRgba(theme.floor, 0));
+    vg.addColorStop(0.80, hexToRgba(theme.floorDark, 0.60));
+    vg.addColorStop(1,    'rgba(0,0,0,0.45)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, w, h);
+
+    // Soft natural patches — each an irregular blob = a cluster of overlapping soft radial
+    // lobes, vertically squashed (wider than tall) so it reads as lying on the ground plane.
+    const patchCount = 16 + Math.floor(Math.random() * 12); // 16–28 (fewer, much larger)
+    for (let i = 0; i < patchCount; i++) {
+      const px = Math.random() * w, py = Math.random() * h;
+      const isLight = (i % 2 === 0);
+      const tone   = isLight ? theme.floorLight : theme.floorDark;
+      // Light patches read a touch brighter than the dark ones.
+      const baseA  = (0.16 + Math.random() * 0.20) * (isLight ? 1.3 : 1.0); // dark 0.16–0.36
+      const baseR  = 200 + Math.random() * 300;         // 200–500 (broad terrain)
+      const squash = 0.55 + Math.random() * 0.17;       // wider than tall
+      const lobes  = 3 + Math.floor(Math.random() * 4); // 3–6
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.scale(1, squash);
+      for (let j = 0; j < lobes; j++) {
+        const jx = (Math.random() - 0.5) * baseR;
+        const jy = (Math.random() - 0.5) * baseR;
+        const lr = baseR * (0.5 + Math.random() * 0.5);
+        const la = baseA * (0.6 + Math.random() * 0.4);
+        const g = ctx.createRadialGradient(jx, jy, 0, jx, jy, lr);
+        g.addColorStop(0, hexToRgba(tone, la));
+        g.addColorStop(1, hexToRgba(tone, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(jx, jy, lr, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+    tex.refresh();
+    return key;
   }
 
   // ── Particle system ─────────────────────────────────────────────────────────
@@ -393,7 +461,9 @@ export default class ArenaScene extends Phaser.Scene {
       const tx = nearX + Math.cos(angle) * dist;
       const ty = nearY + Math.sin(angle) * dist;
       if (this.arena.containsPoint(tx, ty, 60) &&
-          Phaser.Math.Distance.Between(tx, ty, this.player.x, this.player.y) > 100) {
+          Phaser.Math.Distance.Between(tx, ty, this.player.x, this.player.y) > 100 &&
+          (!this.obstacles || this.obstacles.every(obs =>
+            Phaser.Math.Distance.Between(tx, ty, obs.x, obs.y) > obs.baseRadius + 50))) {
         px = tx; py = ty; break;
       }
     }
@@ -402,6 +472,13 @@ export default class ArenaScene extends Phaser.Scene {
   }
 
   _nextLevel() {
+    // Hide player instantly — character vanishes as they step through the portal
+    if (this.player) {
+      this.player.container.setAlpha(0);
+      if (this.player.shadowG)     this.player.shadowG.setAlpha(0);
+      if (this.player.floatHPBg)   this.player.floatHPBg.setAlpha(0);
+      if (this.player.floatHPFill) this.player.floatHPFill.setAlpha(0);
+    }
     if (this.portal) { this.portal.destroy(); this.portal = null; }
     this.cameraController.destroy();
     this.scene.stop('UIScene');
@@ -521,27 +598,10 @@ function _drawBrickTexture(g, bounds, brickW = 48, brickH = 32, lineColor, alpha
   }
 }
 
-/**
- * Scatter small random ellipse patches on the floor for surface variation.
- * Alternates between lightColor and darkColor, validated against the arena boundary.
- */
-function _drawFloorPatches(g, arena, bounds, lightColor, darkColor, count = 22) {
-  for (let i = 0; i < count; i++) {
-    // Random position within bounds
-    const px = bounds.x + Math.random() * bounds.w;
-    const py = bounds.y + Math.random() * bounds.h;
-    if (!arena.containsPoint(px, py, 30)) continue;
-
-    const color = (i % 2 === 0) ? lightColor : darkColor;
-    const alpha = 0.10 + Math.random() * 0.04;
-    const rx = 18 + Math.random() * 32;
-    const ry = 10 + Math.random() * 18;
-    const angle = Math.random() * Math.PI;
-    g.fillStyle(color, alpha);
-    // Approximate rotated ellipse with a filled ellipse (rotation not supported natively,
-    // so we use multiple overlapping circles for a hand-worn appearance)
-    g.fillEllipse(px, py, rx * 2, ry * 2);
-  }
+/** Convert a 0xRRGGBB int + alpha to a canvas rgba() string (for baked floor gradients). */
+function hexToRgba(int, a = 1) {
+  const r = (int >> 16) & 0xff, g = (int >> 8) & 0xff, b = int & 0xff;
+  return `rgba(${r},${g},${b},${a})`;
 }
 
 /**

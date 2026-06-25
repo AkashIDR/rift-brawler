@@ -1,23 +1,34 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT, COLORS } from '../config/gameConfig.js';
+import { getSettings, saveSetting, displayKey } from '../config/settings.js';
+import { openSettingsOverlay } from '../ui/SettingsOverlay.js';
+import { S, stoneTextStyle, makeStoneTexture, makeStoneFrameTexture, FONT, FONT_SYMBOL, LETTER_SPACING } from '../ui/StoneStyle.js';
 
 // ─── Bar layout ──────────────────────────────────────────────────────────────
-const LEFT_CAP_CX = 36;           // center X of left icon cap
-const BAR_X       = 56;           // bar track left edge
-const BAR_W       = 322;
-const BAR_H       = 22;
-const HP_BAR_Y    = GAME_HEIGHT - 92;
-const ST_BAR_Y    = GAME_HEIGHT - 54;
+const LEFT_CAP_CX = 43;           // center X of left icon cap  (×1.2)
+const BAR_X       = 68;           // bar track left edge        (×1.2)
+const BAR_W       = 386;          //                            (×1.2)
+const BAR_H       = 26;           //                            (×1.2)
+const HP_BAR_Y    = GAME_HEIGHT - 112;
+const ST_BAR_Y    = GAME_HEIGHT - 70;   // gap to HP bar unchanged at 16px
 
 // ─── Circular skill slots ────────────────────────────────────────────────────
-const SLOT_R   = 32;
-const SLOT_GAP = 10;
-const SLOT_CY  = GAME_HEIGHT - 46;
+const SLOT_R   = 38;              // (×1.2)
+const SLOT_GAP = 22;              // (×1.2)
+const SLOT_CY  = GAME_HEIGHT - 52;      // keeps same 14px bottom margin
 
 // ─── Boss bar ────────────────────────────────────────────────────────────────
-const BOSS_BW = 540;
-const BOSS_BH = 24;
+const BOSS_BW = 648;              // (×1.2)
+const BOSS_BH = 29;               // (×1.2)
 const BOSS_BY = 44;
+
+// ─── Skill tooltip info ──────────────────────────────────────────────────────
+const SKILL_INFO = [
+  { name: 'Power Strike', desc: 'Launch a piercing energy bolt toward your cursor.' },
+  { name: 'Shield Dash',  desc: 'Charge forward dealing damage and gaining brief invincibility.' },
+  { name: 'Ground Slam',  desc: 'Slam the ground to unleash a shockwave in a wide area.' },
+  { name: 'Dodge Roll',   desc: 'Roll quickly to evade attacks and become briefly invincible.' },
+];
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 const PANEL_SHINE = 0xfff5d0;
@@ -47,8 +58,17 @@ export default class UIScene extends Phaser.Scene {
     this._buildHUD();
     this._buildBossBar();
     this._buildPauseMenu();
+    this._buildEditToolbar();
     this._listenToArena();
     this.input.keyboard.on('keydown-ESC', () => this.arenaScene._togglePause());
+    this.refreshPauseKey();
+  }
+
+  refreshPauseKey() {
+    if (this._pauseKey) { this._pauseKey.destroy(); this._pauseKey = null; }
+    const code = getSettings().keys.pause || 'P';
+    this._pauseKey = this.input.keyboard.addKey(code);
+    this._pauseKey.on('down', () => this.arenaScene._togglePause());
   }
 
   update() {
@@ -62,6 +82,7 @@ export default class UIScene extends Phaser.Scene {
     if (this.hpNumText) this.hpNumText.setText(`${Math.ceil(p.hp)} / ${p.maxHp}`);
     if (this.stNumText) this.stNumText.setText(`${Math.ceil(p.stamina)} / ${p.staminaMax}`);
     this._updateSkillCooldowns(p);
+    if (!this._editMode) this._checkSkillTooltips();
   }
 
   // ─── Icon textures ──────────────────────────────────────────────────────────
@@ -366,53 +387,82 @@ export default class UIScene extends Phaser.Scene {
   // ─── HUD ────────────────────────────────────────────────────────────────────
 
   _buildHUD() {
-    // HP bar
-    this._buildBarMount(HP_BAR_Y, true);
-    this._drawBarTrack(BAR_X, HP_BAR_Y, BAR_W, BAR_H, true);
+    const layout = getSettings().uiLayout;
+
+    // ── Resource panel (HP + Stamina bars) ───────────────────────────────────
+    const hpMount  = this._buildBarMount(HP_BAR_Y, true);
+    const hpTrack  = this._drawBarTrack(BAR_X, HP_BAR_Y, BAR_W, BAR_H, true);
     this.hpBarFill = this._makeBarFillG(BAR_X, HP_BAR_Y, BAR_W, BAR_H);
-    this.hpNumText = this.add.text(BAR_X + BAR_W - 4, HP_BAR_Y + BAR_H/2, '', {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '11px',
+    this.hpNumText = this.add.text(BAR_X + BAR_W - 4, HP_BAR_Y + BAR_H / 2, '', {
+      fontFamily: FONT, fontSize: '16px', letterSpacing: LETTER_SPACING,
       color: PARCHMENT, stroke: '#080000', strokeThickness: 2,
     }).setOrigin(1, 0.5).setDepth(2);
 
-    // Stamina bar
-    this._buildBarMount(ST_BAR_Y, false);
-    this._drawBarTrack(BAR_X, ST_BAR_Y, BAR_W, BAR_H, false);
+    const stMount  = this._buildBarMount(ST_BAR_Y, false);
+    const stTrack  = this._drawBarTrack(BAR_X, ST_BAR_Y, BAR_W, BAR_H, false);
     this.stBarFill = this._makeBarFillG(BAR_X, ST_BAR_Y, BAR_W, BAR_H);
-    this.stNumText = this.add.text(BAR_X + BAR_W - 4, ST_BAR_Y + BAR_H/2, '', {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '11px',
+    this.stNumText = this.add.text(BAR_X + BAR_W - 4, ST_BAR_Y + BAR_H / 2, '', {
+      fontFamily: FONT, fontSize: '16px', letterSpacing: LETTER_SPACING,
       color: PARCHMENT, stroke: '#00080a', strokeThickness: 2,
     }).setOrigin(1, 0.5).setDepth(2);
 
-    // Skill slots
+    this.resourceContainer = this.add.container(layout.resource.x, layout.resource.y)
+      .setScale(layout.resource.scale).setDepth(10);
+    this.resourceContainer.add([
+      ...hpMount, ...hpTrack, this.hpBarFill, this.hpNumText,
+      ...stMount, ...stTrack, this.stBarFill, this.stNumText,
+    ]);
+
+    // ── Skill bar ─────────────────────────────────────────────────────────────
     const slotDiam   = SLOT_R * 2;
     const totalSlotW = 4 * slotDiam + 3 * SLOT_GAP;
     const firstCX    = (GAME_WIDTH - totalSlotW) / 2 + SLOT_R;
     this.skillSlots  = [];
+    const { keys }   = getSettings();
+    const slotObjs   = [];
     [
-      { key: 'Q', color: 0xffdd44, icon: 'skill-q-strike'    },
-      { key: 'W', color: 0x44aaff, icon: 'skill-w-shield'    },
-      { key: 'E', color: 0xff6600, icon: 'skill-e-slam'      },
-      { key: '␣', color: 0x44cc88, icon: 'skill-space-dodge' },
+      { keyLabel: displayKey(keys.skill1), color: 0xffdd44, icon: 'skill-q-strike'    },
+      { keyLabel: displayKey(keys.skill2), color: 0x44aaff, icon: 'skill-w-shield'    },
+      { keyLabel: displayKey(keys.skill3), color: 0xff6600, icon: 'skill-e-slam'      },
+      { keyLabel: keys.dodge === 'SPACE' ? '_' : displayKey(keys.dodge), color: 0x44cc88, icon: 'skill-space-dodge' },
     ].forEach((sk, i) => {
-      const cx = firstCX + i * (slotDiam + SLOT_GAP);
-      this.skillSlots.push(this._buildSkillSlot(cx, SLOT_CY, sk.key, sk.color, sk.icon));
+      const cx   = firstCX + i * (slotDiam + SLOT_GAP);
+      const slot = this._buildSkillSlot(cx, SLOT_CY, sk.keyLabel, sk.color, sk.icon);
+      this.skillSlots.push(slot);
+      slotObjs.push(slot.g, slot.icon, slot.text, slot.cooldownOverlay);
     });
 
-    // Score / Level — top-right
-    this.scoreText = this.add.text(GAME_WIDTH - 20, 20, `Score: ${this.score}`, {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '22px',
-      color: '#d4a96a', stroke: '#1a0a08', strokeThickness: 3,
-    }).setOrigin(1, 0);
-    this.levelText = this.add.text(GAME_WIDTH - 20, 50, `Level: ${this.level}`, {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '22px',
-      color: PARCHMENT, stroke: '#1a0a08', strokeThickness: 3,
-    }).setOrigin(1, 0);
+    this.skillBarContainer = this.add.container(layout.skillBar.x, layout.skillBar.y)
+      .setScale(layout.skillBar.scale).setDepth(10);
+    this.skillBarContainer.add(slotObjs);
 
-    // Pause button
+    // ── Score / Level — top-right text (no backing plaque) ───────────────────
+    const scoreBlockW = 240, scoreBlockX = GAME_WIDTH - scoreBlockW - 8, scoreBlockY = 8;
+    const scoreCX = scoreBlockX + scoreBlockW / 2;
+    this.scoreText = this.add.text(scoreCX, scoreBlockY + 6, `Score: ${this.score}`,
+      stoneTextStyle(37, '#c8a060')).setOrigin(0.5, 0);
+    this.levelText = this.add.text(scoreCX, scoreBlockY + 52, `Level: ${this.level}`,
+      stoneTextStyle(37, '#d0d0e8')).setOrigin(0.5, 0);
+
+    this.scoreContainer = this.add.container(layout.score.x, layout.score.y)
+      .setScale(layout.score.scale).setDepth(10);
+    this.scoreContainer.add([this.scoreText, this.levelText]);
+
+    // ── Fullscreen + Pause buttons (bottom-right) ─────────────────────────────
+    // ⛶ and ✕ have different glyph baselines — compensate with per-icon Y offsets
+    const FS_X = GAME_WIDTH - 90;
+    const FS_Y_NORMAL = GAME_HEIGHT - 33;   // ⛶ sits visually high → nudge down
+    const FS_Y_FULL   = GAME_HEIGHT - 34;   // ✕ glyph baseline nudge
+    const fsBtn = this._buildIconButton(FS_X, FS_Y_NORMAL, '⛶', () => {
+      if (this.scale.isFullscreen) this.scale.stopFullscreen();
+      else this.scale.startFullscreen();
+    }).setDepth(15);
+    this.scale.on('enterfullscreen', () => { fsBtn.setText('✕'); fsBtn.setY(FS_Y_FULL); fsBtn.setScale(0.95); });
+    this.scale.on('leavefullscreen',  () => { fsBtn.setText('⛶'); fsBtn.setY(FS_Y_NORMAL); fsBtn.setScale(1); });
+
     this._buildIconButton(GAME_WIDTH - 54, GAME_HEIGHT - 36, '⏸', () => {
       this.arenaScene._togglePause();
-    });
+    }).setDepth(15);
   }
 
   // Bar mount: dark housing beam with capsule right end + dark circle left cap
@@ -447,15 +497,14 @@ export default class UIScene extends Phaser.Scene {
     g.fillRect(houseX + 8, houseY + 1, houseW + capEnd - 16, 1);
 
     // Left cap — combined housing + icon texture (shape matches icon exactly)
+    let icon;
     if (isHp) {
-      // Heart-shaped housing, displayed at 0.72× (52→37px wide, 50→36px tall)
-      this.hpIcon = this.add.image(LEFT_CAP_CX, barCY, 'ui-hp-cap')
-        .setOrigin(0.5).setScale(1.08);
+      icon = this.add.image(LEFT_CAP_CX, barCY, 'ui-hp-cap').setOrigin(0.5).setScale(1.30);
+      this.hpIcon = icon;
     } else {
-      // Bolt-shaped housing, displayed at 0.90×
-      this.add.image(LEFT_CAP_CX, barCY, 'ui-stam-cap')
-        .setOrigin(0.5).setScale(0.90);
+      icon = this.add.image(LEFT_CAP_CX, barCY, 'ui-stam-cap').setOrigin(0.5).setScale(1.08);
     }
+    return [g, icon];
   }
 
   _drawBarTrack(x, y, w, h, isHp) {
@@ -468,6 +517,7 @@ export default class UIScene extends Phaser.Scene {
     g.strokeRoundedRect(x, y, w, h, 4);
     g.lineStyle(1, 0x000000, 0.45);
     g.lineBetween(x+4, y+1, x+w-4, y+1);
+    return [g];
   }
 
   _makeBarFillG(x, y, w, h) {
@@ -518,16 +568,16 @@ export default class UIScene extends Phaser.Scene {
   // ─── Circular skill slots ───────────────────────────────────────────────────
 
   _buildSkillSlot(cx, cy, keyLabel, color, iconKey) {
-    const g = this.add.graphics();
-    g.fillStyle(0x000000, 0.55); g.fillCircle(cx+3, cy+3, SLOT_R);
-    g.fillStyle(0x1c1a18, 1);    g.fillCircle(cx, cy, SLOT_R);
-    g.lineStyle(2, 0x5a5550, 0.65); g.strokeCircle(cx, cy, SLOT_R-1);
-    g.lineStyle(3, 0x080706, 0.55); g.strokeCircle(cx, cy+3, SLOT_R-2);
-    g.fillStyle(0x0f0c09, 1);    g.fillCircle(cx, cy, 26);
-    g.lineStyle(2.5, color, 0.75); g.strokeCircle(cx, cy, 25);
-    const icon = this.add.image(cx, cy, iconKey).setOrigin(0.5);
-    const text = this.add.text(cx, cy+20, keyLabel, {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '12px',
+    // Canvas-baked round stone casing — same gradient bevel as the menu buttons, with the
+    // per-slot colored gem ring baked in. One cached texture per color (4 total).
+    const slotTexKey = `skill-slot-${color.toString(16)}`;
+    makeStoneTexture(this, slotTexKey, {
+      w: SLOT_R * 2, h: SLOT_R * 2, shape: 'circle', bevel: 6, accentRing: color, seed: color & 0xff,
+    });
+    const g = this.add.image(cx, cy, slotTexKey).setOrigin(0.5);
+    const icon = this.add.image(cx, cy, iconKey).setOrigin(0.5).setScale(1.4);
+    const text = this.add.text(cx, cy + Math.round(SLOT_R * 0.63), keyLabel, {
+      fontFamily: FONT, fontSize: '14px', letterSpacing: LETTER_SPACING,
       color: '#d4a96a', stroke: '#0a0600', strokeThickness: 3,
     }).setOrigin(0.5, 0.5);
     const cooldownOverlay = this.add.graphics().setDepth(5);
@@ -562,7 +612,8 @@ export default class UIScene extends Phaser.Scene {
 
   _buildIconButton(x, y, icon, onClick) {
     const btn = this.add.text(x, y, icon, {
-      fontFamily: 'Nunito', fontSize: '28px', color: '#d4a96a',
+      fontFamily: FONT_SYMBOL, fontSize: '28px', color: '#d4a96a',
+      stroke: '#d4a96a', strokeThickness: 1,
     }).setOrigin(0.5).setInteractive({ cursor: 'pointer' });
     btn.on('pointerover', () => { btn.setColor('#fff5d0'); btn.setScale(1.15); });
     btn.on('pointerout',  () => { btn.setColor('#d4a96a'); btn.setScale(1); });
@@ -575,7 +626,9 @@ export default class UIScene extends Phaser.Scene {
   _buildBossBar() {
     const bw = BOSS_BW, bh = BOSS_BH, by = BOSS_BY;
     const bx = (GAME_WIDTH - bw) / 2;
-    this.bossBarContainer = this.add.container(0, 0);
+    const layout = getSettings().uiLayout;
+    this.bossBarContainer = this.add.container(layout.bossBar.x, layout.bossBar.y)
+      .setScale(layout.bossBar.scale).setDepth(10);
     this.bossBarContainer.setVisible(false);
 
     const shadow = this.add.graphics();
@@ -607,12 +660,12 @@ export default class UIScene extends Phaser.Scene {
     const rightCap = this.add.image(bx+bw+10, by+bh/2, 'ui-boss-cap').setOrigin(0,0.5).setScale(1.15).setFlipX(true);
 
     this.bossNameText = this.add.text(GAME_WIDTH/2, 12, '', {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '26px',
+      fontFamily: FONT, fontSize: '31px', letterSpacing: LETTER_SPACING,
       color: PARCHMENT, stroke: '#2a0000', strokeThickness: 6,
     }).setOrigin(0.5, 0);
 
     this.enragedText = this.add.text(GAME_WIDTH/2, by+bh+10, 'ENRAGED!', {
-      fontFamily: "'Fredoka One', sans-serif", fontSize: '28px',
+      fontFamily: FONT, fontSize: '33px', letterSpacing: LETTER_SPACING,
       color: '#ff4400', stroke: '#220000', strokeThickness: 5,
     }).setOrigin(0.5).setAlpha(0).setScale(0);
 
@@ -651,49 +704,337 @@ export default class UIScene extends Phaser.Scene {
   // ─── Pause Menu ──────────────────────────────────────────────────────────────
 
   _buildPauseMenu() {
-    const w=330, h=290, r=16, cx=GAME_WIDTH/2, cy=GAME_HEIGHT/2;
+    const w=330, h=430, r=16, bevel=12, cx=GAME_WIDTH/2, cy=GAME_HEIGHT/2;
     this.pauseContainer = this.add.container(cx, cy);
     this.pauseContainer.setVisible(false).setDepth(200);
 
-    const shadow = this.add.graphics();
-    shadow.fillStyle(0x000000,0.70); shadow.fillRoundedRect(-w/2+7,-h/2+7,w,h,r);
+    // Stone slab panel — canvas-baked gradient texture
+    makeStoneTexture(this, 'stone-pause-panel', { w, h, shape: 'rounded', radius: r, bevel, seed: 10 });
+    const bg = this.add.image(0, 0, 'stone-pause-panel').setOrigin(0.5);
 
-    const bg = this.add.graphics();
-    bg.fillStyle(0x140c06,0.97); bg.fillRoundedRect(-w/2,-h/2,w,h,r);
-    bg.lineStyle(2.5,GOLD,0.88); bg.strokeRoundedRect(-w/2,-h/2,w,h,r);
-    bg.lineStyle(1,0x8b5e3c,0.40); bg.strokeRoundedRect(-w/2+3,-h/2+3,w-6,h-6,r-2);
-    bg.fillStyle(0xffffff,0.05); bg.fillRoundedRect(-w/2+2,-h/2+2,w-4,20,{tl:r-1,tr:r-1,bl:0,br:0});
+    const title = this.add.text(0, -h/2 + 38, 'MENU', stoneTextStyle(36, '#f0e8d0')).setOrigin(0.5);
+    // TODO: hide subtitle when multiplayer is active
+    const subtitle = this.add.text(0, -h/2 + 66, '(PAUSED)', stoneTextStyle(18, '#a0a0c0')).setOrigin(0.5).setAlpha(0.7);
 
-    const title = this.add.text(0,-h/2+38,'PAUSED',{
-      fontFamily:"'Fredoka One', sans-serif",fontSize:'36px',color:PARCHMENT,stroke:'#4a2800',strokeThickness:4,
-    }).setOrigin(0.5);
-
+    // Carved groove divider
     const div = this.add.graphics();
-    div.lineStyle(1,GOLD,0.45); div.lineBetween(-w/2+28,-h/2+64,w/2-28,-h/2+64);
+    div.lineStyle(1, S.CRACK, 0.60); div.lineBetween(-w/2+28, -h/2+84, w/2-28, -h/2+84);
+    div.lineStyle(1, S.BEVEL_LIGHT, 0.30); div.lineBetween(-w/2+28, -h/2+85, w/2-28, -h/2+85);
 
-    this.pauseContainer.add([shadow,bg,title,div]);
-    this._addPauseBtn('RESUME',0,18,() => this.arenaScene._togglePause());
-    this._addPauseBtn('MAIN MENU',0,88,() => { this.scene.stop(); this.arenaScene.scene.start('StartScene'); });
+    this.pauseContainer.add([bg, title, subtitle, div]);
+    this._addPauseBtn('RESUME',    0, -53, () => this.arenaScene._togglePause());
+    this._addPauseBtn('SETTINGS',  0,  17, () => this._openPauseSettings());
+    this._addPauseBtn('EDIT UI',   0,  87, () => this._enterEditMode());
+    this._addPauseBtn('MAIN MENU', 0, 157, () => { this.scene.stop(); this.arenaScene.scene.start('StartScene'); });
+  }
+
+  _openPauseSettings() {
+    openSettingsOverlay(this, {
+      player: this.arenaScene?.player ?? null,
+      onClose: () => this._refreshSkillLabels(),
+    });
+  }
+
+  // Refresh skill key labels after settings change mid-game.
+  _refreshSkillLabels() {
+    if (!this.skillSlots) return;
+    const { keys } = getSettings();
+    const labels = [displayKey(keys.skill1), displayKey(keys.skill2),
+                    displayKey(keys.skill3), keys.dodge === 'SPACE' ? '_' : displayKey(keys.dodge)];
+    this.skillSlots.forEach((slot, i) => {
+      if (slot.text) slot.text.setText(labels[i]);
+    });
+  }
+
+  // ─── Edit toolbar ─────────────────────────────────────────────────────────
+
+  _buildEditToolbar() {
+    this.editToolbar = this.add.container(16, 16).setDepth(400).setVisible(false).setScale(1.25);
+    const tbW = 294, tbH = 50;
+    makeStoneTexture(this, 'stone-edit-toolbar', { w: tbW, h: tbH, shape: 'rounded', radius: 8, bevel: 5, seed: 3 });
+    this.editToolbar.add(this.add.image(tbW / 2, tbH / 2, 'stone-edit-toolbar').setOrigin(0.5));
+    this.editToolbar.add(this._makeToolbarBtn(8,  7, 170, 36, 'DONE EDITING', S.TEXT,    () => this._exitEditMode()));
+    this.editToolbar.add(this._makeToolbarBtn(184, 7, 102, 36, 'RESET UI',    '#ff8888', () => this._resetUILayout()));
+  }
+
+  _makeToolbarBtn(x, y, w, h, label, color, fn) {
+    const grp = [];
+    const key = `stone-toolbar-btn-${w}x${h}`;
+    makeStoneTexture(this, key, { w, h, shape: 'rounded', radius: 6, bevel: 4, seed: 7 });
+    grp.push(this.add.image(x + w / 2, y + h / 2, key).setOrigin(0.5));
+    const hoverG = this.add.graphics();
+    hoverG.fillStyle(S.BEVEL_LIGHT, 0.14);
+    hoverG.fillRoundedRect(x, y, w, h, 6);
+    hoverG.setAlpha(0);
+    grp.push(hoverG);
+    grp.push(this.add.text(x + w / 2, y + h / 2, label, stoneTextStyle(17, color)).setOrigin(0.5));
+    const hit = this.add.rectangle(x + w / 2, y + h / 2, w, h).setInteractive({ cursor: 'pointer' });
+    hit.on('pointerover',  () => this.tweens.add({ targets: hoverG, alpha: 1, duration: 100 }));
+    hit.on('pointerout',   () => this.tweens.add({ targets: hoverG, alpha: 0, duration: 100 }));
+    hit.on('pointerdown', fn);
+    grp.push(hit);
+    return grp;
+  }
+
+  // ─── Edit mode entry / exit ───────────────────────────────────────────────
+
+  _enterEditMode() {
+    this._editMode          = true;
+    this._editGrips         = [];
+    this._wasBossBarVisible = undefined; // set in _spawnDragGrips on first entry
+    this.pauseContainer.setVisible(false);
+    this.editToolbar.setVisible(true);
+    this._spawnEditBoxes();
+  }
+
+  _exitEditMode() {
+    this._editMode = false;
+    this._editGrips.forEach(g => g.destroy(true));
+    this._editGrips = [];
+    this.editToolbar.setVisible(false);
+    if (!this._wasBossBarVisible) {
+      this.bossBarContainer.setVisible(false).setAlpha(1);
+    }
+    this._wasBossBarVisible = undefined;
+    this.pauseContainer.setVisible(true);
+  }
+
+  _resetUILayout() {
+    const def = { x: 0, y: 0, scale: 1 };
+    saveSetting('uiLayout', { resource: { ...def }, skillBar: { ...def }, score: { ...def }, bossBar: { ...def } });
+    this.resourceContainer.setPosition(0, 0).setScale(1);
+    this.skillBarContainer.setPosition(0, 0).setScale(1);
+    this.scoreContainer.setPosition(0, 0).setScale(1);
+    this.bossBarContainer.setPosition(0, 0).setScale(1);
+    this._editGrips.forEach(g => g.destroy(true));
+    this._editGrips = [];
+    this._spawnEditBoxes();
+  }
+
+  _spawnEditBoxes() {
+    const slotDiam   = SLOT_R * 2;
+    const totalSlotW = 4 * slotDiam + 3 * SLOT_GAP;
+    const firstCX    = (GAME_WIDTH - totalSlotW) / 2 + SLOT_R;
+
+    // Bounds wrap the rendered panel content (left caps overhang the bars: ui-hp-cap 52×50
+    // ×1.30 and ui-stam-cap 46×56 ×1.08 in _buildBarMount) so the box centers on the bar group.
+    this._createEditBox(this.resourceContainer, 'resource', 'Resource Bars',
+      5, HP_BAR_Y - 24, 465, ST_BAR_Y + 47 - (HP_BAR_Y - 24), 1);
+
+    this._createEditBox(this.skillBarContainer, 'skillBar', 'Skill Bar',
+      firstCX - SLOT_R - 6, SLOT_CY - SLOT_R - 6, totalSlotW + 12, SLOT_R * 2 + 12, 1);
+
+    this._createEditBox(this.scoreContainer, 'score', 'Score / Level',
+      GAME_WIDTH - 256, 8, 248, 100, 1);
+
+    if (this._wasBossBarVisible === undefined) {
+      this._wasBossBarVisible = this.bossBarContainer.visible;
+    }
+    if (!this._wasBossBarVisible) this.bossBarContainer.setVisible(true).setAlpha(0.5);
+
+    this._createEditBox(this.bossBarContainer, 'bossBar', 'Boss Bar',
+      (GAME_WIDTH - BOSS_BW) / 2 - 20, BOSS_BY - 10, BOSS_BW + 40, BOSS_BH + 20, 1);
+  }
+
+  _createEditBox(container, panelKey, label, pLeft, pTop, pW, pH, baseScale) {
+    const RIM = 10;     // left/right/bottom rim thickness (matches frame texture)
+    const HEADER = 28;  // top header strip height (holds the label)
+    const HR = 7;       // resize-handle radius
+    const frameKey = makeStoneFrameTexture(this, 'stone-edit-frame', { rim: RIM, header: HEADER });
+    const saveLayout = () => saveSetting('uiLayout', {
+      [panelKey]: { x: container.x, y: container.y, scale: container.scaleX / baseScale },
+    });
+
+    // Screen-space position of each edge, derived fresh from container state each call
+    const screenL = () => container.x + pLeft * container.scaleX;
+    const screenT = () => container.y + pTop  * container.scaleX;
+    const screenW = () => pW * container.scaleX;
+    const screenH = () => pH * container.scaleX;
+
+    // Stone rim frame — gradient bevel border, transparent center, extended top header.
+    // NineSlice stretches the edges without distorting the corners. Non-interactive.
+    const frame = this.add.nineslice(0, 0, frameKey, undefined, pW, pH + HEADER, RIM, RIM, HEADER, RIM)
+      .setOrigin(0, 0).setDepth(351);
+
+    // Transparent overlay covering the panel content area — drag anywhere on panel to move
+    const moveOverlay = this.add.rectangle(0, 0, 10, 10)
+      .setFillStyle(0x000000, 0)
+      .setInteractive({ cursor: 'grab' })
+      .setDepth(352);
+    this.input.setDraggable(moveOverlay);
+
+    const titleTxt = this.add.text(0, 0, '', stoneTextStyle(16)).setOrigin(0.5).setDepth(353);
+
+    // Corner resize handles — seated stone pebble look
+    const mkHandle = () => {
+      const h = this.add.circle(0, 0, HR, S.BEVEL_MID, 1)
+        .setStrokeStyle(2, S.BEVEL_DARK, 1)
+        .setInteractive({ cursor: 'nwse-resize' })
+        .setDepth(354);
+      this.input.setDraggable(h);
+      return h;
+    };
+    const tlH = mkHandle();
+    const trH = mkHandle();
+    const blH = mkHandle();
+    const brH = mkHandle();
+
+    const updateBox = () => {
+      const l = screenL(), t = screenT(), w = screenW(), h = screenH();
+      // Frame spans the content area plus the header strip above it.
+      frame.setPosition(l, t - HEADER).setSize(w, h + HEADER);
+      moveOverlay.setPosition(l + w / 2, t + h / 2).setSize(w, h);
+
+      titleTxt.setPosition(l + w / 2, t - HEADER / 2)
+        .setText(`${label}  ×${(container.scaleX / baseScale).toFixed(1)}`);
+      tlH.setPosition(l,     t);
+      trH.setPosition(l + w, t);
+      blH.setPosition(l,     t + h);
+      brH.setPosition(l + w, t + h);
+    };
+    updateBox();
+
+    // Transparent overlay: drag to move panel
+    let sPX, sPY, sCX, sCY;
+    moveOverlay.on('dragstart', (ptr) => { sPX = ptr.x; sPY = ptr.y; sCX = container.x; sCY = container.y; });
+    moveOverlay.on('drag',      (ptr) => { container.x = sCX + (ptr.x - sPX); container.y = sCY + (ptr.y - sPY); updateBox(); });
+    moveOverlay.on('dragend',   ()    => saveLayout());
+
+    // Corner handles: scale derived from scratch each frame — no accumulation, no drift.
+    // Each handle anchors at its diagonal opposite corner.
+    const addResize = (handle, getAX, getAY, sCalc, cxCalc, cyCalc) => {
+      let aX, aY;
+      handle.on('dragstart', () => { aX = getAX(); aY = getAY(); });
+      handle.on('drag', (ptr) => {
+        const s = Phaser.Math.Clamp(sCalc(ptr.x, aX), 0.7 * baseScale, 1.5 * baseScale);
+        container.x = cxCalc(aX, s);
+        container.y = cyCalc(aY, s);
+        container.setScale(s);
+        updateBox();
+      });
+      handle.on('dragend', () => saveLayout());
+    };
+
+    // brH (bottom-right) → anchor = top-left
+    addResize(brH,
+      () => screenL(), () => screenT(),
+      (px, ax) => (px - ax) / pW,
+      (ax, s)  => ax - pLeft * s,
+      (ay, s)  => ay - pTop  * s
+    );
+    // blH (bottom-left) → anchor = top-right
+    addResize(blH,
+      () => screenL() + screenW(), () => screenT(),
+      (px, ax) => (ax - px) / pW,
+      (ax, s)  => ax - (pLeft + pW) * s,
+      (ay, s)  => ay - pTop * s
+    );
+    // trH (top-right) → anchor = bottom-left
+    addResize(trH,
+      () => screenL(), () => screenT() + screenH(),
+      (px, ax) => (px - ax) / pW,
+      (ax, s)  => ax - pLeft * s,
+      (ay, s)  => ay - (pTop + pH) * s
+    );
+    // tlH (top-left) → anchor = bottom-right
+    addResize(tlH,
+      () => screenL() + screenW(), () => screenT() + screenH(),
+      (px, ax) => (ax - px) / pW,
+      (ax, s)  => ax - (pLeft + pW) * s,
+      (ay, s)  => ay - (pTop + pH) * s
+    );
+
+    [frame, moveOverlay, titleTxt, tlH, trH, blH, brH].forEach(o => this._editGrips.push(o));
+  }
+
+  // ─── Skill tooltips ───────────────────────────────────────────────────────
+
+  _checkSkillTooltips() {
+    if (!this.skillBarContainer || !this.skillSlots) return;
+    const ptr   = this.input.activePointer;
+    const scale = this.skillBarContainer.scaleX;
+    let hovered = -1;
+    this.skillSlots.forEach((slot, i) => {
+      const sx   = this.skillBarContainer.x + slot.cx * scale;
+      const sy   = this.skillBarContainer.y + slot.cy * scale;
+      const dist = Phaser.Math.Distance.Between(ptr.x, ptr.y, sx, sy);
+      if (dist < SLOT_R * scale + 8) hovered = i;
+    });
+    if (hovered !== this._tooltipSlot) {
+      this._hideTooltip();
+      if (hovered >= 0) {
+        const slot = this.skillSlots[hovered];
+        const sx   = this.skillBarContainer.x + slot.cx * scale;
+        const sy   = this.skillBarContainer.y + slot.cy * scale;
+        this._showSkillTooltip(hovered, sx, sy);
+      }
+      this._tooltipSlot = hovered;
+    }
+  }
+
+  _showSkillTooltip(idx, screenX, screenY) {
+    const info = SKILL_INFO[idx];
+    if (!info) return;
+    const TW = 260, PAD = 12, BADGE_H = 26, NAME_H = 30, DESC_H = 58;
+    const TH = PAD + BADGE_H + 6 + NAME_H + DESC_H + PAD;
+    const tipY = screenY - SLOT_R * this.skillBarContainer.scaleX - 10 - TH / 2;
+
+    const { keys }   = getSettings();
+    const slotKeys   = ['skill1', 'skill2', 'skill3', 'dodge'];
+    const keyLabel   = displayKey(keys[slotKeys[idx]] ?? '');
+
+    this._tooltipContainer = this.add.container(
+      Phaser.Math.Clamp(screenX, TW / 2 + 10, GAME_WIDTH - TW / 2 - 10),
+      Phaser.Math.Clamp(tipY, TH / 2 + 10, GAME_HEIGHT - TH / 2 - 10)
+    ).setDepth(450).setAlpha(0);
+
+    // Stone slab tooltip — canvas-baked gradient panels
+    makeStoneTexture(this, 'stone-tooltip-panel', { w: TW, h: TH, shape: 'rounded', radius: 8, bevel: 6, seed: 20 });
+    const bg = this.add.image(0, 0, 'stone-tooltip-panel').setOrigin(0.5);
+
+    const bx = -TW / 2 + PAD, by = -TH / 2 + PAD;
+    const badgeW = 30, badgeH = BADGE_H;
+    makeStoneTexture(this, 'stone-tooltip-badge', { w: badgeW, h: badgeH, shape: 'rounded', radius: 4, bevel: 3, seed: 25 });
+    const badgeBg = this.add.image(bx + badgeW / 2, by + badgeH / 2, 'stone-tooltip-badge').setOrigin(0.5);
+    const badgeTxt = this.add.text(bx + badgeW / 2, by + badgeH / 2, keyLabel,
+      stoneTextStyle(15)).setOrigin(0.5);
+    const nameTxt = this.add.text(bx + badgeW + 7, by + badgeH / 2, info.name,
+      stoneTextStyle(18, '#e8e8ff')).setOrigin(0, 0.5);
+    const descTxt = this.add.text(bx, by + badgeH + 8, info.desc, {
+      fontFamily: FONT, fontSize: '15px', letterSpacing: LETTER_SPACING, color: '#a0a0c8',
+      wordWrap: { width: TW - PAD * 2 },
+    }).setOrigin(0, 0);
+
+    this._tooltipContainer.add([bg, badgeBg, badgeTxt, nameTxt, descTxt]);
+    this.tweens.add({ targets: this._tooltipContainer, alpha: 1, duration: 100, ease: 'Quad.easeOut' });
+  }
+
+  _hideTooltip() {
+    if (!this._tooltipContainer) return;
+    const tc = this._tooltipContainer;
+    this._tooltipContainer = null;
+    this._tooltipSlot      = -1;
+    this.tweens.add({
+      targets: tc, alpha: 0, duration: 80, ease: 'Quad.easeIn',
+      onComplete: () => { if (tc.active) tc.destroy(true); },
+    });
   }
 
   _addPauseBtn(label, x, y, fn) {
-    const bw=220, bh=46, r=10;
-    const shadow=this.add.graphics();
-    shadow.fillStyle(0x000000,0.50); shadow.fillRoundedRect(x-bw/2+3,y-bh/2+3,bw,bh,r);
-    const bg=this.add.graphics();
-    bg.fillStyle(0x2a1508,1); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,r);
-    bg.fillStyle(0xfff5d0,0.09); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh/2,{tl:r,tr:r,bl:0,br:0});
-    bg.lineStyle(1.5,GOLD,0.75); bg.strokeRoundedRect(x-bw/2,y-bh/2,bw,bh,r);
-    const hoverG=this.add.graphics();
-    hoverG.fillStyle(GOLD,0.18); hoverG.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,r); hoverG.setAlpha(0);
-    const txt=this.add.text(x,y,label,{
-      fontFamily:"'Fredoka One', sans-serif",fontSize:'24px',color:PARCHMENT,stroke:'#1a0a08',strokeThickness:3,
-    }).setOrigin(0.5);
-    const hit=this.add.rectangle(x,y,bw,bh).setInteractive({cursor:'pointer'});
-    hit.on('pointerover',()=>{ this.tweens.add({targets:hoverG,alpha:1,duration:110}); this.tweens.add({targets:txt,scaleX:1.05,scaleY:1.05,duration:110}); });
-    hit.on('pointerout', ()=>{ this.tweens.add({targets:hoverG,alpha:0,duration:110}); this.tweens.add({targets:txt,scaleX:1,scaleY:1,duration:110}); });
-    hit.on('pointerdown',fn);
-    this.pauseContainer.add([shadow,bg,hoverG,txt,hit]);
+    const bw = 220, bh = 46, r = 8, bevel = 5;
+    makeStoneTexture(this, 'stone-pause-btn', { w: bw, h: bh, shape: 'rounded', radius: r, bevel, seed: 5 });
+    const bg = this.add.image(x, y, 'stone-pause-btn').setOrigin(0.5);
+    const hoverG = this.add.graphics();
+    hoverG.fillStyle(S.BEVEL_LIGHT, 0.14);
+    hoverG.fillRoundedRect(x - bw / 2, y - bh / 2, bw, bh, r);
+    hoverG.setAlpha(0);
+    const textColor = label === 'RESUME' ? '#f0e8d0' : S.TEXT;
+    const txt = this.add.text(x, y, label, stoneTextStyle(22, textColor)).setOrigin(0.5);
+    const hit = this.add.rectangle(x, y, bw, bh).setInteractive({ cursor: 'pointer' });
+    hit.on('pointerover',  () => { this.tweens.add({ targets: hoverG, alpha: 1, duration: 110 }); this.tweens.add({ targets: txt, scaleX: 1.04, scaleY: 1.04, duration: 110 }); });
+    hit.on('pointerout',   () => { this.tweens.add({ targets: hoverG, alpha: 0, duration: 110 }); this.tweens.add({ targets: txt, scaleX: 1, scaleY: 1, duration: 110 }); });
+    hit.on('pointerdown', fn);
+    this.pauseContainer.add([bg, hoverG, txt, hit]);
   }
 
   // ─── Arena event listeners ───────────────────────────────────────────────────
@@ -711,6 +1052,10 @@ export default class UIScene extends Phaser.Scene {
         onComplete:()=>this.bossBarContainer.setVisible(false).setAlpha(1) });
     });
     a.events.on('scoreChanged',  (score) => { this.score=score; this.scoreText.setText(`Score: ${score}`); });
-    a.events.on('pauseToggled',  (paused) => { this.isPaused=paused; this.pauseContainer.setVisible(paused); });
+    a.events.on('pauseToggled',  (paused) => {
+      this.isPaused = paused;
+      if (!paused && this._editMode) this._exitEditMode();
+      this.pauseContainer.setVisible(paused);
+    });
   }
 }
