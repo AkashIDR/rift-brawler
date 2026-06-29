@@ -340,6 +340,22 @@ export default class ArenaScene extends Phaser.Scene {
     this.obstacles = this.arena.obstacles.map(d =>
       new Obstacle(this, d.x, d.y, d.type, d.tall, d.themeIdx ?? 0)
     );
+
+    // DEBUG — place all 5 themed spires near spawn so all themes are reviewable at once.
+    // Remove this block when spire art is approved.
+    if (this.level === 1) {
+      const { x: sx, y: sy } = this.arena.spawnPoint;
+      const offsets = [
+        { dx: -220, dy: -80 },
+        { dx: -110, dy: -80 },
+        { dx:    0, dy: -80 },
+        { dx:  110, dy: -80 },
+        { dx:  220, dy: -80 },
+      ];
+      offsets.forEach(({ dx, dy }, i) => {
+        this.obstacles.push(new Obstacle(this, sx + dx, sy + dy, 'spire', true, i));
+      });
+    }
   }
 
   // ── Entities ───────────────────────────────────────────────────────────────

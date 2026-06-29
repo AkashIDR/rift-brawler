@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { OBSTACLES } from '../config/gameConfig.js';
-import { bakeRockTexture, bakePillarTexture, bakeStumpTexture, bakeTreeTrunkTexture, bakeTreeCanopyTexture } from './obstacleArt.js';
+import { bakeRockTexture, bakePillarTexture, bakeStumpTexture, bakeTreeTrunkTexture, bakeTreeCanopyTexture, bakeSpireTrunkTexture, bakeSpireCanopyTexture } from './obstacleArt.js';
 
 export default class Obstacle {
   constructor(scene, x, y, type, tall, themeIdx = 0) {
@@ -230,213 +230,39 @@ export default class Obstacle {
 
   // ── Spire (theme-specific vertical prop) ──────────────────────────────────
   // Uses the same trunk + canopy two-container pattern as trees so occlusion-fade
-  // (via checkOcclusion + this.tall=true) just works.
+  // (via checkOcclusion + this.tall=true) just works. Both visuals are canvas-baked.
   _buildSpire() {
     const r = this.baseRadius;
+    const trunkKey  = `obs-spire-trunk-${Math.round(this.x)}-${Math.round(this.y)}`;
+    const canopyKey = `obs-spire-canopy-${Math.round(this.x)}-${Math.round(this.y)}`;
 
-    // Base container (depth = this.y → ground-plane sort)
+    const { originX: tOX, originY: tOY } = bakeSpireTrunkTexture(
+      this.scene, trunkKey, this.themeIdx, r, this._h.bind(this));
+    this._trackTex(trunkKey);
+    this._trackTex(canopyKey);
+
     const trunk = this.scene.add.container(this.x, this.y);
     trunk.setDepth(this.y);
-    const tg = this.scene.add.graphics();
+    trunk.add(this.scene.add.image(0, 0, trunkKey).setOrigin(tOX, tOY));
 
-    // Ground shadow (shared by all themes)
-    tg.fillStyle(0x000000, 0.55);
-    tg.fillEllipse(4, r * 0.5, r * 2.4, r * 0.6);
-
-    // Canopy container (depth = this.y + 140 → always above entities)
     const canopyY = this.y - r * 2.6;
-    const canopy = this.scene.add.container(this.x, canopyY);
+    const canopy  = this.scene.add.container(this.x, canopyY);
     canopy.setDepth(this.y + 140);
-    const cg = this.scene.add.graphics();
 
-    // Theme-specific look
-    switch (this.themeIdx) {
-      case 0: this._spireGreenFields(tg, cg, r); break;
-      case 1: this._spireCrystalCaves(tg, cg, r); break;
-      case 2: this._spireVolcanic(tg, cg, r); break;
-      case 3: this._spireCelestial(tg, cg, r); break;
-      case 4: this._spireChaos(tg, cg, r); break;
-      default: this._spireGreenFields(tg, cg, r);
+    const { originX: cOX, originY: cOY } = bakeSpireCanopyTexture(
+      this.scene, canopyKey, this.themeIdx, r, this._h.bind(this));
+    const canopyImg = this.scene.add.image(0, 0, canopyKey).setOrigin(cOX, cOY);
+    canopy.add(canopyImg);
+
+    // Theme 4 — Chaos: rotate the baked image (perf win vs rotating live Graphics)
+    if (this.themeIdx === 4) {
+      this.scene.tweens.add({ targets: canopyImg, angle: 360, duration: 12000, repeat: -1 });
     }
 
-    trunk.add(tg);
-    canopy.add(cg);
     this.trunkContainer = trunk;
     this.canopyContainer = canopy;
     this.container = trunk;
-  }
-
-  // Theme 0 — Green Fields: mossy stone column with grass tufts on top
-  _spireGreenFields(tg, cg, r) {
-    // Stone column (base)
-    tg.fillStyle(0x4a4030, 1);
-    tg.fillRoundedRect(-r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3);
-    tg.fillStyle(0x2e261c, 0.5);
-    tg.fillRoundedRect(r * 0.1, -r * 2.5, r * 0.75, r * 3, { tl: 0, tr: r * 0.3, bl: 0, br: r * 0.3 });
-    tg.lineStyle(1.5, 0x1a1610, 0.85);
-    tg.strokeRoundedRect(-r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3);
-    // Mossy patches
-    tg.fillStyle(0x4a7028, 0.7);
-    tg.fillEllipse(-r * 0.4, -r * 1.8, r * 0.7, r * 0.4);
-    tg.fillEllipse(r * 0.3, -r * 0.6, r * 0.5, r * 0.3);
-    // Crack
-    tg.lineStyle(1, 0x0f0a05, 0.6);
-    tg.lineBetween(-r * 0.2, -r * 2.3, r * 0.1, -r * 0.5);
-
-    // Grass tufts on top (canopy)
-    cg.fillStyle(0x3a6020, 1);
-    cg.fillEllipse(0, 0, r * 1.9, r * 0.8);
-    cg.fillStyle(0x52aa3e, 1);
-    cg.fillEllipse(-r * 0.2, -r * 0.15, r * 1.3, r * 0.6);
-    // Grass blades
-    cg.lineStyle(1.5, 0x6ec048, 0.9);
-    for (let i = 0; i < 7; i++) {
-      const bx = -r * 0.7 + (i / 6) * r * 1.4;
-      const tilt = (i % 2 ? 1 : -1) * (3 + Math.random() * 4);
-      cg.lineBetween(bx, 0, bx + tilt, -r * 0.5);
-    }
-  }
-
-  // Theme 1 — Crystal Caves: dark anchor rock with crystal shards rising
-  _spireCrystalCaves(tg, cg, r) {
-    // Dark anchor rock (base)
-    tg.fillStyle(0x1a1830, 1);
-    for (let i = 0; i < 4; i++) {
-      const ox = (i - 1.5) * r * 0.45;
-      tg.fillCircle(ox, 0, r * 0.85);
-    }
-    tg.lineStyle(1.5, 0x0a0820, 0.85);
-    tg.strokeCircle(-r * 0.5, 0, r * 0.85);
-    tg.strokeCircle(r * 0.5, 0, r * 0.85);
-
-    // 4 crystal shards in canopy — diamonds rising at angles
-    const shards = [
-      { x: 0,        h: r * 2.4, tilt: 0,    color: 0x66eeff },
-      { x: -r * 0.5, h: r * 1.7, tilt: -0.15, color: 0x44ccdd },
-      { x: r * 0.5,  h: r * 1.8, tilt: 0.18,  color: 0x99eeff },
-      { x: -r * 0.2, h: r * 1.3, tilt: 0.05,  color: 0x88ddee },
-    ];
-    shards.forEach(({ x, h, tilt, color }) => {
-      const w = r * 0.32;
-      const cos = Math.cos(tilt), sin = Math.sin(tilt);
-      const tip   = { x: x + sin * h,    y: -h * cos };
-      const right = { x: x + cos * w,    y: -w * sin };
-      const left  = { x: x - cos * w,    y: w * sin };
-      const base  = { x: x,              y: 0 };
-      cg.fillStyle(color, 0.85);
-      cg.fillPoints([base, right, tip, left], true);
-      cg.lineStyle(1, 0xffffff, 0.55);
-      cg.lineBetween(base.x, base.y, tip.x, tip.y);
-      cg.fillStyle(0xffffff, 0.45);
-      cg.fillCircle(tip.x, tip.y, 1.5);
-    });
-  }
-
-  // Theme 2 — Volcanic: charred basalt outcrop with embers glowing on top
-  _spireVolcanic(tg, cg, r) {
-    // Basalt base (jagged)
-    tg.fillStyle(0x251008, 1);
-    const pts = [];
-    const segs = 8;
-    for (let i = 0; i < segs; i++) {
-      const a = (i / segs) * Math.PI * 2;
-      const radR = r * (0.95 + (i % 2) * 0.18);
-      pts.push({ x: Math.cos(a) * radR, y: Math.sin(a) * radR * 0.55 - r * 0.4 });
-    }
-    tg.fillPoints(pts, true);
-    tg.lineStyle(1.5, 0x100804, 0.9);
-    tg.strokePoints(pts, true);
-    // Lava cracks glowing in the basalt
-    tg.lineStyle(1.5, 0xff4400, 0.65);
-    tg.lineBetween(-r * 0.5, -r * 0.7, r * 0.2, -r * 0.2);
-    tg.lineBetween(r * 0.1, -r * 0.5, r * 0.6, -r * 0.1);
-
-    // Embers on top — 5 glowing dots, alpha-pulsing
-    cg.fillStyle(0x6a2010, 0.9);
-    cg.fillEllipse(0, 0, r * 1.8, r * 0.7);
-    for (let i = 0; i < 5; i++) {
-      const a = (i / 5) * Math.PI * 2 + 0.3;
-      const ex = Math.cos(a) * r * 0.55;
-      const ey = Math.sin(a) * r * 0.22 - r * 0.15;
-      cg.fillStyle(0xff6622, 0.5);
-      cg.fillCircle(ex, ey, 4.5);
-      cg.fillStyle(0xffaa44, 0.95);
-      cg.fillCircle(ex, ey, 2.2);
-    }
-  }
-
-  // Theme 3 — Celestial: smooth stone pillar with starfield twinkle on top
-  _spireCelestial(tg, cg, r) {
-    // Smooth stone pillar
-    tg.fillStyle(0x1c1c3a, 1);
-    tg.fillRoundedRect(-r * 0.75, -r * 2.4, r * 1.5, r * 3, r * 0.25);
-    tg.fillStyle(0x0a0a20, 0.5);
-    tg.fillRoundedRect(r * 0.05, -r * 2.4, r * 0.7, r * 3, { tl: 0, tr: r * 0.25, bl: 0, br: r * 0.25 });
-    tg.lineStyle(1.5, 0x05051a, 0.9);
-    tg.strokeRoundedRect(-r * 0.75, -r * 2.4, r * 1.5, r * 3, r * 0.25);
-    // Gold inlay vertical
-    tg.lineStyle(1, 0xffd700, 0.5);
-    tg.lineBetween(0, -r * 2.2, 0, -r * 0.3);
-
-    // Starfield top — dark dome with sparkling stars
-    cg.fillStyle(0x10103a, 0.95);
-    cg.fillEllipse(0, 0, r * 1.7, r * 0.8);
-    // 8 stars at random positions
-    for (let i = 0; i < 8; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const dist = Math.random() * r * 0.6;
-      const sx = Math.cos(ang) * dist;
-      const sy = Math.sin(ang) * dist * 0.4 - r * 0.1;
-      const sz = 0.8 + Math.random() * 1.5;
-      cg.fillStyle(0xffeebb, 0.95);
-      cg.fillCircle(sx, sy, sz);
-      cg.fillStyle(0xffeebb, 0.25);
-      cg.fillCircle(sx, sy, sz * 2.2);
-    }
-  }
-
-  // Theme 4 — Chaos: distorted fragmented base with orbiting shards
-  _spireChaos(tg, cg, r) {
-    // Distorted base — irregular fractured rock
-    tg.fillStyle(0x2a0a30, 1);
-    const pts = [];
-    const segs = 7;
-    for (let i = 0; i < segs; i++) {
-      const a = (i / segs) * Math.PI * 2;
-      const rr = r * (0.85 + Math.sin(i * 1.7) * 0.3);
-      pts.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr * 0.55 - r * 0.4 });
-    }
-    tg.fillPoints(pts, true);
-    tg.lineStyle(1.5, 0xff00ff, 0.55);
-    tg.strokePoints(pts, true);
-    // Magenta crack
-    tg.lineStyle(1, 0xff00ff, 0.7);
-    tg.lineBetween(-r * 0.3, -r * 0.6, r * 0.4, -r * 0.1);
-
-    // Orbiting fragments — 3 small floating shards (subtle rotation tween)
-    const fragments = [
-      { ox: -r * 0.5, oy: -r * 0.2, size: 4, color: 0xff44ff },
-      { ox: r * 0.4,  oy: -r * 0.4, size: 5, color: 0xff00ff },
-      { ox: 0,        oy: -r * 0.7, size: 3, color: 0xee88ff },
-    ];
-    fragments.forEach(({ ox, oy, size, color }) => {
-      cg.fillStyle(color, 0.85);
-      const tri = [
-        { x: ox, y: oy - size },
-        { x: ox + size, y: oy + size * 0.5 },
-        { x: ox - size, y: oy + size * 0.5 },
-      ];
-      cg.fillPoints(tri, true);
-      cg.lineStyle(0.8, 0xffffff, 0.7);
-      cg.strokePoints(tri, true);
-    });
-    // Subtle slow rotation on the canopy container — caller adds it
-    this.scene.tweens.add({
-      targets: cg,
-      angle: 360,
-      duration: 12000,
-      repeat: -1,
-    });
+    this.tall = false; // spires don't use occlusion fade
   }
 
   // ── Pillar / ruins ────────────────────────────────────────────────────────

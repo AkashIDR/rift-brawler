@@ -162,3 +162,60 @@ The total draw call budget for background content (arena, floor, walls, vignette
 - `OrganicShape.containsPoint(x, y, r)` is the single boundary check for all entities,
   spawns, obstacles, and projectiles
 - All spawn positions must be validated with `containsPoint` before placement
+
+---
+
+## Stylized obstacle art — canvas-bake recipe & pitfalls
+
+All obstacle visuals are baked once into Phaser **canvas textures** (`scene.textures.createCanvas`
+→ 2D context with real gradients → `add.image`), see `src/entities/obstacleArt.js`. Phaser
+`Graphics` can't gradient-fill; canvas 2D can. Per-instance keys are tracked in `Obstacle._texKeys`
+and freed on break/destroy/shutdown.
+
+### Stylized foliage (tree canopy) — the recipe that worked
+Build the crown FROM opaque shingled clump-domes — never paint soft texture onto a smooth mass.
+Separate the three concerns:
+- **Crown shape** = a vertical rib **width profile** `halfWidthAt(y)` per style (round / teardrop /
+  broad). Teardrop = narrow rounded top, widest lower. Use a continuous arc — an ellipse that holds
+  max width across a long mid-section looks boxy.
+- **Edge silhouette** = a dedicated **edge ring**: clumps at EVEN arc-length spacing along the
+  contour, near-uniform radius → a clean rhythmic cauliflower edge. (Letting interior grid clumps
+  poke out = chaotic random edge.)
+- **Interior texture** = jittered grid clumps kept WELL INSIDE (scale ~0.82) + ~15% larger
+  "feature" clumps for size variation. Clumps are smoothed lumpy blobs (12-pt, ±10% radius wobble,
+  quadratic-midpoint smoothing) — gentle, not amoeba.
+
+Fill order (all clipped to the clump union):
+1. **Solid backstop**: fill the crown PROFILE solid (vertical gradient) UNDER the clumps so gaps
+   never show holes. Fill the profile and the clump-union as **separate `fill()` calls** — mixing
+   the CCW profile + CW clump blobs in one path under nonzero winding CANCELS and punches holes.
+2. **Per-clump domes**, drawn **back-to-front (top→bottom)**: each an opaque blob with a VERTICAL
+   gradient (light top → tone → slightly dark bottom). Low blend factors = tight value range.
+3. Global vertical tone ramp `canopyC(top) → canopyB → canopyA(bottom)` = darkest at the bottom.
+4. **Rim shadow** = an **elliptical radial sized to the tree's actual W×H** (adapts per-tree),
+   dark at the rim → clear center, centered slightly ABOVE the middle so the top rim is lighter and
+   the bottom heavier. Keep it a THIN band (large inner radius ~`W*0.70`) + gentle alpha (~0.26).
+   Its beyond-outer dark is clipped to the CLUMPS so it shades the real bumpy edge, not the profile.
+5. Upper-left **light bloom** (`canopyD`) for the lit cheek; soft **bottom band** for trunk contact.
+6. 2.5D read: the very top tilts away → it's not the brightest; the lit area sits just below the top.
+
+### Dead-ends — do NOT repeat
+- Per-lobe radial gradients → billiard balls / overlap rings.
+- Soft highlight smears on a smooth dome → "plastic balloon" (and invisible if alpha too low).
+- Grid of uniform circles each with a contact-shadow ring → bubble-wrap.
+- Strong wobble + nestled satellite clumps → noisy amoeba mess.
+- Inner-shadow via nested annulus **fills** (even-odd OR reversed-winding) → silently did NOT punch
+  holes in the Phaser CanvasTexture context → filled discs → center-dark (reversed).
+- Inner-shadow via **stroking** inset contours → visible concentric "boxes".
+- Rim shadow keyed to the smooth profile (it sits inside the bumpy clump silhouette) → leaves
+  bump-tips lit, reads as "inner shading." Use the clump-clipped radial instead.
+- General: when a fill looks wrong/inverted, suspect winding/fill-rule before geometry; prefer
+  radial gradients (unambiguous direction) over hand-rolled annuli in this canvas context.
+
+### Other obstacle gradients (same file)
+- **Rocks**: directional FACET gradient (not a smooth dome) — keeps the jagged read; hard-edged
+  shade/highlight sub-polygons; cracks only for volcanic.
+- **Pillars / stumps / tree trunks**: CYLINDER gradient across the width (dark rim → lit core →
+  dark shadow edge) + a domed top cap (radial, top-lit). Stump/trunk bottom uses an elliptical arc,
+  not a flat line, for cylinder perspective.
+- Soft contact shadows = 3 layered ellipses (wide+faint → narrow+dark), baked into the texture.

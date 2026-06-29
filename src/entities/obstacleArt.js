@@ -681,3 +681,422 @@ export function bakeStumpTexture(scene, key, { r, variant, frontH, topW, topH, t
   tex.refresh();
   return { key, originX: ox / cw, originY: oy / ch };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spire — theme-specific tall props. Two textures: trunk (base + ground shadow)
+// and canopy (top element). Replaces the live Graphics _spireXxx methods in
+// Obstacle.js. All Math.random() calls replaced with hash(salt) for determinism.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Universal canvas: generous enough for the tallest column + widest rock base.
+// Local (0,0) = base center. Column tops sit at y = −r*2.5.
+export function bakeSpireTrunkTexture(scene, key, themeIdx, r, hash) {
+  const pad    = 8;
+  const halfW  = r * 1.65 + pad;
+  const aboveH = r * 2.6  + pad;
+  const belowH = r * 1.0  + pad;
+  const cw = Math.ceil(halfW * 2);
+  const ch = Math.ceil(aboveH + belowH);
+  const ox = Math.floor(cw / 2);
+  const oy = Math.ceil(aboveH);
+
+  if (scene.textures.exists(key)) return { key, originX: ox / cw, originY: oy / ch };
+  const tex = scene.textures.createCanvas(key, cw, ch);
+  const ctx = tex.getContext();
+  ctx.save();
+  ctx.translate(ox, oy);
+
+  // Ground shadow — scale ctx so radial gradient follows the ellipse edge, not a circle
+  ctx.save();
+  ctx.translate(4, r * 0.5);
+  ctx.scale(1.0, 0.30);  // squash matches ellipse ry/rx ratio
+  const sg = ctx.createRadialGradient(0, 0, r * 0.18, 0, 0, r * 1.30);
+  sg.addColorStop(0,    'rgba(0,0,0,0.52)');
+  sg.addColorStop(0.55, 'rgba(0,0,0,0.24)');
+  sg.addColorStop(1,    'rgba(0,0,0,0)');
+  ctx.fillStyle = sg;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.30, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  switch (themeIdx) {
+    case 0: _spireGFTrunk(ctx, r, hash);    break;
+    case 1: _spireCCTrunk(ctx, r, hash);    break;
+    case 2: _spireVolTrunk(ctx, r, hash);   break;
+    case 3: _spireCelTrunk(ctx, r, hash);   break;
+    case 4: _spireChaosTrunk(ctx, r, hash); break;
+    default: _spireGFTrunk(ctx, r, hash);
+  }
+
+  ctx.restore();
+  tex.refresh();
+  return { key, originX: ox / cw, originY: oy / ch };
+}
+
+// Theme 0 — Green Fields: mossy stone column
+function _spireGFTrunk(ctx, r, hash) {
+  const col = 0x4a4030;
+  roundRectPath(ctx, -r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3);
+  const cyl = ctx.createLinearGradient(-r * 0.85, 0, r * 0.85, 0);
+  cyl.addColorStop(0,    hexToRgba(shade(col, 0.60), 1));
+  cyl.addColorStop(0.28, hexToRgba(shade(col, 1.25), 1));
+  cyl.addColorStop(0.58, hexToRgba(col, 1));
+  cyl.addColorStop(1,    hexToRgba(shade(col, 0.50), 1));
+  ctx.fillStyle = cyl; ctx.fill();
+  // Shadow-side overlay
+  ctx.save();
+  roundRectPath(ctx, -r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3);
+  ctx.clip();
+  const sG = ctx.createLinearGradient(0, 0, r * 0.85, 0);
+  sG.addColorStop(0, hexToRgba(0x2e261c, 0));
+  sG.addColorStop(1, hexToRgba(0x2e261c, 0.45));
+  ctx.fillStyle = sG; ctx.fillRect(-r, -r * 2.6, r * 2, r * 3.5);
+  ctx.restore();
+  roundRectPath(ctx, -r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3);
+  ctx.strokeStyle = hexToRgba(0x1a1610, 0.85); ctx.lineWidth = 1.5; ctx.stroke();
+  // Mossy patches
+  [[-r * 0.4, -r * 1.8, r * 0.35, r * 0.2], [r * 0.3, -r * 0.6, r * 0.25, r * 0.15]]
+    .forEach(([mx, my, mw, mh]) => {
+      const mg = ctx.createRadialGradient(mx, my, 0, mx, my, mw * 1.2);
+      mg.addColorStop(0, hexToRgba(0x4a7028, 0.85));
+      mg.addColorStop(1, hexToRgba(0x4a7028, 0));
+      ctx.fillStyle = mg;
+      ctx.beginPath(); ctx.ellipse(mx, my, mw, mh, 0, 0, Math.PI * 2); ctx.fill();
+    });
+  ctx.strokeStyle = hexToRgba(0x0f0a05, 0.6); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-r * 0.2, -r * 2.3); ctx.lineTo(r * 0.1, -r * 0.5); ctx.stroke();
+}
+
+// Theme 1 — Crystal Caves: dark anchor rock (4 overlapping circles)
+function _spireCCTrunk(ctx, r, hash) {
+  for (let i = 0; i < 4; i++) {
+    const cx2 = (i - 1.5) * r * 0.45;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx2, 0, r * 0.85, 0, Math.PI * 2); ctx.clip();
+    const rg = ctx.createRadialGradient(cx2 - r * 0.28, -r * 0.28, 0, cx2, 0, r * 0.85);
+    rg.addColorStop(0,   hexToRgba(shade(0x1a1830, 1.55), 1));
+    rg.addColorStop(0.6, hexToRgba(0x1a1830, 1));
+    rg.addColorStop(1,   hexToRgba(shade(0x1a1830, 0.55), 1));
+    ctx.fillStyle = rg; ctx.fillRect(cx2 - r * 0.85, -r * 0.85, r * 1.7, r * 1.7);
+    ctx.restore();
+  }
+  ctx.strokeStyle = hexToRgba(0x0a0820, 0.85); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(-r * 0.5, 0, r * 0.85, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(r * 0.5, 0, r * 0.85, 0, Math.PI * 2); ctx.stroke();
+}
+
+// Theme 2 — Volcanic: charred basalt outcrop
+function _spireVolTrunk(ctx, r, hash) {
+  const segs = 8, pts = [];
+  for (let i = 0; i < segs; i++) {
+    const a = (i / segs) * Math.PI * 2, radR = r * (0.95 + (i % 2) * 0.18);
+    pts.push({ x: Math.cos(a) * radR, y: Math.sin(a) * radR * 0.55 - r * 0.4 });
+  }
+  const topY = pts.reduce((m, p) => Math.min(m, p.y), Infinity);
+  const botY = pts.reduce((m, p) => Math.max(m, p.y), -Infinity);
+  pathPoly(ctx, pts);
+  const lg = ctx.createLinearGradient(0, topY, 0, botY);
+  lg.addColorStop(0,    hexToRgba(0x120804, 1));
+  lg.addColorStop(0.65, hexToRgba(0x251008, 1));
+  lg.addColorStop(1,    hexToRgba(0x3d1808, 1));
+  ctx.fillStyle = lg; ctx.fill();
+  pathPoly(ctx, pts);
+  ctx.strokeStyle = hexToRgba(0x100804, 0.9); ctx.lineWidth = 1.5; ctx.stroke();
+  const c1G = ctx.createLinearGradient(-r * 0.5, -r * 0.7, r * 0.2, -r * 0.2);
+  c1G.addColorStop(0, hexToRgba(0xff4400, 0));
+  c1G.addColorStop(0.45, hexToRgba(0xff6600, 0.75));
+  c1G.addColorStop(1, hexToRgba(0xff4400, 0));
+  ctx.strokeStyle = c1G; ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.7); ctx.lineTo(r * 0.2, -r * 0.2); ctx.stroke();
+  ctx.strokeStyle = hexToRgba(0xff4400, 0.65); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(r * 0.1, -r * 0.5); ctx.lineTo(r * 0.6, -r * 0.1); ctx.stroke();
+}
+
+// Theme 3 — Celestial: smooth stone pillar
+function _spireCelTrunk(ctx, r, hash) {
+  const col = 0x1c1c3a;
+  roundRectPath(ctx, -r * 0.75, -r * 2.4, r * 1.5, r * 3, r * 0.25);
+  const cyl = ctx.createLinearGradient(-r * 0.75, 0, r * 0.75, 0);
+  cyl.addColorStop(0,    hexToRgba(shade(col, 0.50), 1));
+  cyl.addColorStop(0.28, hexToRgba(shade(col, 1.45), 1));
+  cyl.addColorStop(0.60, hexToRgba(col, 1));
+  cyl.addColorStop(1,    hexToRgba(shade(col, 0.38), 1));
+  ctx.fillStyle = cyl; ctx.fill();
+  ctx.save();
+  roundRectPath(ctx, -r * 0.75, -r * 2.4, r * 1.5, r * 3, r * 0.25);
+  ctx.clip();
+  const sG = ctx.createLinearGradient(0, 0, r * 0.75, 0);
+  sG.addColorStop(0, hexToRgba(0x0a0a20, 0));
+  sG.addColorStop(1, hexToRgba(0x0a0a20, 0.48));
+  ctx.fillStyle = sG; ctx.fillRect(-r, -r * 2.5, r * 2, r * 3.5);
+  ctx.restore();
+  roundRectPath(ctx, -r * 0.75, -r * 2.4, r * 1.5, r * 3, r * 0.25);
+  ctx.strokeStyle = hexToRgba(0x05051a, 0.9); ctx.lineWidth = 1.5; ctx.stroke();
+  const goldG = ctx.createLinearGradient(0, -r * 2.2, 0, -r * 0.3);
+  goldG.addColorStop(0,   hexToRgba(0xffd700, 0));
+  goldG.addColorStop(0.2, hexToRgba(0xffd700, 0.55));
+  goldG.addColorStop(0.8, hexToRgba(0xffd700, 0.55));
+  goldG.addColorStop(1,   hexToRgba(0xffd700, 0));
+  ctx.strokeStyle = goldG; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(0, -r * 2.2); ctx.lineTo(0, -r * 0.3); ctx.stroke();
+}
+
+// Theme 4 — Chaos: fractured dark-purple rock
+function _spireChaosTrunk(ctx, r, hash) {
+  const segs = 7, pts = [];
+  for (let i = 0; i < segs; i++) {
+    const a = (i / segs) * Math.PI * 2, rr = r * (0.85 + Math.sin(i * 1.7) * 0.3);
+    pts.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr * 0.55 - r * 0.4 });
+  }
+  const topY = pts.reduce((m, p) => Math.min(m, p.y), Infinity);
+  const botY = pts.reduce((m, p) => Math.max(m, p.y), -Infinity);
+  pathPoly(ctx, pts);
+  const lg = ctx.createLinearGradient(-r * 0.5, topY, r * 0.5, botY);
+  lg.addColorStop(0,   hexToRgba(shade(0x2a0a30, 0.55), 1));
+  lg.addColorStop(0.5, hexToRgba(0x2a0a30, 1));
+  lg.addColorStop(1,   hexToRgba(shade(0x2a0a30, 0.80), 1));
+  ctx.fillStyle = lg; ctx.fill();
+  pathPoly(ctx, pts);
+  ctx.strokeStyle = hexToRgba(0xff00ff, 0.55); ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.strokeStyle = hexToRgba(0xff00ff, 0.70); ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-r * 0.3, -r * 0.6); ctx.lineTo(r * 0.4, -r * 0.1); ctx.stroke();
+}
+
+// ── Canopy ────────────────────────────────────────────────────────────────
+
+export function bakeSpireCanopyTexture(scene, key, themeIdx, r, hash) {
+  const pad = 8;
+  let cw, ch, ox, oy;
+  if (themeIdx === 1) {
+    // Crystal shards are tall — origin at bottom center (shard bases at y=0)
+    cw = Math.ceil(r * 2.4 + pad * 2);
+    ch = Math.ceil(r * 2.6 + pad * 2);
+    ox = Math.floor(cw / 2);
+    oy = ch - pad;
+  } else if (themeIdx === 0) {
+    // GF grass blades extend tall — needs extra vertical room
+    const marginX = r * 1.4;
+    const marginY = r * 1.6;
+    cw = Math.ceil(marginX * 2 + pad * 2);
+    ch = Math.ceil(marginY * 2 + pad * 2);
+    ox = Math.floor(cw / 2);
+    oy = Math.floor(ch / 2);
+  } else {
+    // Compact centered; Chaos needs extra margin for 360° rotation
+    const margin = themeIdx === 4 ? r * 1.05 : r * 1.1;
+    cw = Math.ceil(margin * 2 + pad * 2);
+    ch = Math.ceil(margin * 2 + pad * 2);
+    ox = Math.floor(cw / 2);
+    oy = Math.floor(ch / 2);
+  }
+
+  if (scene.textures.exists(key)) return { key, originX: ox / cw, originY: oy / ch };
+  const tex = scene.textures.createCanvas(key, cw, ch);
+  const ctx = tex.getContext();
+  ctx.save();
+  ctx.translate(ox, oy);
+
+  switch (themeIdx) {
+    case 0: _spireGFCanopy(ctx, r, hash);    break;
+    case 1: _spireCCCanopy(ctx, r, hash);    break;
+    case 2: _spireVolCanopy(ctx, r, hash);   break;
+    case 3: _spireCelCanopy(ctx, r, hash);   break;
+    case 4: _spireChaosCanopy(ctx, r, hash); break;
+    default: _spireGFCanopy(ctx, r, hash);
+  }
+
+  ctx.restore();
+  tex.refresh();
+  return { key, originX: ox / cw, originY: oy / ch };
+}
+
+// Theme 0 — Green Fields: grass tuft cluster
+function _spireGFCanopy(ctx, r, hash) {
+  // Mound center at y = r*0.10 — aligns with column top in world space.
+  // Mound rx = r*0.85 matches column half-width exactly for a seamless join.
+  const mCX = 0, mCY = -r * 0.04, mRX = r * 0.85, mRY = r * 0.28;
+
+  // Dark underside contact shadow so mound "sits into" the column top
+  const shadow = ctx.createRadialGradient(mCX, mCY + mRY * 0.5, 0, mCX, mCY + mRY * 0.4, mRX * 0.9);
+  shadow.addColorStop(0, 'rgba(0,0,0,0.30)');
+  shadow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = shadow;
+  ctx.beginPath(); ctx.ellipse(mCX, mCY + mRY * 0.3, mRX, mRY * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Mound body — radial gradient lit from top-left
+  const body = ctx.createRadialGradient(mCX - mRX * 0.25, mCY - mRY * 0.55, 0, mCX, mCY, mRX);
+  body.addColorStop(0,    hexToRgba(0x6ec84a, 1));
+  body.addColorStop(0.45, hexToRgba(0x4a8c30, 1));
+  body.addColorStop(1,    hexToRgba(shade(0x3a6020, 0.72), 1));
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.ellipse(mCX, mCY, mRX, mRY, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Blades spread across the mound ellipse surface — each blade roots at its own surface point.
+  // Three layers drawn back-to-front: dark → mid → vivid lime.
+  // Front blades have wide length variance so short ones let darker blades show through.
+
+  // Helper: place blade root on the mound ellipse at a given x fraction (-1..1)
+  // Returns [bx, by] on the top surface of the mound
+  const surfaceBase = (xFrac, jY) => {
+    const bx = mCX + xFrac * mRX * 0.90;
+    const clamped = Math.max(-1, Math.min(1, (bx - mCX) / mRX));
+    const halfH = mRY * Math.sqrt(1 - clamped * clamped);
+    // Root on top surface of mound, offset downward into mound by jY (clamped so root stays inside)
+    const by = mCY - halfH + Math.min(halfH * 1.8, Math.max(0, jY));
+    return [bx, by];
+  };
+
+  // Layer 0 — dark back, wide fan so outer blades are visible beyond the lime cluster
+  ctx.fillStyle = hexToRgba(0x2e6614, 0.92);
+  for (let i = 0; i < 26; i++) {
+    const xFrac = -0.85 + (i / 25) * 1.70 + (hash(350 + i) - 0.5) * 0.16;
+    const [bx, by] = surfaceBase(xFrac, hash(360 + i) * mRY * 2.5);
+    const ang  = xFrac * 1.30 + (hash(300 + i) - 0.5) * 0.28;
+    const bLen = r * 0.32 * (0.85 + hash(370 + i) * 0.30);
+    const hw   = r * 0.090;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const bow = ang < 0 ? -0.34 : ang > 0 ? 0.34 : (hash(375 + i) - 0.5) * 0.24;
+    const ctrlX = bx + sa * bLen * 0.65 + bow * bLen * ca;
+    const ctrlY = by - ca * bLen * 0.65 + bow * bLen * sa;
+    ctx.beginPath();
+    ctx.moveTo(bx - ca * hw, by - sa * hw);
+    ctx.quadraticCurveTo(ctrlX - ca * hw * 0.35, ctrlY - sa * hw * 0.35, bx + sa * bLen, by - ca * bLen);
+    ctx.lineTo(bx + ca * hw, by + sa * hw);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Layer 1 — medium green, mid fan
+  ctx.fillStyle = hexToRgba(0x4ea828, 0.94);
+  for (let i = 0; i < 22; i++) {
+    const xFrac = -0.72 + (i / 21) * 1.44 + (hash(380 + i) - 0.5) * 0.20;
+    const [bx, by] = surfaceBase(xFrac, hash(390 + i) * mRY * 2.0);
+    const ang  = xFrac * 1.00 + (hash(320 + i) - 0.5) * 0.26;
+    const bLen = r * 0.42 * (0.85 + hash(400 + i) * 0.28);
+    const hw   = r * 0.075;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const bow = ang < 0 ? -0.30 : ang > 0 ? 0.30 : (hash(405 + i) - 0.5) * 0.22;
+    const ctrlX = bx + sa * bLen * 0.65 + bow * bLen * ca;
+    const ctrlY = by - ca * bLen * 0.65 + bow * bLen * sa;
+    ctx.beginPath();
+    ctx.moveTo(bx - ca * hw, by - sa * hw);
+    ctx.quadraticCurveTo(ctrlX - ca * hw * 0.35, ctrlY - sa * hw * 0.35, bx + sa * bLen, by - ca * bLen);
+    ctx.lineTo(bx + ca * hw, by + sa * hw);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Layer 2 — vivid lime front, narrower fan, wide length variance so dark shows through
+  ctx.fillStyle = hexToRgba(0x8ee820, 1.00);
+  for (let i = 0; i < 18; i++) {
+    const xFrac = -0.48 + (i / 17) * 0.96 + (hash(410 + i) - 0.5) * 0.18;
+    const [bx, by] = surfaceBase(xFrac, hash(420 + i) * mRY * 5.0);
+    const ang  = xFrac * 0.72 + (hash(340 + i) - 0.5) * 0.22;
+    const bLen = r * 0.52 * (0.78 + hash(430 + i) * 0.38);
+    const hw   = r * 0.062;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const bow = ang < 0 ? -0.26 : ang > 0 ? 0.26 : (hash(435 + i) - 0.5) * 0.20;
+    const ctrlX = bx + sa * bLen * 0.65 + bow * bLen * ca;
+    const ctrlY = by - ca * bLen * 0.65 + bow * bLen * sa;
+    ctx.beginPath();
+    ctx.moveTo(bx - ca * hw, by - sa * hw);
+    ctx.quadraticCurveTo(ctrlX - ca * hw * 0.35, ctrlY - sa * hw * 0.35, bx + sa * bLen, by - ca * bLen);
+    ctx.lineTo(bx + ca * hw, by + sa * hw);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// Theme 1 — Crystal Caves: 4 shards with length-wise gradient
+function _spireCCCanopy(ctx, r, hash) {
+  const shards = [
+    { x: 0,         h: r * 2.4, tilt:  0,    c1: 0x99eeff, c2: 0x336688 },
+    { x: -r * 0.5,  h: r * 1.7, tilt: -0.15, c1: 0x77ddee, c2: 0x224455 },
+    { x:  r * 0.5,  h: r * 1.8, tilt:  0.18, c1: 0xaaeeff, c2: 0x338899 },
+    { x: -r * 0.2,  h: r * 1.3, tilt:  0.05, c1: 0x88ccdd, c2: 0x225566 },
+  ];
+  [...shards].sort((a, b) => b.h - a.h).forEach(({ x, h, tilt, c1, c2 }) => {
+    const w = r * 0.32, cos = Math.cos(tilt), sin = Math.sin(tilt);
+    const tip   = { x: x + sin * h, y: -h * cos };
+    const right = { x: x + cos * w, y: -w * sin };
+    const left  = { x: x - cos * w, y:  w * sin };
+    const base  = { x, y: 0 };
+    const grad = ctx.createLinearGradient(base.x, base.y, tip.x, tip.y);
+    grad.addColorStop(0,   hexToRgba(c2, 0.90));
+    grad.addColorStop(0.5, hexToRgba(c1, 0.90));
+    grad.addColorStop(1,   hexToRgba(shade(c1, 1.30), 0.70));
+    pathPoly(ctx, [base, right, tip, left]);
+    ctx.fillStyle = grad; ctx.fill();
+    // Lit-face overlay
+    const faceG = ctx.createLinearGradient(left.x, 0, right.x, 0);
+    faceG.addColorStop(0, hexToRgba(0xffffff, 0.22));
+    faceG.addColorStop(0.45, hexToRgba(0xffffff, 0));
+    pathPoly(ctx, [base, right, tip, left]);
+    ctx.fillStyle = faceG; ctx.fill();
+    ctx.strokeStyle = hexToRgba(0xffffff, 0.55); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(tip.x, tip.y); ctx.stroke();
+    ctx.fillStyle = hexToRgba(0xffffff, 0.45);
+    ctx.beginPath(); ctx.arc(tip.x, tip.y, 1.5, 0, Math.PI * 2); ctx.fill();
+  });
+}
+
+// Theme 2 — Volcanic: glowing ember cluster
+function _spireVolCanopy(ctx, r, hash) {
+  const bg = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.95);
+  bg.addColorStop(0, hexToRgba(0x8a2818, 1));
+  bg.addColorStop(1, hexToRgba(0x4a1808, 1));
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.ellipse(0, 0, r * 0.9, r * 0.35, 0, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + 0.3;
+    const ex = Math.cos(a) * r * 0.55, ey = Math.sin(a) * r * 0.22 - r * 0.15;
+    const eg = ctx.createRadialGradient(ex, ey, 0, ex, ey, r * 0.22);
+    eg.addColorStop(0, hexToRgba(0xff6622, 0.65));
+    eg.addColorStop(1, hexToRgba(0xff4400, 0));
+    ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(ex, ey, r * 0.22, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = hexToRgba(0xffaa44, 0.95); ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = hexToRgba(0xffee88, 0.90); ctx.beginPath(); ctx.arc(ex, ey, 1.2, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// Theme 3 — Celestial: dark starfield dome
+function _spireCelCanopy(ctx, r, hash) {
+  const domeG = ctx.createRadialGradient(0, -r * 0.05, 0, 0, 0, r * 0.9);
+  domeG.addColorStop(0, hexToRgba(0x1a1850, 0.95));
+  domeG.addColorStop(1, hexToRgba(0x0d0d2a, 0.98));
+  ctx.fillStyle = domeG;
+  ctx.beginPath(); ctx.ellipse(0, 0, r * 0.85, r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < 8; i++) {
+    const ang = hash(300 + i) * Math.PI * 2, dist = hash(310 + i) * r * 0.6;
+    const sx = Math.cos(ang) * dist, sy = Math.sin(ang) * dist * 0.4 - r * 0.1;
+    const sz = 0.8 + hash(320 + i) * 1.5;
+    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sz * 2.8);
+    sg.addColorStop(0, hexToRgba(0xffeebb, 0.70));
+    sg.addColorStop(1, hexToRgba(0xffeebb, 0));
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(sx, sy, sz * 2.8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = hexToRgba(0xffffff, 0.95); ctx.beginPath(); ctx.arc(sx, sy, sz, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// Theme 4 — Chaos: 3 orbiting fragment triangles (rotation tween applied to image in Obstacle.js)
+function _spireChaosCanopy(ctx, r, hash) {
+  const fragments = [
+    { ox: -r * 0.5, oy: -r * 0.2, size: 4, c: 0xff44ff },
+    { ox:  r * 0.4, oy: -r * 0.4, size: 5, c: 0xff00ff },
+    { ox:  0,       oy: -r * 0.7, size: 3, c: 0xee88ff },
+  ];
+  fragments.forEach(({ ox, oy, size, c }) => {
+    const tri = [
+      { x: ox,        y: oy - size },
+      { x: ox + size, y: oy + size * 0.5 },
+      { x: ox - size, y: oy + size * 0.5 },
+    ];
+    const fg = ctx.createLinearGradient(ox, oy - size, ox, oy + size * 0.5);
+    fg.addColorStop(0, hexToRgba(shade(c, 1.35), 0.95));
+    fg.addColorStop(1, hexToRgba(c, 0.85));
+    pathPoly(ctx, tri); ctx.fillStyle = fg; ctx.fill();
+    pathPoly(ctx, tri);
+    ctx.strokeStyle = hexToRgba(0xffffff, 0.70); ctx.lineWidth = 0.8; ctx.stroke();
+  });
+}
