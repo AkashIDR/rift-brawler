@@ -51,8 +51,9 @@ export function openSettingsOverlay(scene, { player = null, onClose = null } = {
     const s   = getSettings();
     const ROW = 56;
     // panel height: title(80) + section label(28) + mode pills(52) + gap(20)
-    //             + binding header(28) + 4 rows(ROW*4) + divider(24) + reset(52) + close(64)
-    const h   = 80 + 28 + 52 + 20 + 28 + ROW * 5 + 24 + 52 + 64;
+    //             + fps section label(28) + fps pills(52) + gap(20)
+    //             + binding header(28) + 5 rows(ROW*5) + divider(24) + reset(52) + close(64)
+    const h   = 80 + 28 + 52 + 20 + 28 + 52 + 20 + 28 + ROW * 5 + 24 + 52 + 64;
 
     // Stone panel — canvas-baked gradient texture; no-op on rebuild so only created once
     const panelTexKey = `stone-settings-panel-${PANEL_W}x${h}`;
@@ -109,6 +110,44 @@ export function openSettingsOverlay(scene, { player = null, onClose = null } = {
       hit.on('pointerdown', () => {
         saveSetting('movementMode', id);
         if (player) player.applySettings();
+        buildContent();
+      });
+      container.add([pillImg, pillG, pillTxt, hit]);
+    });
+    curY += pillH / 2 + 24;
+
+    // ── Show FPS counter ───────────────────────────────────────────────────
+    container.add(scene.add.text(-PANEL_W / 2 + 26, curY, 'Show FPS Counter', {
+      fontFamily: FONT, fontSize: '21px', letterSpacing: LETTER_SPACING, color: '#9090b8',
+    }).setOrigin(0, 0.5));
+    curY += 36;
+
+    const fpsOptions = [
+      { id: false, label: 'Off' },
+      { id: true,  label: 'On'  },
+    ];
+    const fpsPillTexKey = `stone-settings-pill-${Math.round(pillW)}x${pillH}`;
+    makeStoneTexture(scene, fpsPillTexKey, { w: pillW, h: pillH, shape: 'rounded', radius: pillR, bevel: 4, seed: 35 });
+    fpsOptions.forEach(({ id, label }, idx) => {
+      const isActive = s.showFps === id;
+      const px = pillStartX + idx * (pillW + 12);
+      const pillImg = scene.add.image(px + pillW / 2, curY, fpsPillTexKey).setOrigin(0.5);
+      const pillG = scene.add.graphics();
+      if (isActive) {
+        pillG.fillStyle(S.BEVEL_LIGHT, 0.18);
+        pillG.fillRoundedRect(px, curY - pillH / 2, pillW, pillH, pillR);
+        pillG.lineStyle(2, S.BEVEL_LIGHT, 0.55);
+        pillG.strokeRoundedRect(px + 4, curY - pillH / 2 + 4, pillW - 8, pillH - 8, pillR - 2);
+      }
+      const pillTxt = scene.add.text(px + pillW / 2, curY, label, {
+        fontFamily: FONT, fontSize: '19px', letterSpacing: LETTER_SPACING,
+        color: isActive ? S.TEXT : '#6868a0',
+      }).setOrigin(0.5);
+      const hit = scene.add.rectangle(px + pillW / 2, curY, pillW, pillH)
+        .setInteractive({ cursor: 'pointer' });
+      hit.on('pointerdown', () => {
+        saveSetting('showFps', id);
+        if (scene.refreshFpsVisibility) scene.refreshFpsVisibility();
         buildContent();
       });
       container.add([pillImg, pillG, pillTxt, hit]);

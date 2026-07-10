@@ -46,7 +46,7 @@ export const OBSTACLES = {
 export const PLAYER = {
   BASE_HP: 1000,
   BASE_SPEED: 280,
-  BASE_DAMAGE: 100,
+  BASE_DAMAGE: 25,
   BASIC_ATTACK_COOLDOWN: 100,    // ms
   BASIC_ATTACK_SPEED: 600,       // px/s
   DODGE_STAMINA_COST: 10,
@@ -89,7 +89,7 @@ export const SKILLS = {
     description: 'Launch a piercing energy bolt toward your cursor.',
     staminaCost: 25,
     cooldown: 1200,
-    damage: 400,
+    damage: 300,
     projectileSpeed: 800,
     color: 0xffdd44
   },
@@ -98,7 +98,7 @@ export const SKILLS = {
     description: 'Charge forward with your shield, dealing damage and granting brief invincibility.',
     staminaCost: 35,
     cooldown: 2000,
-    damage: 300,
+    damage: 200,
     dashSpeed: 900,
     dashDistance: 240,
     iframeDuration: 450,
@@ -109,7 +109,7 @@ export const SKILLS = {
     description: 'Slam the ground to unleash a shockwave in a wide area around you.',
     staminaCost: 40,
     cooldown: 2500,
-    damage: 550,
+    damage: 450,
     radius: 140,
     color: 0xff6600
   }
@@ -146,15 +146,34 @@ export const THEMES = [
     wallTop: 0x7a1e00, wallInner: 0x5a1400, wallHighlight: 0xff8844, wallShadow: 0x0a0200,
     accent: 0xff6600, accentDim: 0x883300, bg: 0x0f0300, particle: 0xff4400 },
 
-  // Levels 16-20: Celestial Void (cosmic stone, ancient astral)
-  { floor: 0x08082a, floorLight: 0x14147a, floorDark: 0x040416,
-    wallTop: 0x1e1e6a, wallInner: 0x141450, wallHighlight: 0xffeebb, wallShadow: 0x020208,
-    accent: 0xffd700, accentDim: 0x886600, bg: 0x020210, particle: 0xddccff },
+  // Levels 16-20: Celestial Void (golden temple under a cosmic night sky) — floor stays
+  // entirely warm-gold (floorDark is a burnished bronze, not a cool/dark tone, so the
+  // floor's natural patches read as bright-gold <-> burnished-bronze variation rather than
+  // gold-fading-to-dark); void/wallShadow/wallInner cool toward indigo-blue (matching the
+  // spire's own 0x1c1c3a shaft) so the warm/cool contrast lives at the wall/void level, not
+  // scattered across the floor itself. accent/wallHighlight stay gold as the "lit trim".
+  { floor: 0x3e2a10, floorLight: 0x8a6018, floorDark: 0x6a3c10,
+    wallTop: 0x6a4a10, wallInner: 0x1c2040, wallHighlight: 0xffe9b3, wallShadow: 0x0a0a1c,
+    accent: 0xffd700, accentDim: 0x8a6a10, bg: 0x08081a, particle: 0xffe9a8 },
 
-  // Levels 21+: Chaos Realm (reality fracturing)
-  { floor: 0x18081e, floorLight: 0x280c36, floorDark: 0x0c0412,
-    wallTop: 0x550055, wallInner: 0x3a0040, wallHighlight: 0xff44ff, wallShadow: 0x08000e,
-    accent: 0xff00ff, accentDim: 0x660066, bg: 0x060008, particle: 0xee00dd },
+  // Levels 21+: Chaos Realm (reality fracturing) — floorLight is the vignette's LIT-CENTER
+  // color; it was left nearly the same luminance as `floor` in an earlier pass (no real
+  // light falloff), which combined with obstacle bodies sitting at a similar brightness
+  // to the floor is why everything blended. Genuinely brightened here. Obstacle bodies
+  // (Obstacle.js) go dark instead, reading as silhouettes against a lit floor.
+  // Second pass: the whole theme was still one hue (magenta/violet everywhere) — same
+  // problem Celestial had before the blue/gold split. Introduced a magenta+cyan "glitch"
+  // duality fitting "reality fracturing": magenta (accent/accentDim) stays the crack/tear
+  // color; wallHighlight only ever drives a thin rim line/low-alpha overlay though — the
+  // WALL'S actual dominant visible color is `wallTop` (the cap, filled at alpha 1 — this is
+  // the big curved border band the top-down camera sees) and `wallInner` (the cliff face),
+  // both still magenta, which is why the cyan barely registered. wallTop now carries the
+  // cyan directly so the arena border itself reads cyan; wallHighlight brightened further
+  // (near-white cyan) for its rim-glow role on top of that. wallInner stays magenta-dark —
+  // a sliver of magenta cliff-face shows through the curve, keeping both hues present.
+  { floor: 0x241030, floorLight: 0x4a1854, floorDark: 0x140a1c,
+    wallTop: 0x0e7a88, wallInner: 0x3a0040, wallHighlight: 0x9df8ff, wallShadow: 0x08000e,
+    accent: 0xff00ff, accentDim: 0x660066, bg: 0x0c0410, particle: 0x88ffee },
 ];
 
 export function getTheme(level) {

@@ -45,6 +45,26 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// Same as roundRectPath but the flat bottom edge is replaced with a shallow downward bulge
+// (3 inserted points, same technique as the volcanic trunk's rounded base) so the column's
+// contact with the ground reads as a rounded contour instead of a flat, square-cut edge.
+function roundRectBulgeBottomPath(ctx, x, y, w, h, rTop, bulge) {
+  const rr = Math.max(0, Math.min(rTop, w / 2, h / 2));
+  const left = x, right = x + w, top = y, bottom = y + h;
+  ctx.beginPath();
+  ctx.moveTo(left + rr, top);
+  ctx.lineTo(right - rr, top);
+  ctx.arcTo(right, top, right, top + rr, rr);
+  ctx.lineTo(right, bottom);
+  ctx.lineTo(left + w * 0.75, bottom + bulge * 0.7);
+  ctx.lineTo(left + w * 0.5,  bottom + bulge);
+  ctx.lineTo(left + w * 0.25, bottom + bulge * 0.7);
+  ctx.lineTo(left, bottom);
+  ctx.lineTo(left, top + rr);
+  ctx.arcTo(left, top, left + rr, top, rr);
+  ctx.closePath();
+}
+
 // Trace a triangle path (no fill/stroke).
 function triPath(ctx, x1, y1, x2, y2, x3, y3) {
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x3, y3); ctx.closePath();
@@ -105,27 +125,113 @@ function drawOneRock(ctx, cx, cy, rx, ry, ptCount, hBase, tc, hash) {
   ctx.fillStyle = hexToRgba(tc.rockHL, 0.60);
   pathPoly(ctx, hlV); ctx.fill();
 
-  // Glowing lava fissures — only on the Volcanic theme. Structured (not random): a molten
-  // core at the center with fissures radiating outward into the lower/shaded area, evenly
-  // spread, so they read as a deliberate "cracked from within" pattern rather than stray lines.
-  if (tc.lavaGlow) {
-    // Molten core glow
-    ctx.fillStyle = 'rgba(255,102,0,0.22)';
-    ctx.beginPath(); ctx.arc(cx, cy, rx * 0.26, 0, Math.PI * 2); ctx.fill();
+  // Glowing crack network — Volcanic (molten lava, warm hardcoded orange) or any theme
+  // with `tc.crackGlow` set (e.g. Chaos, using tc.rockCrack instead — this is what makes
+  // Chaos rocks show a magenta crack-glow instead of ONLY the cyan highlight facet above,
+  // which is otherwise the sole accent a rock can carry). Clipped strictly to the rock's
+  // own jagged silhouette (verts) so a crack can NEVER bleed past the rock edge. Glow
+  // varies ACROSS each stroke's width, not along its length: 3 concentric solid-color
+  // strokes, widest+dimmest underneath down to narrowest+brightest on top (same outer/mid/
+  // inner layering this project already uses for telegraph glows). Main cracks fork into
+  // thinner branches (sometimes branches fork again) so the whole face reads as one
+  // connected network, not a couple of isolated lines.
+  if (tc.lavaGlow || tc.crackGlow) {
+    ctx.save();
+    pathPoly(ctx, verts);
+    ctx.clip(); // hard guarantee: nothing below can render outside the rock
 
-    const crackN = 3;
+    // Volcanic keeps its literal molten-lava orange; any other crackGlow theme derives its
+    // glow palette from tc.rockCrack so the crack reads as that theme's own accent color.
+    const warm       = tc.lavaGlow;
+    const coreGlow    = warm ? 'rgba(255,102,0,0.14)'   : hexToRgba(tc.rockCrack, 0.16);
+    const midColor    = warm ? 'rgba(255,140,40,0.70)'  : hexToRgba(shade(tc.rockCrack, 1.25), 0.70);
+    const coreColor   = warm ? 'rgba(255,225,150,0.98)' : hexToRgba(shade(tc.rockCrack, 1.6), 0.98);
+    const poolCore    = warm ? 'rgba(255,225,150,0.85)' : hexToRgba(shade(tc.rockCrack, 1.6), 0.85);
+    const poolMid     = warm ? 'rgba(255,140,30,0.55)'  : hexToRgba(tc.rockCrack, 0.55);
+    const poolEdge    = warm ? 'rgba(255,80,0,0)'       : hexToRgba(tc.rockCrack, 0);
+
+    // Molten/energy core glow — small and subtle.
+    ctx.fillStyle = coreGlow;
+    ctx.beginPath(); ctx.arc(cx, cy, rx * 0.16, 0, Math.PI * 2); ctx.fill();
+
+    // 3-layer glow stroke, width scaled by `w` (1.0 = main crack, smaller = a branch).
+    // Brighter/wider than before across the board — the whole point is more glow.
+    const glowStroke = (pts, w) => {
+      const strokePath = () => {
+        ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      };
+      ctx.strokeStyle = hexToRgba(tc.rockCrack, 0.32); ctx.lineWidth = rx * 0.22 * w;
+      strokePath(); ctx.stroke();
+      ctx.strokeStyle = midColor; ctx.lineWidth = rx * 0.10 * w;
+      strokePath(); ctx.stroke();
+      ctx.strokeStyle = coreColor; ctx.lineWidth = Math.max(0.6, 0.9 * w);
+      strokePath(); ctx.stroke();
+    };
+
+    // A jagged multi-segment path starting at (px,py) heading roughly `ang0`.
+    const buildPath = (px, py, ang0, segs, totalLen, saltBase) => {
+      const pts = [{ x: px, y: py }];
+      let ang = ang0;
+      for (let s = 0; s < segs; s++) {
+        ang += (hash(saltBase + s) - 0.5) * 1.3; // strong per-segment bend — jagged, not a spoke
+        const segLen = (totalLen / segs) * (0.7 + hash(saltBase + 20 + s) * 0.6);
+        px += Math.cos(ang) * segLen;
+        py += Math.sin(ang) * segLen * (ry / rx);
+        pts.push({ x: px, y: py });
+      }
+      return { pts, lastAng: ang };
+    };
+
+    // A branch off `pts[fromIdx]`, continuing at a divergent angle from the parent's heading.
+    const addBranch = (pts, fromIdx, parentAng, w, saltBase) => {
+      const branchAng = parentAng + (hash(saltBase) < 0.5 ? 1 : -1) * (0.6 + hash(saltBase + 1) * 0.5);
+      const branchLen = rx * (0.18 + hash(saltBase + 2) * 0.14);
+      const { pts: bpts } = buildPath(pts[fromIdx].x, pts[fromIdx].y, branchAng, 2, branchLen, saltBase + 4);
+      glowStroke(bpts, w);
+      return bpts;
+    };
+
+    const crackN = 2 + Math.floor(hash(hBase + 58) * 2); // 2-3 main cracks
     for (let k = 0; k < crackN; k++) {
-      // Evenly fan across the lower arc (0.15π → 0.85π = down toward the shaded facet),
-      // with only a tiny hash jitter so the structure stays intact.
-      const a   = Math.PI * (0.15 + (k / (crackN - 1)) * 0.70 + (hash(hBase + 60 + k) - 0.5) * 0.10);
-      const len = rx * (0.55 + hash(hBase + 64 + k) * 0.28);
-      const bx  = cx + Math.cos(a) * len;
-      const by  = cy + Math.sin(a) * len * (ry / rx);
-      ctx.strokeStyle = hexToRgba(tc.rockCrack, 0.85); ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(bx, by); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,150,40,0.55)'; ctx.lineWidth = 0.8;
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(bx, by); ctx.stroke();
+      // Origin near the TOP of the rock (not the center) — cracks should read as running
+      // down from a high ridge toward the base, matching the reference art's verticality.
+      const originX = cx + (hash(hBase + 60 + k) - 0.5) * rx * 0.9;
+      const originY = cy - ry * (0.55 + hash(hBase + 62 + k) * 0.20);
+
+      // Predominantly DOWNWARD heading (π/2 = straight down), fanned only slightly left/
+      // right — the previous 0.15π-0.85π range was measured from horizontal and read as
+      // sideways lines with barely any downward tilt, which is why it looked wrong.
+      const fan = (k - (crackN - 1) / 2) * 0.5; // spread multiple cracks apart a bit
+      const baseAng  = Math.PI / 2 + fan + (hash(hBase + 68 + k) - 0.5) * 0.4;
+      const segs     = 3 + Math.floor(hash(hBase + 64 + k) * 2); // 3-4 jagged segments
+      const totalLen = ry * (0.85 + hash(hBase + 66 + k) * 0.35); // scaled to the rock's HEIGHT now
+      const { pts, lastAng } = buildPath(originX, originY, baseAng, segs, totalLen, hBase + 100 + k * 30);
+      glowStroke(pts, 1.0);
+
+      // First branch — likely, off an early-mid segment.
+      if (hash(hBase + 90 + k) < 0.65 && pts.length > 2) {
+        const fromIdx = 1 + Math.floor(hash(hBase + 91 + k) * (pts.length - 2));
+        const branchPts = addBranch(pts, fromIdx, lastAng, 0.6, hBase + 130 + k * 30);
+        // Occasional second-level fork off that branch, thinner still — deepens the network.
+        if (hash(hBase + 95 + k) < 0.35 && branchPts.length > 1) {
+          addBranch(branchPts, branchPts.length - 1, lastAng, 0.4, hBase + 140 + k * 30);
+        }
+      }
+
+      // Molten/energy pool glow where the crack reaches the base — a soft bright blob,
+      // matching the reference art's lava pooling at the bottom of each fissure (or, for
+      // crackGlow themes, an equivalent glow in that theme's own crack color).
+      const tip = pts[pts.length - 1];
+      const poolR = rx * 0.13;
+      const pool = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, poolR);
+      pool.addColorStop(0,   poolCore);
+      pool.addColorStop(0.5, poolMid);
+      pool.addColorStop(1,   poolEdge);
+      ctx.fillStyle = pool;
+      ctx.beginPath(); ctx.arc(tip.x, tip.y, poolR, 0, Math.PI * 2); ctx.fill();
     }
+    ctx.restore();
   }
 }
 
@@ -187,16 +293,16 @@ export function bakeRockTexture(scene, key, params, tc, hash) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Rounded 3D cylinder top — a domed, top-lit ellipse cap (like the stump's cut face).
-function cylTopCap(ctx, cx, topY, w, tc) {
+function cylTopCap(ctx, cx, topY, w, color) {
   const rx = w / 2, ry = w * 0.16;
   ctx.beginPath();
   ctx.ellipse(cx, topY, rx, ry, 0, 0, Math.PI * 2);
   const rg = ctx.createRadialGradient(cx - rx * 0.3, topY - ry * 0.5, rx * 0.1, cx, topY, rx);
-  rg.addColorStop(0,   hexToRgba(shade(tc.pillarCap, 1.18), 1));
-  rg.addColorStop(0.7, hexToRgba(tc.pillarCap, 1));
-  rg.addColorStop(1,   hexToRgba(shade(tc.pillarCap, 0.78), 1));
+  rg.addColorStop(0,   hexToRgba(shade(color, 1.18), 1));
+  rg.addColorStop(0.7, hexToRgba(color, 1));
+  rg.addColorStop(1,   hexToRgba(shade(color, 0.78), 1));
   ctx.fillStyle = rg; ctx.fill();
-  ctx.strokeStyle = hexToRgba(shade(tc.pillarCap, 0.65), 0.6); ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.strokeStyle = hexToRgba(shade(color, 0.65), 0.6); ctx.lineWidth = 1.2; ctx.stroke();
 }
 
 export function bakePillarTexture(scene, key, { r, pw, ph, phVariant }, tc, hash) {
@@ -216,7 +322,7 @@ export function bakePillarTexture(scene, key, { r, pw, ph, phVariant }, tc, hash
   // Main shaft — column with SLIGHTLY rounded corners (like the mossy spire: enough to feel
   // soft, not so much it looks like it could tip) + a cylinder gradient across the width.
   const corner = r * 0.28;
-  roundRectPath(ctx, -pw / 2, -ph, pw, ph, corner);
+  roundRectBulgeBottomPath(ctx, -pw / 2, -ph, pw, ph, corner, r * 0.16);
   const cyl = ctx.createLinearGradient(-pw / 2, 0, pw / 2, 0);
   cyl.addColorStop(0.00, hexToRgba(shade(tc.pillarBody, 0.82), 1)); // left rim
   cyl.addColorStop(0.28, hexToRgba(shade(tc.pillarBody, 1.20), 1)); // lit core
@@ -226,6 +332,9 @@ export function bakePillarTexture(scene, key, { r, pw, ph, phVariant }, tc, hash
   ctx.strokeStyle = hexToRgba(tc.pillarDark, 0.60); ctx.lineWidth = 1.5; ctx.stroke();
 
   // Vertical weathering cracks — structured (top→base in the central band, slight waver).
+  // A single thin 0.55-alpha line reads as barely-there next to the solid full-alpha top
+  // cap, so any crackGlow theme (not just Volcanic) also gets a soft outer glow underneath
+  // the core line — same "give the crack real presence" fix applied to rocks above.
   const crackCount = 2 + Math.floor(hash(40) * 2); // 2–3
   for (let k = 0; k < crackCount; k++) {
     const chh = 41 + k * 6;
@@ -233,17 +342,23 @@ export function bakePillarTexture(scene, key, { r, pw, ph, phVariant }, tc, hash
     const top = -ph * (0.55 + hash(chh + 1) * 0.30);
     const bot = -ph * (0.05 + hash(chh + 2) * 0.10);
     const wav = (hash(chh + 3) - 0.5) * pw * 0.10;
-    ctx.strokeStyle = hexToRgba(tc.pillarCrack, tc.lavaGlow ? 0.85 : 0.55);
-    ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.moveTo(cxk, top); ctx.quadraticCurveTo(cxk + wav, (top + bot) / 2, cxk, bot); ctx.stroke();
+    const strokeCrack = () => {
+      ctx.beginPath(); ctx.moveTo(cxk, top); ctx.quadraticCurveTo(cxk + wav, (top + bot) / 2, cxk, bot); ctx.stroke();
+    };
+    if (tc.crackGlow) {
+      ctx.strokeStyle = hexToRgba(tc.pillarCrack, 0.30); ctx.lineWidth = pw * 0.35; strokeCrack();
+      ctx.strokeStyle = hexToRgba(shade(tc.pillarCrack, 1.3), 0.85); ctx.lineWidth = 1.6; strokeCrack();
+    } else {
+      ctx.strokeStyle = hexToRgba(tc.pillarCrack, tc.lavaGlow ? 0.85 : 0.55); ctx.lineWidth = 1.4; strokeCrack();
+    }
     if (tc.lavaGlow) {
       ctx.strokeStyle = 'rgba(255,102,0,0.45)'; ctx.lineWidth = 0.8;
-      ctx.beginPath(); ctx.moveTo(cxk, top); ctx.quadraticCurveTo(cxk + wav, (top + bot) / 2, cxk, bot); ctx.stroke();
+      strokeCrack();
     }
   }
 
   // Rounded 3D top cap on every variant (variants differ by height only — no flat tops).
-  cylTopCap(ctx, 0, -ph, pw, tc);
+  cylTopCap(ctx, 0, -ph, pw, tc.pillarCap);
 
   ctx.restore();
   tex.refresh();
@@ -260,7 +375,9 @@ export function bakeTreeTrunkTexture(scene, key, { tr, tTop, tH }, tc, hash) {
   if (scene.textures.exists(key)) scene.textures.remove(key);
   const rootExt   = tr * 1.50;
   const padX      = rootExt + 5;
-  const padTop    = 6;
+  // The new domed top cap (cylTopCap) rises tr*0.32 above -tTop — headroom must clear that
+  // (was a flat 6px pad, sized for a flat-topped trunk with no cap overshoot).
+  const padTop    = tr * 0.32 + 6;
   const belowBase = Math.ceil(tH - tTop + tr * 0.55);
   const cw = Math.ceil(padX * 2);
   const ch = Math.ceil(padTop + tTop + belowBase);
@@ -294,8 +411,13 @@ export function bakeTreeTrunkTexture(scene, key, { tr, tTop, tH }, tc, hash) {
     ctx.strokeStyle = hexToRgba(tc.trunkDark, 0.35); ctx.lineWidth = 0.8; ctx.stroke();
   }
 
-  // Trunk cylinder — horizontal gradient (dark left rim → lit core → body → shadow right)
-  roundRectPath(ctx, -tr, -tTop, tr * 2, tH, tr * 0.5);
+  // Trunk cylinder — horizontal gradient (dark left rim → lit core → body → shadow right).
+  // Bottom uses the same rounded downward-bulge ground contact as the spire/pillar trunks
+  // (was a flat-cut roundRectPath edge — the "flat lines" look this replaces). Corner radius
+  // dropped from tr*0.5 to tr*0.22 (matching the pillar's proportion) — the old large value
+  // was tuned to fake roundness on a FLAT top; now that a real domed cap sits on top, that
+  // oversized corner curve fought the dome's own curve and read as a separate oval welded on.
+  roundRectBulgeBottomPath(ctx, -tr, -tTop, tr * 2, tH, tr * 0.22, tr * 0.16);
   const cyl = ctx.createLinearGradient(-tr, 0, tr, 0);
   cyl.addColorStop(0.00, hexToRgba(shade(tc.trunkBody, 0.72), 1));
   cyl.addColorStop(0.28, hexToRgba(shade(tc.trunkBody, 1.18), 1));
@@ -303,6 +425,10 @@ export function bakeTreeTrunkTexture(scene, key, { tr, tTop, tH }, tc, hash) {
   cyl.addColorStop(1.00, hexToRgba(shade(tc.trunkBody, 0.50), 1));
   ctx.fillStyle = cyl; ctx.fill();
   ctx.strokeStyle = hexToRgba(tc.trunkDark, 0.70); ctx.lineWidth = 1.5; ctx.stroke();
+
+  // Rounded 3D top cap — same domed technique as the pillar's cylTopCap, so the trunk's
+  // top reads as a rounded cylinder instead of a flat-cut edge.
+  cylTopCap(ctx, 0, -tTop, tr * 2, tc.trunkBody);
 
   // Bark highlight streaks
   ctx.strokeStyle = hexToRgba(tc.trunkBody, 0.32); ctx.lineWidth = 1.2;
@@ -693,30 +819,48 @@ export function bakeStumpTexture(scene, key, { r, variant, frontH, topW, topH, t
 export function bakeSpireTrunkTexture(scene, key, themeIdx, r, hash) {
   const pad    = 8;
   const halfW  = r * 1.65 + pad;
-  const aboveH = r * 2.6  + pad;
+  // CC's jagged stalagmite, the volcanic monolith, the celestial obelisk, and the chaos
+  // floating monolith are all taller than the default — headroom so peaks aren't clipped.
+  const aboveH = (themeIdx === 1 ? r * 4.9 : themeIdx === 2 ? r * 4.1 : themeIdx === 3 ? r * 3.3 : themeIdx === 4 ? r * 3.4 : r * 2.6) + pad;
   const belowH = r * 1.0  + pad;
   const cw = Math.ceil(halfW * 2);
   const ch = Math.ceil(aboveH + belowH);
   const ox = Math.floor(cw / 2);
   const oy = Math.ceil(aboveH);
 
-  if (scene.textures.exists(key)) return { key, originX: ox / cw, originY: oy / ch };
+  // Always rebake — a stale cached texture from a prior canvas-size/shape would otherwise be
+  // reused as-is while these freshly-computed origin fractions assume the NEW dimensions.
+  if (scene.textures.exists(key)) scene.textures.remove(key);
   const tex = scene.textures.createCanvas(key, cw, ch);
   const ctx = tex.getContext();
   ctx.save();
   ctx.translate(ox, oy);
 
-  // Ground shadow — scale ctx so radial gradient follows the ellipse edge, not a circle
+  // Ground shadow — scale ctx so radial gradient follows the ellipse edge, not a circle.
+  // CC's stalagmite, the volcanic monolith, and the celestial obelisk all sit flush at
+  // y=0, so their shadows center directly on the base instead of the offset/larger shadow
+  // the squat themes use. Sized/darkened up and nudged down a touch so it still reads
+  // clearly even where a trunk's rounded base bulge covers more of the shadow's upper half.
+  const flushBase = themeIdx === 1 || themeIdx === 2 || themeIdx === 3 || themeIdx === 4;
   ctx.save();
-  ctx.translate(4, r * 0.5);
+  const shDX = flushBase ? 0 : 4;
+  const shDY = flushBase ? r * 0.10 : r * 0.5;
+  // Chaos's monolith HOVERS above the ground — a floating object casts a tighter shadow,
+  // which is also part of what sells the hover (big soft shadow = grounded read).
+  const shR  = themeIdx === 4 ? r * 0.85 : flushBase ? r * 1.15 : r * 1.30;
+  ctx.translate(shDX, shDY);
   ctx.scale(1.0, 0.30);  // squash matches ellipse ry/rx ratio
-  const sg = ctx.createRadialGradient(0, 0, r * 0.18, 0, 0, r * 1.30);
-  sg.addColorStop(0,    'rgba(0,0,0,0.52)');
-  sg.addColorStop(0.55, 'rgba(0,0,0,0.24)');
+  // Extra mid/late stops (instead of jumping straight from the 0.55 stop to 0) so the
+  // outer rim tapers off gradually — a hard 2-stop falloff was reading as a visible ring.
+  const sg = ctx.createRadialGradient(0, 0, r * 0.18, 0, 0, shR);
+  sg.addColorStop(0,    flushBase ? 'rgba(0,0,0,0.62)' : 'rgba(0,0,0,0.52)');
+  sg.addColorStop(0.45, flushBase ? 'rgba(0,0,0,0.34)' : 'rgba(0,0,0,0.24)');
+  sg.addColorStop(0.70, flushBase ? 'rgba(0,0,0,0.16)' : 'rgba(0,0,0,0.11)');
+  sg.addColorStop(0.88, flushBase ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.03)');
   sg.addColorStop(1,    'rgba(0,0,0,0)');
   ctx.fillStyle = sg;
   ctx.beginPath();
-  ctx.arc(0, 0, r * 1.30, 0, Math.PI * 2);
+  ctx.arc(0, 0, shR, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
@@ -737,7 +881,9 @@ export function bakeSpireTrunkTexture(scene, key, themeIdx, r, hash) {
 // Theme 0 — Green Fields: mossy stone column
 function _spireGFTrunk(ctx, r, hash) {
   const col = 0x4a4030;
-  roundRectPath(ctx, -r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3);
+  // Bottom edge replaced with a shallow downward bulge (same technique as the volcanic
+  // trunk's base) so the column's ground contact reads as rounded, not flat/square.
+  roundRectBulgeBottomPath(ctx, -r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3, r * 0.16);
   const cyl = ctx.createLinearGradient(-r * 0.85, 0, r * 0.85, 0);
   cyl.addColorStop(0,    hexToRgba(shade(col, 0.60), 1));
   cyl.addColorStop(0.28, hexToRgba(shade(col, 1.25), 1));
@@ -746,14 +892,14 @@ function _spireGFTrunk(ctx, r, hash) {
   ctx.fillStyle = cyl; ctx.fill();
   // Shadow-side overlay
   ctx.save();
-  roundRectPath(ctx, -r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3);
+  roundRectBulgeBottomPath(ctx, -r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3, r * 0.16);
   ctx.clip();
   const sG = ctx.createLinearGradient(0, 0, r * 0.85, 0);
   sG.addColorStop(0, hexToRgba(0x2e261c, 0));
   sG.addColorStop(1, hexToRgba(0x2e261c, 0.45));
   ctx.fillStyle = sG; ctx.fillRect(-r, -r * 2.6, r * 2, r * 3.5);
   ctx.restore();
-  roundRectPath(ctx, -r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3);
+  roundRectBulgeBottomPath(ctx, -r * 0.85, -r * 2.5, r * 1.7, r * 3, r * 0.3, r * 0.16);
   ctx.strokeStyle = hexToRgba(0x1a1610, 0.85); ctx.lineWidth = 1.5; ctx.stroke();
   // Mossy patches
   [[-r * 0.4, -r * 1.8, r * 0.35, r * 0.2], [r * 0.3, -r * 0.6, r * 0.25, r * 0.15]]
@@ -768,55 +914,210 @@ function _spireGFTrunk(ctx, r, hash) {
   ctx.beginPath(); ctx.moveTo(-r * 0.2, -r * 2.3); ctx.lineTo(r * 0.1, -r * 0.5); ctx.stroke();
 }
 
-// Theme 1 — Crystal Caves: dark anchor rock (4 overlapping circles)
+// Theme 1 — Crystal Caves: tall jagged stalagmite column
 function _spireCCTrunk(ctx, r, hash) {
-  for (let i = 0; i < 4; i++) {
-    const cx2 = (i - 1.5) * r * 0.45;
-    ctx.save();
-    ctx.beginPath(); ctx.arc(cx2, 0, r * 0.85, 0, Math.PI * 2); ctx.clip();
-    const rg = ctx.createRadialGradient(cx2 - r * 0.28, -r * 0.28, 0, cx2, 0, r * 0.85);
-    rg.addColorStop(0,   hexToRgba(shade(0x1a1830, 1.55), 1));
-    rg.addColorStop(0.6, hexToRgba(0x1a1830, 1));
-    rg.addColorStop(1,   hexToRgba(shade(0x1a1830, 0.55), 1));
-    ctx.fillStyle = rg; ctx.fillRect(cx2 - r * 0.85, -r * 0.85, r * 1.7, r * 1.7);
-    ctx.restore();
+  const H = r * 4.5; // tall jagged spire
+
+  // Jagged silhouette — ±r*0.18 x-jitter, visible at render scale. The base row (i=steps)
+  // is forced flush to y=0 with no vertical jitter so the column actually touches the
+  // ground line the shadow sits at — no floating gap.
+  const steps = 8;
+  const rightPts = [{ x: (hash(501) - 0.5) * r * 0.08, y: -H }];
+  const leftPts  = [];
+  for (let i = 1; i <= steps; i++) {
+    const t  = i / steps;
+    const w  = r * 0.82 * t;
+    const isBase = i === steps;
+    const yV = -H + H * t;
+    rightPts.push({ x:  w + (hash(510 + i) - 0.5) * r * 0.18, y: isBase ? 0 : yV + (hash(520 + i) - 0.5) * r * 0.10 });
+    leftPts.push({  x: -w + (hash(530 + i) - 0.5) * r * 0.18, y: isBase ? 0 : yV + (hash(540 + i) - 0.5) * r * 0.10 });
   }
-  ctx.strokeStyle = hexToRgba(0x0a0820, 0.85); ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(-r * 0.5, 0, r * 0.85, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(r * 0.5, 0, r * 0.85, 0, Math.PI * 2); ctx.stroke();
+  const pts = [rightPts[0], ...rightPts.slice(1), ...leftPts.slice().reverse()];
+
+  // Body gradient — lighter base so shade() math produces a visible lit/shadow range
+  const baseCol = 0x2a2448;
+  const lg = ctx.createLinearGradient(-r * 0.82, 0, r * 0.82, 0);
+  lg.addColorStop(0,    hexToRgba(shade(baseCol, 0.40), 1));
+  lg.addColorStop(0.22, hexToRgba(shade(baseCol, 1.60), 1)); // lit left-center face
+  lg.addColorStop(0.55, hexToRgba(baseCol, 1));
+  lg.addColorStop(1,    hexToRgba(shade(baseCol, 0.30), 1));
+  pathPoly(ctx, pts); ctx.fillStyle = lg; ctx.fill();
+
+  // Lit facet overlay — angled plane on the upper-left face
+  const faceLG = ctx.createLinearGradient(-r * 0.4, -H, 0, -H * 0.4);
+  faceLG.addColorStop(0, hexToRgba(shade(baseCol, 1.80), 0.55));
+  faceLG.addColorStop(1, hexToRgba(shade(baseCol, 1.80), 0));
+  ctx.fillStyle = faceLG;
+  ctx.beginPath();
+  ctx.moveTo(rightPts[0].x, rightPts[0].y);
+  ctx.lineTo(rightPts[0].x - r * 0.35, -H * 0.55);
+  ctx.lineTo(rightPts[0].x - r * 0.55, -H * 0.15);
+  ctx.closePath(); ctx.fill();
+
+  // Dark outline
+  pathPoly(ctx, pts);
+  ctx.strokeStyle = hexToRgba(0x080614, 1.0); ctx.lineWidth = 2; ctx.stroke();
+
+  // Crack lines — lavender against the dark body (high contrast)
+  ctx.lineWidth = 1.2; ctx.strokeStyle = hexToRgba(0x6655aa, 0.70);
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.25, -H * 0.85); ctx.lineTo(-r * 0.18, -H * 0.42); ctx.lineTo(-r * 0.32, -H * 0.10);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(r * 0.12, -H * 0.68); ctx.lineTo(r * 0.20, -H * 0.28);
+  ctx.stroke();
+  // Dark companion line (carved channel depth)
+  ctx.lineWidth = 0.8; ctx.strokeStyle = hexToRgba(0x0a0818, 0.80);
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.22, -H * 0.84); ctx.lineTo(-r * 0.15, -H * 0.41); ctx.lineTo(-r * 0.29, -H * 0.09);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(r * 0.15, -H * 0.67); ctx.lineTo(r * 0.23, -H * 0.27);
+  ctx.stroke();
 }
 
-// Theme 2 — Volcanic: charred basalt outcrop
+// Theme 2 — Volcanic: basalt monolith with a ragged, broken crown of peaks around a
+// crater notch. The notch is where the canopy's magma pool nests (see CANOPY_OFFSETS[2]
+// in Obstacle.js), so the rock and the lava read as one chiseled volcanic formation.
 function _spireVolTrunk(ctx, r, hash) {
-  const segs = 8, pts = [];
-  for (let i = 0; i < segs; i++) {
-    const a = (i / segs) * Math.PI * 2, radR = r * (0.95 + (i % 2) * 0.18);
-    pts.push({ x: Math.cos(a) * radR, y: Math.sin(a) * radR * 0.55 - r * 0.4 });
+  const H = r * 4.0; // a genuinely tall body, not just tall spikes
+
+  // Ragged crown — 4 jagged peaks (2 per side) sitting near the TOP of a tall solid body,
+  // with only shallow undulation between them (peaks only modestly above the notch). Most
+  // of H is solid rock below the crown — that's what reads as "tall," not the spike height.
+  const jx = (i) => (hash(700 + i) - 0.5) * r * 0.10;
+  const jy = (i) => (hash(710 + i) - 0.5) * r * 0.05;
+  const ridge = [
+    { x:  r * 0.62 + jx(1), y: -H * 0.83 + jy(1) },  // R2 — outer right peak
+    { x:  r * 0.47 + jx(2), y: -H * 0.80 + jy(2) },  // valley
+    { x:  r * 0.31 + jx(3), y: -H * 0.88 + jy(3) },  // R1 — inner right peak
+    { x:  r * 0.09 + jx(4), y: -H * 0.76 + jy(4) },  // crater notch, right edge
+    { x: -r * 0.09 + jx(5), y: -H * 0.78 + jy(5) },  // crater notch, left edge
+    { x: -r * 0.33 + jx(6), y: -H * 0.90 + jy(6) },  // L1 — inner left peak (tallest)
+    { x: -r * 0.49 + jx(7), y: -H * 0.81 + jy(7) },  // valley
+    { x: -r * 0.64 + jx(8), y: -H * 0.85 + jy(8) },  // L2 — outer left peak
+  ];
+
+  // Flanks taper from the outer peaks down through the tall solid body to the base, flush
+  // at y=0. Intermediate points sit exactly on the straight peak-to-base interpolation (no
+  // jitter) so the taper reads as a clean angular edge, not a wavy curve — only the base
+  // point gets a touch of jitter, for natural irregularity right at the ground line.
+  const baseW = r * 0.80;
+  const flankSteps = 4;
+  const rightFlank = [];
+  for (let i = 1; i <= flankSteps; i++) {
+    const t = i / flankSteps;
+    const w = ridge[0].x + (baseW - ridge[0].x) * t;
+    const isBase = i === flankSteps;
+    rightFlank.push({ x: w + (isBase ? jx(10 + i) : 0), y: isBase ? 0 : ridge[0].y * (1 - t) });
   }
-  const topY = pts.reduce((m, p) => Math.min(m, p.y), Infinity);
-  const botY = pts.reduce((m, p) => Math.max(m, p.y), -Infinity);
+  const leftFlank = [];
+  for (let i = 1; i <= flankSteps; i++) {
+    const t = i / flankSteps;
+    const w = ridge[7].x + (-baseW - ridge[7].x) * t;
+    const isBase = i === flankSteps;
+    leftFlank.push({ x: w + (isBase ? jx(30 + i) : 0), y: isBase ? 0 : ridge[7].y * (1 - t) });
+  }
+
+  // Rounded base — closing straight from base-left back to base-right gives a flat, square
+  // bottom edge. Insert a shallow downward bulge between them (same technique as the stump's
+  // elliptical bottom arc) so the rock's contact with the ground reads as a rounded contour.
+  const baseLeftX  = leftFlank[leftFlank.length - 1].x;
+  const baseRightX = rightFlank[rightFlank.length - 1].x;
+  const bulge = r * 0.16;
+  const bottomBulge = [
+    { x: baseLeftX * 0.55,  y: bulge * 0.7 },
+    { x: 0,                 y: bulge },
+    { x: baseRightX * 0.55, y: bulge * 0.7 },
+  ];
+
+  const pts = [...rightFlank.slice().reverse(), ...ridge, ...leftFlank, ...bottomBulge];
+
+  // Body — directional facet gradient (dark rim → lit center-left → dark rim), basalt tones.
+  const baseCol = 0x1c1208;
+  const lg = ctx.createLinearGradient(-r * 0.8, 0, r * 0.8, 0);
+  lg.addColorStop(0,    hexToRgba(shade(baseCol, 0.45), 1));
+  lg.addColorStop(0.25, hexToRgba(shade(baseCol, 1.55), 1));
+  lg.addColorStop(0.55, hexToRgba(baseCol, 1));
+  lg.addColorStop(1,    hexToRgba(shade(baseCol, 0.35), 1));
+  pathPoly(ctx, pts); ctx.fillStyle = lg; ctx.fill();
+
+  // Lit facet overlay on the upper-left peaks — angled plane catching light
+  const faceLG = ctx.createLinearGradient(-r * 0.40, -H, -r * 0.05, -H * 0.78);
+  faceLG.addColorStop(0, hexToRgba(shade(baseCol, 1.85), 0.50));
+  faceLG.addColorStop(1, hexToRgba(shade(baseCol, 1.85), 0));
+  ctx.fillStyle = faceLG;
+  ctx.beginPath();
+  ctx.moveTo(ridge[5].x, ridge[5].y);
+  ctx.lineTo(ridge[5].x + r * 0.32, -H * 0.88);
+  ctx.lineTo(ridge[5].x + r * 0.48, -H * 0.66);
+  ctx.closePath(); ctx.fill();
+
+  // Hexagonal-column joint lines — basalt's signature vertical facets, running most of the
+  // way up the tall body to just below the crater rim.
+  ctx.strokeStyle = hexToRgba(0x000000, 0.32); ctx.lineWidth = 1;
+  [-r * 0.40, -r * 0.06, r * 0.20, r * 0.50].forEach((bx2, j) => {
+    ctx.beginPath();
+    ctx.moveTo(bx2, 0);
+    ctx.lineTo(bx2 * 0.55 + (hash(650 + j) - 0.5) * r * 0.08, -H * 0.70);
+    ctx.stroke();
+  });
+
+  // Dark outline
   pathPoly(ctx, pts);
-  const lg = ctx.createLinearGradient(0, topY, 0, botY);
-  lg.addColorStop(0,    hexToRgba(0x120804, 1));
-  lg.addColorStop(0.65, hexToRgba(0x251008, 1));
-  lg.addColorStop(1,    hexToRgba(0x3d1808, 1));
-  ctx.fillStyle = lg; ctx.fill();
-  pathPoly(ctx, pts);
-  ctx.strokeStyle = hexToRgba(0x100804, 0.9); ctx.lineWidth = 1.5; ctx.stroke();
-  const c1G = ctx.createLinearGradient(-r * 0.5, -r * 0.7, r * 0.2, -r * 0.2);
-  c1G.addColorStop(0, hexToRgba(0xff4400, 0));
-  c1G.addColorStop(0.45, hexToRgba(0xff6600, 0.75));
-  c1G.addColorStop(1, hexToRgba(0xff4400, 0));
-  ctx.strokeStyle = c1G; ctx.lineWidth = 1.8;
-  ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.7); ctx.lineTo(r * 0.2, -r * 0.2); ctx.stroke();
-  ctx.strokeStyle = hexToRgba(0xff4400, 0.65); ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(r * 0.1, -r * 0.5); ctx.lineTo(r * 0.6, -r * 0.1); ctx.stroke();
+  ctx.strokeStyle = hexToRgba(0x0a0602, 1.0); ctx.lineWidth = 2; ctx.stroke();
+
+  // Glowing lava crack — bleeds all the way down from the crater notch through the tall
+  // body, fading out well before it reaches the base.
+  const crackG = ctx.createLinearGradient(0, -H * 0.75, r * 0.20, -H * 0.10);
+  crackG.addColorStop(0,    hexToRgba(0xffcc66, 0.95));
+  crackG.addColorStop(0.40, hexToRgba(0xff6622, 0.70));
+  crackG.addColorStop(1,    hexToRgba(0xff3300, 0));
+  ctx.strokeStyle = crackG; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -H * 0.75);
+  ctx.lineTo(r * 0.12, -H * 0.55); ctx.lineTo(r * 0.05, -H * 0.35); ctx.lineTo(r * 0.20, -H * 0.12);
+  ctx.stroke();
+  // Secondary fainter crack on the other flank
+  const crack2G = ctx.createLinearGradient(0, -H * 0.76, -r * 0.24, -H * 0.30);
+  crack2G.addColorStop(0,   hexToRgba(0xff8844, 0.55));
+  crack2G.addColorStop(1,   hexToRgba(0xff3300, 0));
+  ctx.strokeStyle = crack2G; ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.04, -H * 0.76); ctx.lineTo(-r * 0.20, -H * 0.40);
+  ctx.stroke();
 }
 
-// Theme 3 — Celestial: smooth stone pillar
+// Theme 3 — Celestial: tapered obelisk shaft with a flat top (the starfield dome seats on
+// it — see _spireCelCanopy / CANOPY_OFFSETS[3] in Obstacle.js) and a rounded ground contact.
 function _spireCelTrunk(ctx, r, hash) {
+  const H = r * 2.8;
+  const baseW = r * 0.72, topW = r * 0.48; // wider overall + gentler taper (was 0.62/0.34)
+  const jx = (i) => (hash(950 + i) - 0.5) * r * 0.05; // subtle — dressed stone, not jagged rock
+
+  const steps = 5;
+  const rightPts = [], leftPts = [];
+  for (let i = 0; i <= steps; i++) {
+    const t  = i / steps; // 0 = top, 1 = base
+    const w  = topW + (baseW - topW) * t;
+    const yV = -H + H * t;
+    rightPts.push({ x:  w + jx(i),      y: yV });
+    leftPts.push({  x: -w + jx(10 + i), y: yV });
+  }
+  // Rounded ground contact — same 3-point downward-bulge technique used on the GF and
+  // volcanic trunks this session, applied here since this is a custom polygon, not a
+  // roundRectPath call.
+  const bulge = r * 0.14;
+  const baseR = rightPts[rightPts.length - 1].x, baseL = leftPts[leftPts.length - 1].x;
+  const bottomBulge = [
+    { x: baseR * 0.55, y: bulge * 0.7 },
+    { x: 0,            y: bulge },
+    { x: baseL * 0.55, y: bulge * 0.7 },
+  ];
+  const pts = [...rightPts, ...bottomBulge, ...leftPts.slice().reverse()];
+
   const col = 0x1c1c3a;
-  roundRectPath(ctx, -r * 0.75, -r * 2.4, r * 1.5, r * 3, r * 0.25);
+  pathPoly(ctx, pts);
   const cyl = ctx.createLinearGradient(-r * 0.75, 0, r * 0.75, 0);
   cyl.addColorStop(0,    hexToRgba(shade(col, 0.50), 1));
   cyl.addColorStop(0.28, hexToRgba(shade(col, 1.45), 1));
@@ -824,43 +1125,214 @@ function _spireCelTrunk(ctx, r, hash) {
   cyl.addColorStop(1,    hexToRgba(shade(col, 0.38), 1));
   ctx.fillStyle = cyl; ctx.fill();
   ctx.save();
-  roundRectPath(ctx, -r * 0.75, -r * 2.4, r * 1.5, r * 3, r * 0.25);
+  pathPoly(ctx, pts);
   ctx.clip();
   const sG = ctx.createLinearGradient(0, 0, r * 0.75, 0);
   sG.addColorStop(0, hexToRgba(0x0a0a20, 0));
   sG.addColorStop(1, hexToRgba(0x0a0a20, 0.48));
-  ctx.fillStyle = sG; ctx.fillRect(-r, -r * 2.5, r * 2, r * 3.5);
+  ctx.fillStyle = sG; ctx.fillRect(-r, -H - r * 0.1, r * 2, H + r * 0.3);
   ctx.restore();
-  roundRectPath(ctx, -r * 0.75, -r * 2.4, r * 1.5, r * 3, r * 0.25);
+  pathPoly(ctx, pts);
   ctx.strokeStyle = hexToRgba(0x05051a, 0.9); ctx.lineWidth = 1.5; ctx.stroke();
-  const goldG = ctx.createLinearGradient(0, -r * 2.2, 0, -r * 0.3);
-  goldG.addColorStop(0,   hexToRgba(0xffd700, 0));
-  goldG.addColorStop(0.2, hexToRgba(0xffd700, 0.55));
-  goldG.addColorStop(0.8, hexToRgba(0xffd700, 0.55));
-  goldG.addColorStop(1,   hexToRgba(0xffd700, 0));
-  ctx.strokeStyle = goldG; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(0, -r * 2.2); ctx.lineTo(0, -r * 0.3); ctx.stroke();
+
+  // Lit-edge highlight — a thin bright line tracing the lit (left) side of the taper,
+  // separate from the inlay, so the cut-stone facets actually catch light.
+  ctx.strokeStyle = hexToRgba(shade(col, 2.0), 0.35); ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(rightPts[0].x * -1, rightPts[0].y);
+  for (let i = 1; i <= steps; i++) ctx.lineTo(leftPts[i].x, leftPts[i].y);
+  ctx.stroke();
+
+  // Carved horizontal bands — 3 clearly visible monument-segment grooves, each centered on
+  // a small carved diamond (a celestial motif echoed from the dome, so the shaft itself
+  // reads as more than a flat tapered cone).
+  [0.24, 0.50, 0.76].forEach((t, bi) => {
+    const yV = -H + H * t;
+    const w = topW + (baseW - topW) * t;
+    ctx.strokeStyle = hexToRgba(0x05051a, 0.55); ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-w * 0.90, yV); ctx.lineTo(w * 0.90, yV); ctx.stroke();
+    ctx.strokeStyle = hexToRgba(shade(col, 1.9), 0.30); ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(-w * 0.90, yV + 1.2); ctx.lineTo(w * 0.90, yV + 1.2); ctx.stroke();
+    // Small carved diamond at the band's center
+    const dr = r * 0.07;
+    ctx.strokeStyle = hexToRgba(0xffd700, 0.45); ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, yV - dr); ctx.lineTo(dr, yV); ctx.lineTo(0, yV + dr); ctx.lineTo(-dr, yV); ctx.closePath();
+    ctx.stroke();
+  });
+
+  // Gold inlay — bolder vertical engraved band down the face, nearly the full shaft height
+  const goldG = ctx.createLinearGradient(0, -H * 0.92, 0, -bulge * 0.5);
+  goldG.addColorStop(0,    hexToRgba(0xffd700, 0));
+  goldG.addColorStop(0.12, hexToRgba(0xffd700, 0.75));
+  goldG.addColorStop(0.88, hexToRgba(0xffd700, 0.75));
+  goldG.addColorStop(1,    hexToRgba(0xffd700, 0));
+  ctx.strokeStyle = goldG; ctx.lineWidth = 2.2;
+  ctx.beginPath(); ctx.moveTo(0, -H * 0.92); ctx.lineTo(0, 0); ctx.stroke();
+  // Thin bright core so the inlay reads as a lit groove, not a flat painted stripe
+  const goldCore = ctx.createLinearGradient(0, -H * 0.92, 0, -bulge * 0.5);
+  goldCore.addColorStop(0,    hexToRgba(0xfff3b0, 0));
+  goldCore.addColorStop(0.15, hexToRgba(0xfff3b0, 0.85));
+  goldCore.addColorStop(0.85, hexToRgba(0xfff3b0, 0.85));
+  goldCore.addColorStop(1,    hexToRgba(0xfff3b0, 0));
+  ctx.strokeStyle = goldCore; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.moveTo(0, -H * 0.92); ctx.lineTo(0, 0); ctx.stroke();
+
+  // Domed top cap — a real dome (not a flat disc/mushroom), the SAME width as the shaft's
+  // top so it reads as the shaft continuing into a rounded roof, not a wider cap flaring
+  // out past the taper. Flat-bottomed half-ellipse (bottom edge fused into the shaft top,
+  // same technique used for the volcanic magma pool / celestial star ornament's own base).
+  const domeRX = topW, domeRY = topW * 0.85;
+  const domeTopY = -H - domeRY;
+  const domeG = ctx.createRadialGradient(-domeRX * 0.3, -H - domeRY * 0.6, domeRX * 0.1, 0, -H, domeRX * 1.1);
+  domeG.addColorStop(0,   hexToRgba(shade(col, 1.7), 1));
+  domeG.addColorStop(0.6, hexToRgba(shade(col, 1.15), 1));
+  domeG.addColorStop(1,   hexToRgba(shade(col, 0.65), 1));
+  ctx.beginPath(); ctx.ellipse(0, -H, domeRX, domeRY, 0, Math.PI, Math.PI * 2); ctx.closePath();
+  ctx.fillStyle = domeG; ctx.fill();
+  ctx.strokeStyle = hexToRgba(0x05051a, 0.8); ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.ellipse(0, -H, domeRX, domeRY, 0, Math.PI, Math.PI * 2); ctx.stroke();
+  // Subtle rim-light along the dome's lit (upper-left) curve
+  ctx.strokeStyle = hexToRgba(shade(col, 2.0), 0.4); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.ellipse(0, -H, domeRX * 0.95, domeRY * 0.95, 0, Math.PI * 1.05, Math.PI * 1.55); ctx.stroke();
 }
 
 // Theme 4 — Chaos: fractured dark-purple rock
 function _spireChaosTrunk(ctx, r, hash) {
-  const segs = 7, pts = [];
-  for (let i = 0; i < segs; i++) {
-    const a = (i / segs) * Math.PI * 2, rr = r * (0.85 + Math.sin(i * 1.7) * 0.3);
-    pts.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr * 0.55 - r * 0.4 });
-  }
-  const topY = pts.reduce((m, p) => Math.min(m, p.y), Infinity);
-  const botY = pts.reduce((m, p) => Math.max(m, p.y), -Infinity);
+  // Floating rift-torn obelisk: the body HOVERS — its ragged bottom tip ends at botY,
+  // leaving a visible gap to the ground line at y=0 (where the shadow sits). The bottom
+  // is an irregular torn taper, NOT a flat/rounded ground contact — it was ripped free.
+  const topY = -r * 3.2, botY = -r * 0.55;
+  const baseCol = 0x2a0a30;
+  const jx = (i) => (hash(700 + i) - 0.5) * r * 0.14;
+  const jy = (i) => (hash(720 + i) - 0.5) * r * 0.10;
+
+  // Silhouette — jagged top, widest at the lower third, ragged point at the bottom.
+  // Traced clockwise from the top point: down the right flank, bottom tip, up the left.
+  const pts = [
+    { x:  r * 0.10 + jx(1), y: topY },                          // jagged top tip
+    { x:  r * 0.38 + jx(2), y: topY + r * 0.35 + jy(2) },       // right shoulder
+    { x:  r * 0.30 + jx(3), y: topY + r * 0.95 + jy(3) },       // right notch
+    { x:  r * 0.58 + jx(4), y: topY + r * 1.55 + jy(4) },       // right mid
+    { x:  r * 0.65 + jx(5), y: topY + r * 2.05 + jy(5) },       // widest right
+    { x:  r * 0.34 + jx(6), y: botY - r * 0.28 + jy(6) },       // right underside tooth
+    { x:  r * 0.06 + jx(7), y: botY },                           // torn bottom tip
+    { x: -r * 0.26 + jx(8), y: botY - r * 0.22 + jy(8) },       // left underside tooth
+    { x: -r * 0.62 + jx(9), y: topY + r * 2.10 + jy(9) },       // widest left
+    { x: -r * 0.54 + jx(10), y: topY + r * 1.45 + jy(10) },     // left mid
+    { x: -r * 0.34 + jx(11), y: topY + r * 0.90 + jy(11) },     // left notch
+    { x: -r * 0.30 + jx(12), y: topY + r * 0.30 + jy(12) },     // left shoulder
+  ];
+
+  // Body — directional facet gradient (lit upper-left → dark lower-right), chaos purple.
+  // Contrast pushed further than before (0.42/1.65 → 0.30/2.1) — the flatter range was
+  // reading as a smooth blob instead of a faceted gem.
   pathPoly(ctx, pts);
-  const lg = ctx.createLinearGradient(-r * 0.5, topY, r * 0.5, botY);
-  lg.addColorStop(0,   hexToRgba(shade(0x2a0a30, 0.55), 1));
-  lg.addColorStop(0.5, hexToRgba(0x2a0a30, 1));
-  lg.addColorStop(1,   hexToRgba(shade(0x2a0a30, 0.80), 1));
+  const lg = ctx.createLinearGradient(-r * 0.6, topY, r * 0.6, botY);
+  lg.addColorStop(0,    hexToRgba(shade(baseCol, 2.10), 1));
+  lg.addColorStop(0.40, hexToRgba(baseCol, 1));
+  lg.addColorStop(1,    hexToRgba(shade(baseCol, 0.30), 1));
   ctx.fillStyle = lg; ctx.fill();
+
+  // Lit facet plane — a bright angled triangle on the upper-left, same technique used on
+  // the CC/volcanic trunks, so the body reads as cut gem faces catching light, not a
+  // smoothly-shaded blob.
+  ctx.save();
+  pathPoly(ctx, pts); ctx.clip();
+  const faceLG = ctx.createLinearGradient(-r * 0.5, topY, r * 0.1, topY + r * 1.4);
+  faceLG.addColorStop(0, hexToRgba(shade(baseCol, 2.4), 0.65));
+  faceLG.addColorStop(1, hexToRgba(shade(baseCol, 2.4), 0));
+  ctx.fillStyle = faceLG;
+  ctx.beginPath();
+  ctx.moveTo(pts[11].x, pts[11].y);
+  ctx.lineTo(pts[0].x, pts[0].y);
+  ctx.lineTo(pts[0].x - r * 0.05, topY + r * 1.5);
+  ctx.lineTo(pts[11].x - r * 0.10, topY + r * 1.1);
+  ctx.closePath(); ctx.fill();
+
+  // Internal facet lines — a few hash-jittered fracture edges dividing the body into
+  // distinct gem planes, so it doesn't read as one smooth mass.
+  ctx.strokeStyle = hexToRgba(0x0a0210, 0.55); ctx.lineWidth = 1;
+  const facetLines = [
+    [{ x: pts[1].x, y: pts[1].y }, { x: r * 0.02 + jx(40), y: topY + r * 1.30 + jy(40) }, { x: pts[5].x, y: pts[5].y }],
+    [{ x: pts[10].x, y: pts[10].y }, { x: -r * 0.10 + jx(41), y: topY + r * 1.70 + jy(41) }, { x: pts[8].x, y: pts[8].y }],
+    [{ x: r * 0.02 + jx(40), y: topY + r * 1.30 + jy(40) }, { x: -r * 0.10 + jx(41), y: topY + r * 1.70 + jy(41) }],
+  ];
+  facetLines.forEach((line) => {
+    ctx.beginPath(); ctx.moveTo(line[0].x, line[0].y);
+    for (let i = 1; i < line.length; i++) ctx.lineTo(line[i].x, line[i].y);
+    ctx.stroke();
+  });
+  ctx.restore();
+
   pathPoly(ctx, pts);
   ctx.strokeStyle = hexToRgba(0xff00ff, 0.55); ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.strokeStyle = hexToRgba(0xff00ff, 0.70); ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(-r * 0.3, -r * 0.6); ctx.lineTo(r * 0.4, -r * 0.1); ctx.stroke();
+
+  // Rift tear — jagged vertical split down the middle, rendered with the game's rift-tear
+  // layer recipe (wide glow → mid glow → bright core), clipped to the body so the glow
+  // never bleeds past the silhouette.
+  ctx.save();
+  pathPoly(ctx, pts);
+  ctx.clip();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const riftPts = [];
+  const riftSegs = 5;
+  for (let i = 0; i <= riftSegs; i++) {
+    const t = i / riftSegs;
+    riftPts.push({
+      x: (hash(760 + i) - 0.5) * r * 0.28,
+      y: (topY + r * 0.30) + (botY - r * 0.10 - topY - r * 0.30) * t,
+    });
+  }
+  const traceRift = () => {
+    ctx.beginPath();
+    ctx.moveTo(riftPts[0].x, riftPts[0].y);
+    for (let i = 1; i < riftPts.length; i++) ctx.lineTo(riftPts[i].x, riftPts[i].y);
+  };
+  ctx.strokeStyle = hexToRgba(0xff00ff, 0.30); ctx.lineWidth = r * 0.26; traceRift(); ctx.stroke();
+  ctx.strokeStyle = hexToRgba(0xff44ff, 0.55); ctx.lineWidth = r * 0.13; traceRift(); ctx.stroke();
+  ctx.strokeStyle = hexToRgba(0xffccff, 0.90); ctx.lineWidth = r * 0.05; traceRift(); ctx.stroke();
+  ctx.restore();
+
+  // Floating debris is NOT baked here — it's a separate rotating image (see
+  // bakeSpireChaosDebrisTexture + Obstacle.js _buildSpire) so the torn-off chunks can
+  // actually tumble/orbit in the hover gap instead of sitting frozen in the static trunk.
+}
+
+// Chaos floating debris — ONE small torn-off chunk. Baked once per size (shared/reused,
+// same bake-once pattern as bakeChaosFragmentTexture) rather than baking all 3 chunks into
+// a single rigid image — that made them move in lockstep as a fixed triangle formation
+// instead of each tracing the SAME orbit path at a different phase, following one another
+// around the loop (see Obstacle.js _buildSpire, theme 4).
+export function bakeChaosDebrisShardTexture(scene, size) {
+  const key = `fx-chaos-debris-${size}`;
+  if (scene.textures.exists(key)) return key;
+  const baseCol = 0x2a0a30;
+  const glowR = size * 2.0;
+  const S = Math.ceil(glowR * 2 + 4);
+  const cx = S / 2, cy = S / 2;
+  const tex = scene.textures.createCanvas(key, S, S);
+  const ctx = tex.getContext();
+
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+  glow.addColorStop(0, hexToRgba(0xff44ff, 0.35));
+  glow.addColorStop(1, hexToRgba(0xff44ff, 0));
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, Math.PI * 2); ctx.fill();
+
+  const tri = [0, 1, 2].map(k => {
+    const a = (k / 3) * Math.PI * 2;
+    return { x: cx + Math.cos(a) * size, y: cy + Math.sin(a) * size * 0.8 };
+  });
+  const dg = ctx.createLinearGradient(cx, cy - size, cx, cy + size * 0.5);
+  dg.addColorStop(0, hexToRgba(shade(baseCol, 1.9), 1));
+  dg.addColorStop(1, hexToRgba(shade(baseCol, 0.9), 1));
+  pathPoly(ctx, tri); ctx.fillStyle = dg; ctx.fill();
+  pathPoly(ctx, tri);
+  ctx.strokeStyle = hexToRgba(0xff66ff, 0.75); ctx.lineWidth = 1.2; ctx.stroke();
+
+  tex.refresh();
+  return key;
 }
 
 // ── Canopy ────────────────────────────────────────────────────────────────
@@ -869,8 +1341,8 @@ export function bakeSpireCanopyTexture(scene, key, themeIdx, r, hash) {
   const pad = 8;
   let cw, ch, ox, oy;
   if (themeIdx === 1) {
-    // Crystal shards are tall — origin at bottom center (shard bases at y=0)
-    cw = Math.ceil(r * 2.4 + pad * 2);
+    // Two crystal clusters flank the base — wider canvas so neither side clips.
+    cw = Math.ceil(r * 3.6 + pad * 2);
     ch = Math.ceil(r * 2.6 + pad * 2);
     ox = Math.floor(cw / 2);
     oy = ch - pad;
@@ -882,16 +1354,34 @@ export function bakeSpireCanopyTexture(scene, key, themeIdx, r, hash) {
     ch = Math.ceil(marginY * 2 + pad * 2);
     ox = Math.floor(cw / 2);
     oy = Math.floor(ch / 2);
+  } else if (themeIdx === 2) {
+    // Magma pool seated in the trunk's crater notch — rising embers need headroom above it,
+    // and the soft heat-halo bleeds a little below the pool so it gets extra bottom margin.
+    cw = Math.ceil(r * 2.0 + pad * 2);
+    ch = Math.ceil(r * 1.6 + pad * 3);
+    ox = Math.floor(cw / 2);
+    oy = ch - pad * 2;
+  } else if (themeIdx === 3) {
+    // Star ornament sitting on top of the obelisk's dome — bottom-anchored (like the other
+    // integrated canopies above) so it sits flush; its halo bleeds well above/below.
+    const aboveRoom = r * 2.35, belowRoom = r * 1.0;
+    cw = Math.ceil(r * 3.0 + pad * 2);
+    ch = Math.ceil(aboveRoom + belowRoom + pad * 2);
+    ox = Math.floor(cw / 2);
+    oy = Math.ceil(ch - belowRoom - pad);
   } else {
-    // Compact centered; Chaos needs extra margin for 360° rotation
-    const margin = themeIdx === 4 ? r * 1.05 : r * 1.1;
+    // Compact centered; Chaos needs extra margin for 360° rotation — the image rotates, so
+    // the square margin must cover the widest fragment reach (varied rings up to r*1.15,
+    // plus each fragment's own glow halo).
+    const margin = themeIdx === 4 ? r * 1.75 : r * 1.1;
     cw = Math.ceil(margin * 2 + pad * 2);
     ch = Math.ceil(margin * 2 + pad * 2);
     ox = Math.floor(cw / 2);
     oy = Math.floor(ch / 2);
   }
 
-  if (scene.textures.exists(key)) return { key, originX: ox / cw, originY: oy / ch };
+  // Always rebake — see matching note in bakeSpireTrunkTexture.
+  if (scene.textures.exists(key)) scene.textures.remove(key);
   const tex = scene.textures.createCanvas(key, cw, ch);
   const ctx = tex.getContext();
   ctx.save();
@@ -905,6 +1395,53 @@ export function bakeSpireCanopyTexture(scene, key, themeIdx, r, hash) {
     case 4: _spireChaosCanopy(ctx, r, hash); break;
     default: _spireGFCanopy(ctx, r, hash);
   }
+
+  ctx.restore();
+  tex.refresh();
+  return { key, originX: ox / cw, originY: oy / ch };
+}
+
+// Volcanic front crater teeth — baked into their own texture (same canvas size/origin as the
+// theme-2 canopy so it overlays exactly) so it can be layered IN FRONT of the live ember
+// sprites. The embers then read as rising from inside the crater, behind this front rim.
+export function bakeSpireVolTeethTexture(scene, key, r, hash) {
+  const pad = 8;
+  const cw = Math.ceil(r * 2.0 + pad * 2);
+  const ch = Math.ceil(r * 1.6 + pad * 3);
+  const ox = Math.floor(cw / 2);
+  const oy = ch - pad * 2;
+
+  if (scene.textures.exists(key)) scene.textures.remove(key);
+  const tex = scene.textures.createCanvas(key, cw, ch);
+  const ctx = tex.getContext();
+  ctx.save();
+  ctx.translate(ox, oy);
+
+  // 3 separate triangles along the bottom of the pool's oval (left, center, right). Each
+  // triangle's two base corners are literal points ON the ellipse (so the base follows the
+  // oval's curvature/angle at that spot); the tip juts straight UPWARDS. Solid dark auburn.
+  const poolCY2 = -r * 0.05, poolRX2 = r * 0.62, poolRY2 = r * 0.24;
+  const teethCol = 0x5a2810;
+  const onEllipse = (phi) => ({ x: poolRX2 * Math.sin(phi), y: poolCY2 + poolRY2 * Math.cos(phi) });
+  [-0.66, 0, 0.66].forEach((phiC, i) => {
+    const delta = 0.22 + hash(900 + i) * 0.04;
+    const baseL = onEllipse(phiC - delta);
+    const baseR = onEllipse(phiC + delta);
+    const baseMid = { x: (baseL.x + baseR.x) / 2, y: (baseL.y + baseR.y) / 2 };
+    const h = r * (0.34 + hash(910 + i) * 0.14);
+    const tip = { x: baseMid.x, y: baseMid.y - h };
+    const tri = [baseL, tip, baseR];
+    // Opaque flat body (clearly darker than the lava → reads as solid occluding rock)
+    pathPoly(ctx, tri); ctx.fillStyle = hexToRgba(teethCol, 1); ctx.fill();
+    // Subtle lit sheen on the upper-left face only
+    const sheen = ctx.createLinearGradient(baseL.x, 0, baseR.x, 0);
+    sheen.addColorStop(0,    hexToRgba(shade(teethCol, 1.55), 0.55));
+    sheen.addColorStop(0.45, hexToRgba(shade(teethCol, 1.55), 0));
+    pathPoly(ctx, tri); ctx.fillStyle = sheen; ctx.fill();
+    // Crisp dark-auburn outline
+    ctx.strokeStyle = hexToRgba(shade(teethCol, 0.45), 0.95); ctx.lineWidth = 1.2;
+    pathPoly(ctx, tri); ctx.stroke();
+  });
 
   ctx.restore();
   tex.refresh();
@@ -1016,6 +1553,14 @@ function _spireCCCanopy(ctx, r, hash) {
     { x:  r * 0.5,  h: r * 1.8, tilt:  0.18, c1: 0xaaeeff, c2: 0x338899 },
     { x: -r * 0.2,  h: r * 1.3, tilt:  0.05, c1: 0x88ccdd, c2: 0x225566 },
   ];
+  // Two identical clusters flanking the spire base — one shifted left, one right — so
+  // crystals appear to erupt from the ground all around the spire. Each is scaled to 0.6
+  // anchored at its base point (orientation and shape untouched).
+  const clusterOffsets = [-r * 0.36, r * 0.36];
+  for (const dx of clusterOffsets) {
+  ctx.save();
+  ctx.translate(dx, 0);
+  ctx.scale(0.6, 0.6);
   [...shards].sort((a, b) => b.h - a.h).forEach(({ x, h, tilt, c1, c2 }) => {
     const w = r * 0.32, cos = Math.cos(tilt), sin = Math.sin(tilt);
     const tip   = { x: x + sin * h, y: -h * cos };
@@ -1039,64 +1584,208 @@ function _spireCCCanopy(ctx, r, hash) {
     ctx.fillStyle = hexToRgba(0xffffff, 0.45);
     ctx.beginPath(); ctx.arc(tip.x, tip.y, 1.5, 0, Math.PI * 2); ctx.fill();
   });
+  ctx.restore();
+  }
 }
 
-// Theme 2 — Volcanic: glowing ember cluster
+// Theme 2 — Volcanic: a magma pool seated in the trunk's crater notch, with embers rising
+// off it. Local (0,0) = the notch (bottom-anchored), matching the trunk's notch point.
 function _spireVolCanopy(ctx, r, hash) {
-  const bg = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.95);
-  bg.addColorStop(0, hexToRgba(0x8a2818, 1));
-  bg.addColorStop(1, hexToRgba(0x4a1808, 1));
-  ctx.fillStyle = bg;
-  ctx.beginPath(); ctx.ellipse(0, 0, r * 0.9, r * 0.35, 0, 0, Math.PI * 2); ctx.fill();
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 + 0.3;
-    const ex = Math.cos(a) * r * 0.55, ey = Math.sin(a) * r * 0.22 - r * 0.15;
-    const eg = ctx.createRadialGradient(ex, ey, 0, ex, ey, r * 0.22);
-    eg.addColorStop(0, hexToRgba(0xff6622, 0.65));
-    eg.addColorStop(1, hexToRgba(0xff4400, 0));
-    ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(ex, ey, r * 0.22, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = hexToRgba(0xffaa44, 0.95); ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = hexToRgba(0xffee88, 0.90); ctx.beginPath(); ctx.arc(ex, ey, 1.2, 0, Math.PI * 2); ctx.fill();
-  }
-}
+  // Ambient heat glow — soft wash lighting the inside of the crater and the horn flanks
+  const halo = ctx.createRadialGradient(0, -r * 0.20, 0, 0, -r * 0.20, r * 1.15);
+  halo.addColorStop(0, hexToRgba(0xff5500, 0.22));
+  halo.addColorStop(1, hexToRgba(0xff3300, 0));
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(0, -r * 0.20, r * 1.15, 0, Math.PI * 2); ctx.fill();
 
-// Theme 3 — Celestial: dark starfield dome
-function _spireCelCanopy(ctx, r, hash) {
-  const domeG = ctx.createRadialGradient(0, -r * 0.05, 0, 0, 0, r * 0.9);
-  domeG.addColorStop(0, hexToRgba(0x1a1850, 0.95));
-  domeG.addColorStop(1, hexToRgba(0x0d0d2a, 0.98));
-  ctx.fillStyle = domeG;
-  ctx.beginPath(); ctx.ellipse(0, 0, r * 0.85, r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
-  for (let i = 0; i < 8; i++) {
-    const ang = hash(300 + i) * Math.PI * 2, dist = hash(310 + i) * r * 0.6;
-    const sx = Math.cos(ang) * dist, sy = Math.sin(ang) * dist * 0.4 - r * 0.1;
-    const sz = 0.8 + hash(320 + i) * 1.5;
-    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, sz * 2.8);
-    sg.addColorStop(0, hexToRgba(0xffeebb, 0.70));
-    sg.addColorStop(1, hexToRgba(0xffeebb, 0));
-    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(sx, sy, sz * 2.8, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = hexToRgba(0xffffff, 0.95); ctx.beginPath(); ctx.arc(sx, sy, sz, 0, Math.PI * 2); ctx.fill();
-  }
-}
+  // Magma pool — bright molten core fading to charred rock at the rim
+  const pool = ctx.createRadialGradient(-r * 0.08, -r * 0.10, 0, 0, -r * 0.05, r * 0.62);
+  pool.addColorStop(0,    hexToRgba(0xffee99, 1));
+  pool.addColorStop(0.35, hexToRgba(0xff9933, 1));
+  pool.addColorStop(0.70, hexToRgba(0xcc3300, 1));
+  pool.addColorStop(1,    hexToRgba(0x330800, 1));
+  ctx.fillStyle = pool;
+  ctx.beginPath(); ctx.ellipse(0, -r * 0.05, r * 0.62, r * 0.24, 0, 0, Math.PI * 2); ctx.fill();
+  // Crater lip — dark rim stroke grounding the pool into the rock
+  ctx.strokeStyle = hexToRgba(0x1a0800, 0.85); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.ellipse(0, -r * 0.05, r * 0.62, r * 0.24, 0, 0, Math.PI * 2); ctx.stroke();
+  // Bright front lip catching the glow
+  ctx.strokeStyle = hexToRgba(0xffaa44, 0.55); ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.ellipse(0, -r * 0.05, r * 0.58, r * 0.20, 0, 0.15, Math.PI - 0.15); ctx.stroke();
 
-// Theme 4 — Chaos: 3 orbiting fragment triangles (rotation tween applied to image in Obstacle.js)
-function _spireChaosCanopy(ctx, r, hash) {
-  const fragments = [
-    { ox: -r * 0.5, oy: -r * 0.2, size: 4, c: 0xff44ff },
-    { ox:  r * 0.4, oy: -r * 0.4, size: 5, c: 0xff00ff },
-    { ox:  0,       oy: -r * 0.7, size: 3, c: 0xee88ff },
-  ];
-  fragments.forEach(({ ox, oy, size, c }) => {
-    const tri = [
-      { x: ox,        y: oy - size },
-      { x: ox + size, y: oy + size * 0.5 },
-      { x: ox - size, y: oy + size * 0.5 },
-    ];
-    const fg = ctx.createLinearGradient(ox, oy - size, ox, oy + size * 0.5);
-    fg.addColorStop(0, hexToRgba(shade(c, 1.35), 0.95));
-    fg.addColorStop(1, hexToRgba(c, 0.85));
-    pathPoly(ctx, tri); ctx.fillStyle = fg; ctx.fill();
-    pathPoly(ctx, tri);
-    ctx.strokeStyle = hexToRgba(0xffffff, 0.70); ctx.lineWidth = 0.8; ctx.stroke();
+  // Front crater teeth are NOT drawn here — they are baked into a separate texture
+  // (bakeSpireVolTeethTexture) that sits IN FRONT of the live ember sprites, so the embers
+  // read as spawning down inside the crater (behind the front rim) rather than on top of it.
+
+  // Embers are live tweened sprites (see Obstacle.js _buildSpire) so they can actually
+  // rise and fade — not baked here, since this texture is static.
+
+  // Thin rising smoke wisps for atmosphere
+  ctx.strokeStyle = hexToRgba(0x554a44, 0.20); ctx.lineWidth = 3; ctx.lineCap = 'round';
+  [-r * 0.22, r * 0.18].forEach((wx, j) => {
+    ctx.beginPath();
+    ctx.moveTo(wx, -r * 0.15);
+    ctx.quadraticCurveTo(wx + (hash(690 + j) - 0.5) * r * 0.3, -r * 0.7, wx * 0.5, -r * 1.15);
+    ctx.stroke();
   });
+}
+
+// Theme 3 — Celestial: a single glowing 4-pointed star ornament sitting on top of the
+// obelisk's domed cap (the dome itself is baked into the trunk texture — see
+// _spireCelTrunk — so the two fuse into one continuous shape with no visible seam; no
+// separate seating ring is needed here anymore). The dome/constellation from earlier
+// iterations is gone — the "starfield" is now live orbiting sprites, spawned in
+// Obstacle.js, that circle the shaft (including passing behind it), not baked here.
+function _spireCelCanopy(ctx, r, hash) {
+  // Local (0,0) = world y = -H (the shaft top / dome's flat base, same anchor as before).
+  // The dome itself rises `domeRY` above that — the star sits just above the dome's apex.
+  const topW = r * 0.48, domeRY = topW * 0.85; // must match _spireCelTrunk's dome exactly
+  const starR = r * 0.55, cy = -domeRY - starR * 1.05;
+
+  // Ambient glow halo behind the ornament
+  const halo = ctx.createRadialGradient(0, cy, 0, 0, cy, starR * 2.6);
+  halo.addColorStop(0,    hexToRgba(0x9988ff, 0.40));
+  halo.addColorStop(0.6,  hexToRgba(0x7766dd, 0.15));
+  halo.addColorStop(1,    hexToRgba(0x6655cc, 0));
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(0, cy, starR * 2.6, 0, Math.PI * 2); ctx.fill();
+
+  // 4-pointed "sparkle" star — long points on the axes, short concave points between them
+  const starPts = (cx, cyy, rOuter, rInner) => ([
+    { x: cx,               y: cyy - rOuter },
+    { x: cx + rInner * 0.35, y: cyy - rInner * 0.35 },
+    { x: cx + rOuter,      y: cyy },
+    { x: cx + rInner * 0.35, y: cyy + rInner * 0.35 },
+    { x: cx,               y: cyy + rOuter },
+    { x: cx - rInner * 0.35, y: cyy + rInner * 0.35 },
+    { x: cx - rOuter,      y: cyy },
+    { x: cx - rInner * 0.35, y: cyy - rInner * 0.35 },
+  ]);
+  const pts = starPts(0, cy, starR, starR * 0.50); // thicker arms (was 0.34)
+  const starG = ctx.createRadialGradient(0, cy, 0, 0, cy, starR);
+  starG.addColorStop(0, hexToRgba(0xfff8e0, 1));
+  starG.addColorStop(0.6, hexToRgba(0xd9c9ff, 0.95));
+  starG.addColorStop(1, hexToRgba(0x8866dd, 0.85));
+  pathPoly(ctx, pts); ctx.fillStyle = starG; ctx.fill();
+  ctx.strokeStyle = hexToRgba(0x4a3a9c, 0.6); ctx.lineWidth = 1;
+  pathPoly(ctx, pts); ctx.stroke();
+
+  // Thin secondary cross-sparkle overlay for shimmer
+  ctx.strokeStyle = hexToRgba(0xffffff, 0.55); ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-starR * 0.55, cy); ctx.lineTo(starR * 0.55, cy);
+  ctx.moveTo(0, cy - starR * 0.55); ctx.lineTo(0, cy + starR * 0.55);
+  ctx.stroke();
+}
+
+// Theme 4 — Chaos: the fragment ring is NOT baked here anymore. A whole-image `angle`
+// rotation looks like orbiting but is actually a flat 2D spin — any point at a fixed
+// distance from the image's pivot traces a true CIRCLE, which breaks the 2.5D illusion the
+// fragments' squashed-ring positions were built for (see the "2.5D perspective governs
+// every orbit/rotation" rule in this project's CLAUDE.md). The 3 fragments are now live
+// sprites (bakeChaosFragmentTexture, spawned in Obstacle.js) driven by real elliptical
+// per-frame math, same technique as the celestial spire's orbiting stars.
+function _spireChaosCanopy(ctx, r, hash) {
+  // Intentionally empty — nothing to bake for this theme's canopy layer.
+}
+
+// Shared small triangle-fragment texture for the Chaos spire's live orbiting fragments.
+// Fixed key per (size, color) pair so it's baked once and reused across instances, same
+// bake-once pattern as bakeEmberParticleTexture / bakeCelestialOrbiterTexture.
+export function bakeChaosFragmentTexture(scene, size, color) {
+  const key = `fx-chaos-frag-${color.toString(16)}-${size}`;
+  if (scene.textures.exists(key)) return key;
+  const glowR = size * 2.2;
+  const S = Math.ceil(glowR * 2 + 4);
+  const cx = S / 2, cy = S / 2;
+  const tex = scene.textures.createCanvas(key, S, S);
+  const ctx = tex.getContext();
+
+  const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+  glow.addColorStop(0, hexToRgba(color, 0.30));
+  glow.addColorStop(1, hexToRgba(color, 0));
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, Math.PI * 2); ctx.fill();
+
+  const tri = [
+    { x: cx,          y: cy - size },
+    { x: cx + size,   y: cy + size * 0.5 },
+    { x: cx - size,   y: cy + size * 0.5 },
+  ];
+  const fg = ctx.createLinearGradient(cx, cy - size, cx, cy + size * 0.5);
+  fg.addColorStop(0, hexToRgba(shade(color, 1.35), 0.95));
+  fg.addColorStop(1, hexToRgba(color, 0.85));
+  pathPoly(ctx, tri); ctx.fillStyle = fg; ctx.fill();
+  pathPoly(ctx, tri);
+  ctx.strokeStyle = hexToRgba(0xffffff, 0.70); ctx.lineWidth = 0.8; ctx.stroke();
+
+  tex.refresh();
+  return key;
+}
+
+// ── Shared FX sprites ────────────────────────────────────────────────────────
+
+// A single small glowing-dot texture reused by every live ember sprite (e.g. the volcanic
+// spire's rising embers in Obstacle.js). Fixed size/shape, baked once and cached globally —
+// unlike the per-instance spire textures above, this key never needs to change dimensions,
+// so a simple exists-check guard is correct here (no stale-size risk).
+export function bakeEmberParticleTexture(scene) {
+  const key = 'fx-ember-glow';
+  if (scene.textures.exists(key)) return key;
+  const size = 24, c = size / 2;
+  const tex = scene.textures.createCanvas(key, size, size);
+  const ctx = tex.getContext();
+  const g = ctx.createRadialGradient(c, c, 0, c, c, c);
+  g.addColorStop(0,    hexToRgba(0xffee99, 1));
+  g.addColorStop(0.35, hexToRgba(0xff9933, 0.85));
+  g.addColorStop(1,    hexToRgba(0xff4400, 0));
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(c, c, c, 0, Math.PI * 2); ctx.fill();
+  tex.refresh();
+  return key;
+}
+
+// Same fixed-key/bake-once pattern as bakeEmberParticleTexture, but a cool white/lavender
+// palette — used by the celestial spire's live orbiting star sprites (see Obstacle.js).
+// Layered the same way the player's projectile sphere is (outer glow → mid glow → a
+// hard-edge-clipped sphere body with an offset highlight) instead of one flat centered
+// gradient, so it reads as a real shaded orb rather than a soft flat blob.
+export function bakeCelestialOrbiterTexture(scene) {
+  const key = 'fx-star-glow';
+  if (scene.textures.exists(key)) return key;
+  const radius = 10, glow = radius * 2.6;
+  const S = Math.ceil(glow) * 2 + 4;
+  const tex = scene.textures.createCanvas(key, S, S);
+  const ctx = tex.getContext();
+  const cx = S / 2, cy = S / 2;
+
+  // Layer 1 — outer soft glow cloud
+  const outerGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glow);
+  outerGlow.addColorStop(0.00, hexToRgba(0xaaccff, 0.30));
+  outerGlow.addColorStop(0.40, hexToRgba(0xaaccff, 0.16));
+  outerGlow.addColorStop(0.75, hexToRgba(0xaaccff, 0.06));
+  outerGlow.addColorStop(1.00, hexToRgba(0xaaccff, 0));
+  ctx.fillStyle = outerGlow; ctx.fillRect(0, 0, S, S);
+
+  // Layer 2 — mid glow
+  const midGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 1.9);
+  midGlow.addColorStop(0.00, hexToRgba(0xccddff, 0.55));
+  midGlow.addColorStop(0.60, hexToRgba(0xccddff, 0.25));
+  midGlow.addColorStop(1.00, hexToRgba(0xccddff, 0));
+  ctx.fillStyle = midGlow; ctx.fillRect(0, 0, S, S);
+
+  // Layer 3 — sphere body (hard-edge clipped, offset focal point for real 3D shading)
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.clip();
+  const sphere = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, 0, cx, cy, radius);
+  sphere.addColorStop(0.00, hexToRgba(0xffffff, 1));
+  sphere.addColorStop(0.20, hexToRgba(0xeaf0ff, 1));
+  sphere.addColorStop(0.55, hexToRgba(0xaebfff, 1));
+  sphere.addColorStop(0.85, hexToRgba(0x6677cc, 0.90));
+  sphere.addColorStop(1.00, hexToRgba(0x6677cc, 0));
+  ctx.fillStyle = sphere; ctx.fillRect(0, 0, S, S);
+  ctx.restore();
+
+  tex.refresh();
+  return key;
 }

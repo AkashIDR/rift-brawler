@@ -1315,7 +1315,8 @@ export default class Player {
   _pushOutObstacles() {
     const r = 14;
     this.scene.obstacles?.forEach(obs => {
-      const dx = this.x - obs.x, dy = this.y - obs.y;
+      const ocy = obs.y + (obs.colOffsetY || 0);
+      const dx = this.x - obs.x, dy = this.y - ocy;
       const dist = Math.hypot(dx, dy);
       const min = r + obs.baseRadius;
       if (dist < min && dist > 0.01) {
@@ -1546,7 +1547,8 @@ export default class Player {
       // Hit obstacle base — destroy (projectiles can't pass through obstacle bases)
       if (scene.obstacles) {
         for (const obs of scene.obstacles) {
-          const od = Phaser.Math.Distance.Between(proj.x, proj.y, obs.x, obs.y);
+          const ocy = obs.y + (obs.colOffsetY || 0);
+          const od = Phaser.Math.Distance.Between(proj.x, proj.y, obs.x, ocy);
           if (od < obs.baseRadius + (proj._radius || 5)) {
             // Spark ricochet on obstacle hit; ring for skill shots
             spawnSparks(this.scene, proj.x, proj.y, proj._color || 0x88ddff, 8);

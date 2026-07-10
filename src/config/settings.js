@@ -2,6 +2,7 @@ const STORAGE_KEY = 'riftbrawler-settings';
 
 export const DEFAULTS = {
   movementMode: 'rightclick', // 'rightclick' | 'wasd'
+  showFps: false,
   keys: {
     skill1: 'ONE',
     skill2: 'TWO',
@@ -14,6 +15,7 @@ export const DEFAULTS = {
     skillBar: { x: 0, y: 0, scale: 1 },
     score:    { x: 0, y: 0, scale: 1 },
     bossBar:  { x: 0, y: 0, scale: 1 },
+    fps:      { x: 0, y: 0, scale: 1 },
   },
 };
 
@@ -31,17 +33,20 @@ export function getSettings() {
         skillBar: { ...dl.skillBar, ...(sl.skillBar || {}) },
         score:    { ...dl.score,    ...(sl.score    || {}) },
         bossBar:  { ...dl.bossBar,  ...(sl.bossBar  || {}) },
+        fps:      { ...dl.fps,      ...(sl.fps      || {}) },
       },
     };
   } catch {
     return {
       movementMode: DEFAULTS.movementMode,
+      showFps: DEFAULTS.showFps,
       keys: { ...DEFAULTS.keys },
       uiLayout: {
         resource: { ...DEFAULTS.uiLayout.resource },
         skillBar: { ...DEFAULTS.uiLayout.skillBar },
         score:    { ...DEFAULTS.uiLayout.score    },
         bossBar:  { ...DEFAULTS.uiLayout.bossBar  },
+        fps:      { ...DEFAULTS.uiLayout.fps      },
       },
     };
   }

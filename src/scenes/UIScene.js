@@ -71,7 +71,14 @@ export default class UIScene extends Phaser.Scene {
     this._pauseKey.on('down', () => this.arenaScene._togglePause());
   }
 
+  refreshFpsVisibility() {
+    if (this.fpsContainer) this.fpsContainer.setVisible(getSettings().showFps);
+  }
+
   update() {
+    if (this.fpsContainer?.visible) {
+      this.fpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}`);
+    }
     const arena = this.arenaScene;
     if (!arena?.player) return;
     const p = arena.player;
@@ -448,6 +455,16 @@ export default class UIScene extends Phaser.Scene {
       .setScale(layout.score.scale).setDepth(10);
     this.scoreContainer.add([this.scoreText, this.levelText]);
 
+    // ── FPS counter (top-left, optional via settings) ────────────────────────
+    this.fpsText = this.add.text(0, 0, 'FPS: 60', {
+      fontFamily: FONT, fontSize: '18px', letterSpacing: LETTER_SPACING,
+      color: PARCHMENT, stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0, 0);
+    this.fpsContainer = this.add.container(layout.fps.x + 16, layout.fps.y + 16)
+      .setScale(layout.fps.scale).setDepth(10);
+    this.fpsContainer.add(this.fpsText);
+    this.fpsContainer.setVisible(getSettings().showFps);
+
     // ── Fullscreen + Pause buttons (bottom-right) ─────────────────────────────
     // ⛶ and ✕ have different glyph baselines — compensate with per-icon Y offsets
     const FS_X = GAME_WIDTH - 90;
@@ -749,9 +766,30 @@ export default class UIScene extends Phaser.Scene {
   // ─── Edit toolbar ─────────────────────────────────────────────────────────
 
   _buildEditToolbar() {
-    this.editToolbar = this.add.container(16, 16).setDepth(400).setVisible(false).setScale(1.25);
+    // Nudged right of (16,16) so it doesn't sit on top of the FPS counter's default corner.
+    this.editToolbar = this.add.container(130, 16).setDepth(400).setVisible(false).setScale(1.25);
     const tbW = 294, tbH = 50;
     makeStoneTexture(this, 'stone-edit-toolbar', { w: tbW, h: tbH, shape: 'rounded', radius: 8, bevel: 5, seed: 3 });
+
+    // Drag-to-move — a transparent rect the size of the whole toolbar, added FIRST so the
+    // two buttons (added after) render on top and keep input priority over their own hit
+    // areas; the rest of the toolbar body (not covered by a button) drags the container.
+    // Same screen-space-delta pattern as the panel edit boxes' moveOverlay below (avoids
+    // any ambiguity from dragX/dragY being reported in a nested container's local space).
+    const dragArea = this.add.rectangle(tbW / 2, tbH / 2, tbW, tbH, 0x000000, 0)
+      .setInteractive({ cursor: 'grab' });
+    this.input.setDraggable(dragArea);
+    let tbSPX, tbSPY, tbSCX, tbSCY;
+    dragArea.on('dragstart', (ptr) => {
+      tbSPX = ptr.x; tbSPY = ptr.y;
+      tbSCX = this.editToolbar.x; tbSCY = this.editToolbar.y;
+    });
+    dragArea.on('drag', (ptr) => {
+      this.editToolbar.x = tbSCX + (ptr.x - tbSPX);
+      this.editToolbar.y = tbSCY + (ptr.y - tbSPY);
+    });
+    this.editToolbar.add(dragArea);
+
     this.editToolbar.add(this.add.image(tbW / 2, tbH / 2, 'stone-edit-toolbar').setOrigin(0.5));
     this.editToolbar.add(this._makeToolbarBtn(8,  7, 170, 36, 'DONE EDITING', S.TEXT,    () => this._exitEditMode()));
     this.editToolbar.add(this._makeToolbarBtn(184, 7, 102, 36, 'RESET UI',    '#ff8888', () => this._resetUILayout()));
@@ -782,6 +820,7 @@ export default class UIScene extends Phaser.Scene {
     this._editMode          = true;
     this._editGrips         = [];
     this._wasBossBarVisible = undefined; // set in _spawnDragGrips on first entry
+    this._wasFpsVisible     = undefined; // set in _spawnEditBoxes on first entry
     this.pauseContainer.setVisible(false);
     this.editToolbar.setVisible(true);
     this._spawnEditBoxes();
@@ -796,16 +835,21 @@ export default class UIScene extends Phaser.Scene {
       this.bossBarContainer.setVisible(false).setAlpha(1);
     }
     this._wasBossBarVisible = undefined;
+    if (!this._wasFpsVisible) {
+      this.fpsContainer.setVisible(false).setAlpha(1);
+    }
+    this._wasFpsVisible = undefined;
     this.pauseContainer.setVisible(true);
   }
 
   _resetUILayout() {
     const def = { x: 0, y: 0, scale: 1 };
-    saveSetting('uiLayout', { resource: { ...def }, skillBar: { ...def }, score: { ...def }, bossBar: { ...def } });
+    saveSetting('uiLayout', { resource: { ...def }, skillBar: { ...def }, score: { ...def }, bossBar: { ...def }, fps: { ...def } });
     this.resourceContainer.setPosition(0, 0).setScale(1);
     this.skillBarContainer.setPosition(0, 0).setScale(1);
     this.scoreContainer.setPosition(0, 0).setScale(1);
     this.bossBarContainer.setPosition(0, 0).setScale(1);
+    this.fpsContainer.setPosition(16, 16).setScale(1);
     this._editGrips.forEach(g => g.destroy(true));
     this._editGrips = [];
     this._spawnEditBoxes();
@@ -834,6 +878,15 @@ export default class UIScene extends Phaser.Scene {
 
     this._createEditBox(this.bossBarContainer, 'bossBar', 'Boss Bar',
       (GAME_WIDTH - BOSS_BW) / 2 - 20, BOSS_BY - 10, BOSS_BW + 40, BOSS_BH + 20, 1);
+
+    // FPS counter may be toggled off in settings — force it visible (dimmed) during edit
+    // mode so it can still be positioned/scaled, same convention as the boss bar above.
+    if (this._wasFpsVisible === undefined) {
+      this._wasFpsVisible = this.fpsContainer.visible;
+    }
+    if (!this._wasFpsVisible) this.fpsContainer.setVisible(true).setAlpha(0.5);
+
+    this._createEditBox(this.fpsContainer, 'fps', 'FPS Counter', -6, -6, 120, 32, 1);
   }
 
   _createEditBox(container, panelKey, label, pLeft, pTop, pW, pH, baseScale) {

@@ -196,7 +196,8 @@ export default class BossBase {
   _pushOutObstacles() {
     const r = this.size;
     this.scene.obstacles?.forEach(obs => {
-      const dx = this.x - obs.x, dy = this.y - obs.y;
+      const ocy = obs.y + (obs.colOffsetY || 0);
+      const dx = this.x - obs.x, dy = this.y - ocy;
       const dist = Math.hypot(dx, dy);
       const min = r + obs.baseRadius;
       if (dist < min && dist > 0.01) {
@@ -291,7 +292,8 @@ export default class BossBase {
       // Obstacle collision — projectile breaks the obstacle then disappears
       if (this.scene.obstacles) {
         for (const obs of this.scene.obstacles) {
-          if (Phaser.Math.Distance.Between(proj.x, proj.y, obs.x, obs.y) < obs.baseRadius + radius) {
+          const ocy = obs.y + (obs.colOffsetY || 0);
+          if (Phaser.Math.Distance.Between(proj.x, proj.y, obs.x, ocy) < obs.baseRadius + radius) {
             obs.break();
             _destroy(); return;
           }

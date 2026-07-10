@@ -8,6 +8,11 @@ import Obstacle from '../entities/Obstacle.js';
 import { createBoss } from '../entities/bosses/BossFactory.js';
 import ArenaGenerator from '../arenas/ArenaGenerator.js';
 import CameraController from '../systems/CameraController.js';
+import { hexToRgba, shade } from '../entities/obstacleArt.js';
+
+// Player container origin is the waist; feet are ~17px below it (22px canvas × 0.765 scale).
+// Depth-sort uses this so the player occludes props it stands in front of.
+const PLAYER_FOOT_OFFSET = 17;
 
 export default class ArenaScene extends Phaser.Scene {
   constructor() {
@@ -27,6 +32,11 @@ export default class ArenaScene extends Phaser.Scene {
     this.arena = ArenaGenerator.generate(this.level);
     this.theme = getTheme(this.level);
     this.cameras.main.setBackgroundColor(this.theme.bg);
+
+    // Per-instance mid-size-prop textures (canvas-baked, one per prop) — tracked so they
+    // can be freed on scene shutdown, mirroring Obstacle._texKeys/_removeTextures.
+    this._midPropTexKeys = [];
+    this.events.once('shutdown', () => this._removeMidPropTextures());
 
     this._buildArena();
     this._spawnFoliage();
@@ -64,9 +74,12 @@ export default class ArenaScene extends Phaser.Scene {
 
     if (this.player) {
       this.player.update(time, delta);
-      // Y-depth sort — player renders in front of / behind obstacles correctly
-      this.player.container.setDepth(this.player.y);
-      if (this.player.shadowG) this.player.shadowG.setDepth(this.player.y - 1);
+      // Y-depth sort by the player's FEET. The container origin is the waist (~17px above
+      // the feet), so sorting by player.y alone makes the player render behind a prop whose
+      // base it's standing in front of. Offsetting to the feet fixes the occlusion.
+      const footDepth = this.player.y + PLAYER_FOOT_OFFSET;
+      this.player.container.setDepth(footDepth);
+      if (this.player.shadowG) this.player.shadowG.setDepth(footDepth - 1);
     }
 
     if (this.boss && this.bossAlive) {
@@ -334,28 +347,20 @@ export default class ArenaScene extends Phaser.Scene {
     }
   }
 
+  _removeMidPropTextures() {
+    if (!this._midPropTexKeys || !this._midPropTexKeys.length) return;
+    for (const k of this._midPropTexKeys) {
+      if (this.textures.exists(k)) this.textures.remove(k);
+    }
+    this._midPropTexKeys = [];
+  }
+
   // ── Obstacles ──────────────────────────────────────────────────────────────
 
   _spawnObstacles() {
     this.obstacles = this.arena.obstacles.map(d =>
       new Obstacle(this, d.x, d.y, d.type, d.tall, d.themeIdx ?? 0)
     );
-
-    // DEBUG — place all 5 themed spires near spawn so all themes are reviewable at once.
-    // Remove this block when spire art is approved.
-    if (this.level === 1) {
-      const { x: sx, y: sy } = this.arena.spawnPoint;
-      const offsets = [
-        { dx: -220, dy: -80 },
-        { dx: -110, dy: -80 },
-        { dx:    0, dy: -80 },
-        { dx:  110, dy: -80 },
-        { dx:  220, dy: -80 },
-      ];
-      offsets.forEach(({ dx, dy }, i) => {
-        this.obstacles.push(new Obstacle(this, sx + dx, sy + dy, 'spire', true, i));
-      });
-    }
   }
 
   // ── Entities ───────────────────────────────────────────────────────────────
@@ -392,16 +397,40 @@ export default class ArenaScene extends Phaser.Scene {
     const edgeCover  = _sampleEdgePositions(perimeter, this.arena, 55, 50, 140);
     const floorCover = _sampleFloorPositions(this.arena, bounds, 18);
 
+    // Shared neutral radial-falloff masks (petal / blob / highlight), baked once per
+    // arena build and reused via setTint/setScale — gives ground cover real gradients
+    // without any persistent per-item GameObjects: each mask Image is created, stamped
+    // into the same shared RenderTexture, and destroyed within the scatter loop below,
+    // exactly the way the floor texture's baked Image is stamped into arenaRT.
+    const maskKeys = {
+      petal:     _bakeSoftRadialMask(this, 'gc-petal-mask', 10),
+      blob:      _bakeSoftRadialMask(this, 'gc-blob-mask', 16),
+      highlight: _bakeSoftRadialMask(this, 'gc-highlight-mask', 6),
+    };
+
     const rt = this.add.renderTexture(0, 0, worldW, worldH);
     rt.setDepth(5.5).setOrigin(0, 0);
 
+    let gcIdx = 0;
     for (const { x, y } of [...edgeCover, ...floorCover]) {
+      const salt0 = gcIdx * 1000;
+      const hash  = (s) => _hashAt(x, y, salt0 + s);
       const tmpG = this.add.graphics();
       tmpG.setPosition(x, y);
-      tmpG.setScale(0.65 + Math.random() * 0.70);
-      _drawGroundCover(tmpG, themeIdx, t);
+      const scale = 0.65 + hash(1) * 0.70;
+      tmpG.setScale(scale);
+      const gradientDraws = _drawGroundCover(tmpG, themeIdx, t, hash, maskKeys);
       rt.draw(tmpG);   // stamp into the cached texture
       tmpG.destroy();  // no live Graphics object remains
+      for (const gd of gradientDraws) {
+        const img = this.add.image(x + gd.dx * scale, y + gd.dy * scale, gd.key)
+          .setTint(gd.tint).setAlpha(gd.alpha ?? 1)
+          .setScale((gd.scaleX ?? gd.scale ?? 1) * scale, (gd.scaleY ?? gd.scale ?? 1) * scale)
+          .setRotation(gd.rotation ?? 0);
+        rt.draw(img);
+        img.destroy();  // no live Image object remains
+      }
+      gcIdx++;
     }
 
     // ── Mid-size props — Y-sorted, static (no tweens) ──────────────────────
@@ -411,13 +440,21 @@ export default class ArenaScene extends Phaser.Scene {
     const edgeProps  = _sampleEdgePositions(perimeter, this.arena, 10, 55, 135);
     const floorProps = _sampleFloorPositions(this.arena, bounds, 4);
 
+    let mpIdx = 0;
     for (const { x, y } of [...edgeProps, ...floorProps]) {
-      const g = this.add.graphics();
-      g.setPosition(x, y).setDepth(y - 8);
-      g.setScale(0.75 + Math.random() * 0.55);
-      _drawMidProp(g, themeIdx, t);
-      // No tween — static props are indistinguishable at game speed and
-      // eliminate the last of the per-frame JS overhead for foliage.
+      const salt0 = mpIdx * 1000;
+      const hash  = (s) => _hashAt(x, y, salt0 + s);
+      const key = `mp-${themeIdx}-${Math.round(x)}-${Math.round(y)}`;
+      const { originX, originY } = _bakeMidPropTexture(this, key, themeIdx, t, hash);
+      this._midPropTexKeys.push(key);
+      const scale = 0.75 + hash(1) * 0.55;
+      this.add.image(x, y, key)
+        .setOrigin(originX, originY)
+        .setDepth(y - 8)
+        .setScale(scale);
+      // No tween, no live Graphics — static props are baked once (see _bakeMidPropTexture)
+      // and displayed as a single Image, eliminating the per-frame vector-replay cost.
+      mpIdx++;
     }
   }
 
@@ -612,12 +649,6 @@ function _drawBrickTexture(g, bounds, brickW = 48, brickH = 32, lineColor, alpha
     }
     row++;
   }
-}
-
-/** Convert a 0xRRGGBB int + alpha to a canvas rgba() string (for baked floor gradients). */
-function hexToRgba(int, a = 1) {
-  const r = (int >> 16) & 0xff, g = (int >> 8) & 0xff, b = int & 0xff;
-  return `rgba(${r},${g},${b},${a})`;
 }
 
 /**
@@ -1232,6 +1263,58 @@ function _drawThemedVoid(g, themeIdx, worldW, worldH, bounds, t) {
   }
 }
 
+// ── Ground-cover art helpers ────────────────────────────────────────────────
+// Deterministic hash mirroring Obstacle._h(salt), so ground-cover art is stable across
+// reloads of the same arena layout (scatter LAYOUT still comes from Math.random via
+// _sampleFloorPositions/_sampleEdgePositions — that's an arena-generation concern, not
+// a per-item-art one).
+function _hashAt(x, y, salt) {
+  const n = (Math.abs(Math.round(x) * 374761393
+                     + Math.round(y) * 1274126177
+                     + salt * 2654435761) >>> 0);
+  return n / 0xffffffff;
+}
+
+// Point on a quadratic bezier at t (Phaser Graphics has no native curve command, so
+// curved blades/stems are built by sampling this into a point array, then fillPoints()).
+function _quadPoint(x0, y0, cx, cy, x1, y1, t) {
+  const mt = 1 - t;
+  return { x: mt * mt * x0 + 2 * mt * t * cx + t * t * x1,
+           y: mt * mt * y0 + 2 * mt * t * cy + t * t * y1 };
+}
+
+// Curved, tapered blade as a filled polygon: a straight base edge, one bezier-curved
+// edge sampled out to the tip, and a straight return edge back to the base (closeShape).
+function _bladePoints(bx, by, ctrlX, ctrlY, tipX, tipY, hw, ca, sa, segs) {
+  const baseL = { x: bx - ca * hw, y: by - sa * hw };
+  const baseR = { x: bx + ca * hw, y: by + sa * hw };
+  const pts = [baseL];
+  for (let i = 1; i <= segs; i++) {
+    pts.push(_quadPoint(baseL.x, baseL.y, ctrlX, ctrlY, tipX, tipY, i / segs));
+  }
+  pts.push(baseR);
+  return pts;
+}
+
+// Bakes ONE reusable neutral white radial-falloff mask (bright center -> transparent
+// edge) at the given radius. Ground-cover glows/mounds/petals reuse this via
+// setTint(color)/setAlpha/setScale/setRotation rather than baking per-color variants —
+// avoids a combinatorial texture count across 5 themes x many glow colors. Guarded by
+// textures.exists like _bakeFloorTexture, so it's safe to call once per arena build.
+function _bakeSoftRadialMask(scene, key, radius) {
+  if (scene.textures.exists(key)) return key;
+  const d = radius * 2;
+  const tex = scene.textures.createCanvas(key, d, d);
+  const ctx = tex.getContext();
+  const grad = ctx.createRadialGradient(radius, radius, 0, radius, radius, radius);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(radius, radius, radius, 0, Math.PI * 2); ctx.fill();
+  tex.refresh();
+  return key;
+}
+
 // ── Foliage placement helpers ──────────────────────────────────────────────
 
 /**
@@ -1300,224 +1383,287 @@ function _sampleFloorPositions(arena, bounds, count) {
 
 // ── Ground cover drawing ───────────────────────────────────────────────────
 
-function _drawGroundCover(g, themeIdx, t) {
-  const v = Math.floor(Math.random() * 3);
+function _drawGroundCover(g, themeIdx, t, hash, maskKeys) {
+  const v = Math.floor(hash(0) * 3);
   switch (themeIdx) {
-    case 0: _gcGreenFields(g, t, v);   break;
-    case 1: _gcCrystalCaves(g, t, v); break;
-    case 2: _gcVolcanic(g, t, v);     break;
-    case 3: _gcCelestial(g, t, v);    break;
-    case 4: _gcChaos(g, t, v);        break;
+    case 0: return _gcGreenFields(g, t, v, hash, maskKeys);
+    case 1: return _gcCrystalCaves(g, t, v, hash, maskKeys);
+    case 2: return _gcVolcanic(g, t, v, hash, maskKeys);
+    case 3: return _gcCelestial(g, t, v, hash, maskKeys);
+    case 4: return _gcChaos(g, t, v, hash, maskKeys);
+    default: return [];
   }
 }
 
+// Curved, lush grass tuft — a small mound base (not one point) with 3 layered colour
+// passes of curved blades rooted at different points along the mound's surface, wide
+// natural fan. Same recipe as the proven _spireGFCanopy grass tuft, adapted for Phaser
+// Graphics (point-sampled bezier via _bladePoints, not canvas quadraticCurveTo) and
+// scaled down for the smaller ground-cover footprint.
+function _gcGrassTuft(g, hash) {
+  const mCX = 0, mCY = 1, mRX = 9, mRY = 3.2;
+
+  // Mound base — 2 flat rings approximate a lit-top/dark-rim mound.
+  g.fillStyle(0x2e5010, 0.55);
+  g.fillEllipse(mCX, mCY + 1, mRX * 2, mRY * 2);
+  g.fillStyle(0x4a8c30, 0.6);
+  g.fillEllipse(mCX - mRX * 0.15, mCY - mRY * 0.3, mRX * 1.5, mRY * 1.4);
+
+  // Root point on the mound's top-surface ellipse — NOT a single shared vertex.
+  const surfaceBase = (xFrac, jY) => {
+    const bx = mCX + xFrac * mRX * 0.90;
+    const clamped = Math.max(-1, Math.min(1, (bx - mCX) / mRX));
+    const halfH = mRY * Math.sqrt(1 - clamped * clamped);
+    const by = mCY - halfH + Math.min(halfH * 1.8, Math.max(0, jY));
+    return [bx, by];
+  };
+
+  const bladeLayer = (count, fanHalf, colorHex, alpha, lenBase, lenVar, hw, salt) => {
+    g.fillStyle(colorHex, alpha);
+    for (let i = 0; i < count; i++) {
+      const xFrac = count > 1
+        ? -fanHalf + (i / (count - 1)) * fanHalf * 2 + (hash(salt + i) - 0.5) * 0.16
+        : (hash(salt + i) - 0.5) * 0.16;
+      const [bx, by] = surfaceBase(xFrac, hash(salt + 40 + i) * mRY * 2.5);
+      const ang  = xFrac * 1.15 + (hash(salt + 80 + i) - 0.5) * 0.30; // wide natural fan
+      const bLen = lenBase * (0.78 + hash(salt + 120 + i) * lenVar);
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const bow = ang < 0 ? -0.32 : ang > 0 ? 0.32 : (hash(salt + 160 + i) - 0.5) * 0.24;
+      const tipX = bx + sa * bLen, tipY = by - ca * bLen;
+      const ctrlX = bx + sa * bLen * 0.65 + bow * bLen * ca;
+      const ctrlY = by - ca * bLen * 0.65 + bow * bLen * sa;
+      const pts = _bladePoints(bx, by, ctrlX, ctrlY, tipX, tipY, hw, ca, sa, 5);
+      g.fillPoints(pts, true);
+    }
+  };
+
+  // Layer 0 — dark back, widest fan (also serves as the shadow read — no separate pass).
+  bladeLayer(9, 0.95, 0x2e6614, 0.85, 5.5, 0.55, 0.85, 0);
+  // Layer 1 — mid green.
+  bladeLayer(7, 0.75, 0x4ea828, 0.90, 7.0, 0.55, 0.72, 200);
+  // Layer 2 — vivid lime front, narrower fan, more length variance.
+  bladeLayer(5, 0.55, 0x8ee820, 1.00, 8.5, 0.75, 0.60, 400);
+}
+
 // Theme 0 — Green Fields
-function _gcGreenFields(g, t, v) {
+function _gcGreenFields(g, t, v, hash, maskKeys) {
   if (v === 0) {
-    // Grass tuft — layered blades with shadow underlay + colour variation
-    const blades = 5 + Math.floor(Math.random() * 4);
-    const spread = 0.88;
-    // Shadow layer — slightly behind and offset, dark green
-    for (let i = 0; i < blades; i++) {
-      const ang = -Math.PI / 2 - spread / 2 + spread * (i / (blades - 1)) + 0.06;
-      const len = 7 + Math.random() * 5;
-      const bend = (Math.random() - 0.5) * 0.28;
-      g.lineStyle(2.8, 0x1e4008, 0.42);
-      g.lineBetween(0, 2, Math.cos(ang + bend) * len, Math.sin(ang + bend) * len);
-    }
-    // Base ground patch
-    g.fillStyle(0x2e5a10, 0.38);
-    g.fillEllipse(0, 2, 12, 6);
-    // Main blades — three alternating colours
-    const cols = [0x9de060, 0x7ec850, 0x5aaa38];
-    for (let i = 0; i < blades; i++) {
-      const ang = -Math.PI / 2 - spread / 2 + spread * (i / (blades - 1));
-      const len = 9 + Math.random() * 8;
-      const bend = (Math.random() - 0.5) * 0.32;
-      const midX = Math.cos(ang + bend * 0.5) * len * 0.55;
-      const midY = Math.sin(ang + bend * 0.5) * len * 0.55;
-      const tipX = Math.cos(ang + bend) * len;
-      const tipY = Math.sin(ang + bend) * len;
-      g.lineStyle(1.8, cols[i % 3], 0.88);
-      g.lineBetween(0, 0, midX, midY);
-      g.lineBetween(midX, midY, tipX, tipY);
-      // Lighter highlight streak on every other blade
-      if (i % 2 === 0) {
-        g.lineStyle(0.8, 0xc4f07c, 0.52);
-        g.lineBetween(midX, midY, tipX, tipY);
-      }
-    }
+    _gcGrassTuft(g, hash);
+    return [];
   } else if (v === 1) {
-    // Wildflower cluster — stems with leaf pairs + petals
-    const count = 2 + Math.floor(Math.random() * 3);
+    // Wildflower cluster — stems with leaf pairs + petals. Petals/centre-glow use the
+    // shared soft-mask stamps for a real gradient instead of flat ellipse/circle fills.
+    const grads = [];
+    const count = 2 + Math.floor(hash(1) * 3);
     const petColors = [0xff88aa, 0xffffaa, 0xff6677, 0xddaaff, 0xff99cc];
     for (let i = 0; i < count; i++) {
-      const ox = (Math.random() - 0.5) * 16;
-      const oy = (Math.random() - 0.5) * 8;
-      const sh = 9 + Math.random() * 9;
+      const s = i * 60;
+      const ox = (hash(s + 2) - 0.5) * 16;
+      const oy = (hash(s + 3) - 0.5) * 8;
+      const sh = 9 + hash(s + 4) * 9;
+      const bend = (hash(s + 5) - 0.5) * 3; // slight stem bow instead of ramrod-straight
       // Shadow stem
       g.lineStyle(2, 0x1e3a08, 0.32);
-      g.lineBetween(ox + 1, oy + 2, ox + 1, oy - sh + 1);
+      g.lineBetween(ox + 1, oy + 2, ox + 1 + bend, oy - sh * 0.5 + 1);
+      g.lineBetween(ox + 1 + bend, oy - sh * 0.5 + 1, ox + 1, oy - sh + 1);
       // Stem
       g.lineStyle(1.2, 0x4a8820, 0.88);
-      g.lineBetween(ox, oy, ox, oy - sh);
-      // Leaf pair at mid-stem
+      g.lineBetween(ox, oy, ox + bend, oy - sh * 0.5);
+      g.lineBetween(ox + bend, oy - sh * 0.5, ox, oy - sh);
+      // Leaf pair — independent angle/size per leaf (was one shared angle for both)
       const lmy = oy - sh * 0.52;
-      const la  = (Math.random() - 0.5) * 0.5;
+      const laL = (hash(s + 6) - 0.5) * 0.6, laR = (hash(s + 7) - 0.5) * 0.6;
+      const lsL = 7 + hash(s + 8) * 2.5, lsR = 6 + hash(s + 9) * 2;
       g.fillStyle(0x4a8820, 0.62);
-      g.fillEllipse(ox + Math.cos(la) * 5, lmy + Math.sin(la) * 2, 8, 3.5);
-      g.fillEllipse(ox - Math.cos(la) * 5, lmy - Math.sin(la) * 2, 6.5, 3);
-      // Petals
+      g.fillEllipse(ox + Math.cos(laL) * 5, lmy + Math.sin(laL) * 2, lsL, 3.5);
+      g.fillEllipse(ox - Math.cos(laR) * 5, lmy - Math.sin(laR) * 2, lsR, 3);
+      // Petals — flat, crisp circles (Graphics, hard edge) so the flower silhouette stays
+      // readable at small sizes, each with a small gloss stamp (NOT a big soft glow — a
+      // glow sized close to or larger than the petal spacing is what caused the earlier
+      // "smudge of color": petals whose glow-radius exceeded their center-to-center
+      // distance blurred into one blob). Placement radius `pr` is kept > the petal's own
+      // radius so adjacent petals touch at most, never fully overlap.
       const fc     = petColors[i % petColors.length];
-      const petals = 5 + Math.floor(Math.random() * 2);
+      const petals = 5 + Math.floor(hash(s + 10) * 2);
+      const pr     = 5.2 + hash(s + 12) * 1.3;
       for (let j = 0; j < petals; j++) {
-        const pa = (j / petals) * Math.PI * 2;
-        g.fillStyle(fc, 0.82);
-        g.fillEllipse(ox + Math.cos(pa) * 3.5, oy - sh + Math.sin(pa) * 3.5, 5.5, 3.2);
+        const pa = (j / petals) * Math.PI * 2 + (hash(s + 20 + j) - 0.5) * 0.35;
+        const petR = 2.4 + hash(s + 25 + j) * 0.6;
+        const px = ox + Math.cos(pa) * pr, py = oy - sh + Math.sin(pa) * pr;
+        g.fillStyle(fc, 0.92);
+        g.fillCircle(px, py, petR);
+        grads.push({ key: maskKeys.highlight, dx: px, dy: py, tint: 0xffffff, alpha: 0.32, scale: petR * 0.5 / 6 });
       }
-      // Centre
+      // Centre — flat core dot + a modest soft glow (kept smaller than the petal ring
+      // radius so it reads as a center glow, not an all-consuming blob)
       g.fillStyle(0xffee44, 0.95);
       g.fillCircle(ox, oy - sh, 2.2);
-      g.fillStyle(0xffaa00, 0.6);
-      g.fillCircle(ox - 0.5, oy - sh - 0.5, 1);
+      grads.push({ key: maskKeys.highlight, dx: ox - 0.5, dy: oy - sh - 0.5, tint: 0xffaa00, alpha: 0.75, scale: 0.65 });
     }
+    return grads;
   } else {
-    // Moss / clover patch — layered organic blobs with micro highlights
-    g.fillStyle(0x243d10, 0.40);
-    g.fillEllipse(1, 2, 28, 15);
-    g.fillStyle(0x3d6b24, 0.55);
-    g.fillEllipse(-3, -1, 22, 11);
-    g.fillStyle(0x4e8030, 0.52);
-    g.fillEllipse(4, -2, 15, 8);
-    g.fillStyle(0x5aaa38, 0.58);
-    g.fillEllipse(-5, -3, 11, 7);
-    g.fillStyle(0x3d6b24, 0.45);
-    g.fillEllipse(6, -4, 9, 5);
-    // Clover-dot ring
+    // Moss / clover patch — 3 gradient blobs with a clear light-to-dark bias (bright lit
+    // blob upper-left, dark rim blob lower-right — "one lit mound," not 3 concentric
+    // same-centered circles) + jittered clover ring.
+    const grads = [];
+    grads.push({ key: maskKeys.blob, dx: 4,  dy: 3,  tint: 0x1e3208, alpha: 0.60, scaleX: 1.15, scaleY: 0.64 });
+    grads.push({ key: maskKeys.blob, dx: 0,  dy: 0,  tint: 0x3d6b24, alpha: 0.65, scaleX: 0.92, scaleY: 0.51 });
+    grads.push({ key: maskKeys.blob, dx: -5, dy: -4, tint: 0x74cc4c, alpha: 0.75, scaleX: 0.62, scaleY: 0.34 });
+    // Clover-dot ring — hash-jittered radius per dot instead of a perfect circle
     for (let i = 0; i < 6; i++) {
-      const la = (i / 6) * Math.PI * 2;
+      const la = (i / 6) * Math.PI * 2 + (hash(30 + i) - 0.5) * 0.3;
+      const rr = 7 + hash(35 + i) * 2.4;
       g.fillStyle(0x7ec850, 0.68);
-      g.fillCircle(Math.cos(la) * 8 - 1, Math.sin(la) * 4 - 1, 1.8 + Math.random() * 0.9);
+      g.fillCircle(Math.cos(la) * rr - 1, Math.sin(la) * rr * 0.5 - 1, 1.8 + hash(40 + i) * 0.9);
     }
-    // Micro highlights
-    for (let i = 0; i < 5; i++) {
-      g.fillStyle(0xaae060, 0.32);
-      g.fillCircle((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 10, 1.1 + Math.random() * 0.6);
+    // Micro highlights — sparing soft glow stamps, clearly larger than before
+    for (let i = 0; i < 3; i++) {
+      grads.push({
+        key: maskKeys.highlight,
+        dx: (hash(50 + i) - 0.5) * 20, dy: (hash(55 + i) - 0.5) * 10,
+        tint: 0xaae060, alpha: 0.55, scale: 0.5 + hash(60 + i) * 0.22,
+      });
     }
+    return grads;
   }
 }
 
 // Theme 1 — Crystal Caves
-function _gcCrystalCaves(g, t, v) {
+function _gcCrystalCaves(g, t, v, hash, maskKeys) {
   if (v === 0) {
-    // Tiny crystal cluster — 3-5 miniature shards
-    const count = 3 + Math.floor(Math.random() * 3);
+    // Tiny crystal cluster — 3-5 miniature shards, vertex count varies 3-4 (was fixed
+    // triangle), each gets a soft highlight stamp on its upper facet for a lit-edge read.
+    const grads = [];
+    const count = 3 + Math.floor(hash(1) * 3);
     for (let i = 0; i < count; i++) {
-      const ox = (Math.random() - 0.5) * 18;
-      const oy = (Math.random() - 0.5) * 8;
-      const h  = 5 + Math.random() * 8;
-      const w  = 2 + Math.random() * 2.5;
-      const tilt = (Math.random() - 0.5) * 0.4;
+      const s = i * 20;
+      const ox = (hash(s + 2) - 0.5) * 18;
+      const oy = (hash(s + 3) - 0.5) * 8;
+      const h  = 5 + hash(s + 4) * 8;
+      const w  = 2 + hash(s + 5) * 2.5;
+      const tilt = (hash(s + 6) - 0.5) * 0.4;
+      const tipX = ox + Math.sin(tilt) * h, tipY = oy - h;
+      let pts;
+      if (hash(s + 7) < 0.5) {
+        pts = [{ x: ox - w, y: oy }, { x: ox + w, y: oy }, { x: tipX, y: tipY }];
+      } else {
+        const midX = ox + Math.sin(tilt) * h * 0.55 + (hash(s + 8) - 0.5) * w * 0.6;
+        const midY = oy - h * 0.55;
+        pts = [{ x: ox - w, y: oy }, { x: ox + w, y: oy }, { x: midX + w * 0.3, y: midY }, { x: tipX, y: tipY }];
+      }
       g.fillStyle(t.accent, 0.75);
-      g.fillPoints([{ x: ox - w, y: oy }, { x: ox + w, y: oy },
-                    { x: ox + Math.sin(tilt) * h, y: oy - h }], true);
+      g.fillPoints(pts, true);
       g.lineStyle(0.8, t.wallHighlight, 0.5);
-      g.strokePoints([{ x: ox - w, y: oy }, { x: ox + w, y: oy },
-                      { x: ox + Math.sin(tilt) * h, y: oy - h }], true);
+      g.strokePoints(pts, true);
+      grads.push({ key: maskKeys.highlight, dx: (tipX + ox) / 2, dy: (tipY + oy) / 2, tint: t.wallHighlight, alpha: 0.48, scale: h / 8 });
     }
+    return grads;
   } else if (v === 1) {
-    // Glowing mushroom cluster
-    const count = 2 + Math.floor(Math.random() * 2);
+    // Glowing mushroom cluster — cap is a stamped gradient blob instead of a flat fill.
+    const grads = [];
+    const count = 2 + Math.floor(hash(1) * 2);
     for (let i = 0; i < count; i++) {
-      const ox = (Math.random() - 0.5) * 16;
-      const oy = (Math.random() - 0.5) * 6;
-      const sh = 7 + Math.random() * 6;
-      const cr = 4 + Math.random() * 4;
+      const s = i * 20;
+      const ox = (hash(s + 2) - 0.5) * 16;
+      const oy = (hash(s + 3) - 0.5) * 6;
+      const sh = 7 + hash(s + 4) * 6;
+      const cr = 4 + hash(s + 5) * 4;
       g.lineStyle(1.5, t.wallInner, 0.9);
       g.lineBetween(ox, oy, ox, oy - sh);
-      g.fillStyle(t.accentDim, 0.85);
-      g.fillEllipse(ox, oy - sh - cr * 0.3, cr * 2.4, cr * 1.3);
-      g.fillStyle(t.accent, 0.4);
-      g.fillEllipse(ox - cr * 0.2, oy - sh - cr * 0.5, cr * 1.4, cr * 0.7);
-      g.fillStyle(t.wallHighlight, 0.7);
-      g.fillCircle(ox - cr * 0.25, oy - sh - cr * 0.4, 1.5);
+      grads.push({ key: maskKeys.blob, dx: ox, dy: oy - sh - cr * 0.3, tint: t.accentDim, alpha: 0.85, scaleX: cr * 0.16, scaleY: cr * 0.09 });
+      grads.push({ key: maskKeys.highlight, dx: ox - cr * 0.25, dy: oy - sh - cr * 0.4, tint: t.wallHighlight, alpha: 0.8, scale: cr * 0.14 });
     }
+    return grads;
   } else {
-    // Crystal dust — scattered tiny diamonds on floor
-    g.fillStyle(t.accent, 0.25);
-    g.fillEllipse(0, 0, 20, 10);
-    const count = 5 + Math.floor(Math.random() * 4);
+    // Crystal dust — base glow is now a gradient stamp; specks stay flat (fine at this size).
+    const grads = [];
+    grads.push({ key: maskKeys.blob, dx: 0, dy: 0, tint: t.accent, alpha: 0.42, scaleX: 0.88, scaleY: 0.44 });
+    const count = 5 + Math.floor(hash(1) * 4);
     for (let i = 0; i < count; i++) {
-      const dx = (Math.random() - 0.5) * 16;
-      const dy = (Math.random() - 0.5) * 8;
-      const s  = 1.5 + Math.random() * 2;
-      g.fillStyle(t.wallHighlight, 0.55 + Math.random() * 0.35);
-      g.fillTriangle(dx, dy - s, dx + s * 0.65, dy + s * 0.4, dx - s * 0.65, dy + s * 0.4);
+      const s = i * 10;
+      const dx = (hash(s + 2) - 0.5) * 16;
+      const dy = (hash(s + 3) - 0.5) * 8;
+      const sz = 1.5 + hash(s + 4) * 2;
+      g.fillStyle(t.wallHighlight, 0.55 + hash(s + 5) * 0.35);
+      g.fillTriangle(dx, dy - sz, dx + sz * 0.65, dy + sz * 0.4, dx - sz * 0.65, dy + sz * 0.4);
     }
+    return grads;
   }
 }
 
 // Theme 2 — Volcanic
-function _gcVolcanic(g, t, v) {
+function _gcVolcanic(g, t, v, hash, maskKeys) {
   if (v === 0) {
-    // Ash patch with dark pebbles
-    g.fillStyle(0x555555, 0.18);
-    g.fillEllipse(0, 0, 24, 13);
-    g.fillStyle(0x333333, 0.12);
-    g.fillEllipse(-3, 2, 14, 7);
+    // Ash patch with dark pebbles — soft ash mounds are gradient stamps; pebbles stay flat.
+    const grads = [];
+    grads.push({ key: maskKeys.blob, dx: 0, dy: 0, tint: 0x555555, alpha: 0.28, scaleX: 0.95, scaleY: 0.52 });
+    grads.push({ key: maskKeys.blob, dx: -3, dy: 2, tint: 0x333333, alpha: 0.20, scaleX: 0.58, scaleY: 0.29 });
     for (let i = 0; i < 6; i++) {
+      const s = i * 10;
       g.fillStyle(0x2a1a10, 0.7);
-      g.fillCircle((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 10, 1.2 + Math.random() * 1.5);
+      g.fillCircle((hash(s + 2) - 0.5) * 20, (hash(s + 3) - 0.5) * 10, 1.2 + hash(s + 4) * 1.5);
     }
+    return grads;
   } else if (v === 1) {
-    // Ember cluster — small glowing coals
-    const count = 5 + Math.floor(Math.random() * 4);
+    // Ember cluster — replaces the old 3-manual-ring fake gradient with ONE bright core
+    // highlight stamp + ONE larger orange blob stamp underneath (strictly simpler & better).
+    const grads = [];
+    const count = 5 + Math.floor(hash(1) * 4);
     for (let i = 0; i < count; i++) {
-      const ox = (Math.random() - 0.5) * 18;
-      const oy = (Math.random() - 0.5) * 10;
-      const r  = 1.5 + Math.random() * 2.5;
-      g.fillStyle(0xff4400, 0.22);
-      g.fillCircle(ox, oy, r * 2.2);
-      g.fillStyle(0xff6600, 0.6);
-      g.fillCircle(ox, oy, r);
-      g.fillStyle(0xffaa44, 0.9);
-      g.fillCircle(ox, oy, r * 0.45);
+      const s = i * 20;
+      const ox = (hash(s + 2) - 0.5) * 18;
+      const oy = (hash(s + 3) - 0.5) * 10;
+      const r  = 1.5 + hash(s + 4) * 2.5;
+      grads.push({ key: maskKeys.blob, dx: ox, dy: oy, tint: 0xff6600, alpha: 0.55, scale: r * 2.2 / 16 });
+      grads.push({ key: maskKeys.highlight, dx: ox, dy: oy, tint: 0xffaa44, alpha: 0.95, scale: r * 0.9 / 6 });
     }
+    return grads;
   } else {
-    // Scorched debris — charred branch sticks with ember tips
+    // Scorched debris — charred sticks get a slight bow (were dead-straight); ember tip
+    // glow is now a soft stamp instead of a flat circle.
+    const grads = [];
     for (let i = 0; i < 3; i++) {
-      const ox  = (Math.random() - 0.5) * 14;
-      const oy  = (Math.random() - 0.5) * 8;
-      const ang = Math.random() * Math.PI;
-      const len = 8 + Math.random() * 10;
-      const ex  = ox + Math.cos(ang) * len / 2;
-      const ey  = oy + Math.sin(ang) * len / 2;
+      const s = i * 20;
+      const ox  = (hash(s + 2) - 0.5) * 14;
+      const oy  = (hash(s + 3) - 0.5) * 8;
+      const ang = hash(s + 4) * Math.PI;
+      const len = 8 + hash(s + 5) * 10;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const sxp = ox - ca * len / 2, syp = oy - sa * len / 2;
+      const exp = ox + ca * len / 2, eyp = oy + sa * len / 2;
+      const bow = (hash(s + 6) - 0.5) * len * 0.12;
+      const midX = (sxp + exp) / 2 - sa * bow, midY = (syp + eyp) / 2 + ca * bow;
       g.lineStyle(2, 0x1a0a00, 0.9);
-      g.lineBetween(ox - Math.cos(ang) * len / 2, oy - Math.sin(ang) * len / 2, ex, ey);
-      g.fillStyle(0xff4400, 0.55);
-      g.fillCircle(ex, ey, 2);
+      g.lineBetween(sxp, syp, midX, midY);
+      g.lineBetween(midX, midY, exp, eyp);
+      grads.push({ key: maskKeys.highlight, dx: exp, dy: eyp, tint: 0xff4400, alpha: 0.85, scale: 0.55 });
     }
+    return grads;
   }
 }
 
 // Theme 3 — Celestial
-function _gcCelestial(g, t, v) {
+function _gcCelestial(g, t, v, hash, maskKeys) {
   if (v === 0) {
-    // Stardust — scattered tiny bright specks
-    const count = 8 + Math.floor(Math.random() * 6);
+    // Stardust — small flat core dot + a real soft-mask halo (replaces the old flat
+    // low-alpha circle approximation of a glow).
+    const grads = [];
+    const count = 8 + Math.floor(hash(1) * 6);
     for (let i = 0; i < count; i++) {
-      const ox = (Math.random() - 0.5) * 22;
-      const oy = (Math.random() - 0.5) * 12;
-      const r  = 0.8 + Math.random() * 1.4;
-      g.fillStyle(t.wallHighlight, 0.4 + Math.random() * 0.5);
+      const s = i * 10;
+      const ox = (hash(s + 2) - 0.5) * 22;
+      const oy = (hash(s + 3) - 0.5) * 12;
+      const r  = 0.8 + hash(s + 4) * 1.4;
+      g.fillStyle(t.wallHighlight, 0.4 + hash(s + 5) * 0.5);
       g.fillCircle(ox, oy, r);
-      if (Math.random() < 0.35) {
-        g.fillStyle(t.wallHighlight, 0.16);
-        g.fillCircle(ox, oy, r * 2.5);
+      if (hash(s + 6) < 0.35) {
+        grads.push({ key: maskKeys.highlight, dx: ox, dy: oy, tint: t.wallHighlight, alpha: 0.42, scale: r * 3.2 / 6 });
       }
     }
+    return grads;
   } else if (v === 1) {
-    // Cosmic rune — small glowing inscription circle
+    // Cosmic rune — an etched glyph should stay flat linework, not go dimensional; add
+    // one low-alpha glow blob underneath for a "magically lit" read.
     g.lineStyle(1, t.accent, 0.5);
     g.strokeCircle(0, 0, 9);
     g.lineStyle(0.8, t.accent, 0.28);
@@ -1529,60 +1675,120 @@ function _gcCelestial(g, t, v) {
     }
     g.fillStyle(t.accent, 0.3);
     g.fillCircle(0, 0, 2.5);
+    return [{ key: maskKeys.blob, dx: 0, dy: 0, tint: t.accent, alpha: 0.3, scale: 1.1 }];
   } else {
-    // Void pebbles — dark stones with star-shimmer
-    const count = 3 + Math.floor(Math.random() * 3);
+    // Void pebbles — dark stones (gradient blob) with a star-shimmer highlight stamp.
+    const grads = [];
+    const count = 3 + Math.floor(hash(1) * 3);
     for (let i = 0; i < count; i++) {
-      const ox = (Math.random() - 0.5) * 16;
-      const oy = (Math.random() - 0.5) * 8;
-      const r  = 2.5 + Math.random() * 2.5;
-      g.fillStyle(t.wallInner, 0.9);
-      g.fillCircle(ox, oy, r);
+      const s = i * 20;
+      const ox = (hash(s + 2) - 0.5) * 16;
+      const oy = (hash(s + 3) - 0.5) * 8;
+      const r  = 2.5 + hash(s + 4) * 2.5;
+      grads.push({ key: maskKeys.blob, dx: ox, dy: oy, tint: t.wallInner, alpha: 0.95, scale: r * 2.4 / 16 });
       g.lineStyle(0.8, t.accentDim, 0.55);
       g.strokeCircle(ox, oy, r);
-      g.fillStyle(t.wallHighlight, 0.7);
-      g.fillCircle(ox - r * 0.3, oy - r * 0.35, 0.9);
+      grads.push({ key: maskKeys.highlight, dx: ox - r * 0.3, dy: oy - r * 0.35, tint: t.wallHighlight, alpha: 0.8, scale: 0.5 });
     }
+    return grads;
   }
 }
 
 // Theme 4 — Chaos
-function _gcChaos(g, t, v) {
+function _gcChaos(g, t, v, hash, maskKeys) {
   if (v === 0) {
-    // Reality crack — jagged fissure with void glow
-    const len = 14 + Math.random() * 12;
-    const ang = Math.random() * Math.PI;
+    // Reality crack — stays flat linework (a fissure shouldn't go dimensional); now also
+    // forks into a smaller secondary crack partway along (real fractures branch) and
+    // scatters a couple of tiny angular shatter-bit debris triangles near the mouth.
+    const len = 14 + hash(1) * 12;
+    const ang = hash(2) * Math.PI;
     const pts = [];
     for (let i = 0; i <= 5; i++) {
       const f  = i / 5;
-      const jx = i > 0 && i < 5 ? (Math.random() - 0.5) * 5 : 0;
-      const jy = i > 0 && i < 5 ? (Math.random() - 0.5) * 3 : 0;
+      const jx = i > 0 && i < 5 ? (hash(10 + i) - 0.5) * 5 : 0;
+      const jy = i > 0 && i < 5 ? (hash(20 + i) - 0.5) * 3 : 0;
       pts.push({ x: Math.cos(ang) * (len * f - len / 2) + jx,
                  y: Math.sin(ang) * (len * f - len / 2) + jy });
     }
     g.lineStyle(4, t.accent, 0.14);  g.strokePoints(pts, false);
     g.lineStyle(1.5, t.accent, 0.7); g.strokePoints(pts, false);
     g.lineStyle(0.8, 0xffffff, 0.45); g.strokePoints(pts, false);
+    // Secondary branch — forks off the crack partway along, shorter and dimmer.
+    const forkIdx = 2 + Math.floor(hash(30) * 2); // fork from segment 2 or 3
+    const forkAng = ang + (hash(31) < 0.5 ? 1 : -1) * (0.6 + hash(32) * 0.5);
+    const forkLen = len * (0.35 + hash(33) * 0.25);
+    const forkPts = [pts[forkIdx], {
+      x: pts[forkIdx].x + Math.cos(forkAng) * forkLen,
+      y: pts[forkIdx].y + Math.sin(forkAng) * forkLen,
+    }];
+    g.lineStyle(1, t.accent, 0.55); g.strokePoints(forkPts, false);
+    g.lineStyle(0.6, 0xffffff, 0.3); g.strokePoints(forkPts, false);
+    // Tiny shatter-bit debris scattered near the crack mouth.
+    for (let i = 0; i < 2; i++) {
+      const s = 40 + i * 10;
+      const dx = pts[0].x + (hash(s + 1) - 0.5) * len * 0.8;
+      const dy = pts[0].y + (hash(s + 2) - 0.5) * len * 0.5;
+      const dsz = 1.2 + hash(s + 3) * 1.3;
+      const da = hash(s + 4) * Math.PI * 2;
+      g.fillStyle(t.wallInner, 0.7);
+      g.fillTriangle(dx + Math.cos(da) * dsz, dy + Math.sin(da) * dsz,
+                      dx + Math.cos(da + 2.3) * dsz, dy + Math.sin(da + 2.3) * dsz,
+                      dx + Math.cos(da + 4.2) * dsz * 0.8, dy + Math.sin(da + 4.2) * dsz * 0.8);
+      g.lineStyle(0.6, t.accent, 0.5);
+      g.strokeTriangle(dx + Math.cos(da) * dsz, dy + Math.sin(da) * dsz,
+                        dx + Math.cos(da + 2.3) * dsz, dy + Math.sin(da + 2.3) * dsz,
+                        dx + Math.cos(da + 4.2) * dsz * 0.8, dy + Math.sin(da + 4.2) * dsz * 0.8);
+    }
+    return [{ key: maskKeys.blob, dx: 0, dy: 0, tint: t.accent, alpha: 0.32, scaleX: len / 12, scaleY: 0.4 }];
   } else if (v === 1) {
-    // Void shard cluster — angular glassy fragments
-    const count = 3 + Math.floor(Math.random() * 3);
+    // Void shard cluster — angular glassy fragments; vertex count now varies 3-4 (was a
+    // fixed triangle), and a thin low-alpha energy-crackle line connects two neighboring
+    // shards for an "unstably pulled apart" read.
+    const grads = [];
+    const count = 3 + Math.floor(hash(1) * 3);
+    const centers = [];
     for (let i = 0; i < count; i++) {
-      const ox = (Math.random() - 0.5) * 16;
-      const oy = (Math.random() - 0.5) * 10;
-      const a  = Math.random() * Math.PI * 2;
-      const s  = 3 + Math.random() * 4;
-      const pts = [
-        { x: ox + Math.cos(a)       * s, y: oy + Math.sin(a)       * s },
-        { x: ox + Math.cos(a + 2.2) * s, y: oy + Math.sin(a + 2.2) * s },
-        { x: ox + Math.cos(a + 4.0) * s * 0.8, y: oy + Math.sin(a + 4.0) * s * 0.8 },
-      ];
+      const s = i * 20;
+      const ox = (hash(s + 2) - 0.5) * 16;
+      const oy = (hash(s + 3) - 0.5) * 10;
+      const a  = hash(s + 4) * Math.PI * 2;
+      const sz = 3 + hash(s + 5) * 4;
+      let pts;
+      if (hash(s + 6) < 0.5) {
+        pts = [
+          { x: ox + Math.cos(a)       * sz, y: oy + Math.sin(a)       * sz },
+          { x: ox + Math.cos(a + 2.2) * sz, y: oy + Math.sin(a + 2.2) * sz },
+          { x: ox + Math.cos(a + 4.0) * sz * 0.8, y: oy + Math.sin(a + 4.0) * sz * 0.8 },
+        ];
+      } else {
+        pts = [
+          { x: ox + Math.cos(a)         * sz,       y: oy + Math.sin(a)         * sz },
+          { x: ox + Math.cos(a + 1.6)   * sz * 0.9, y: oy + Math.sin(a + 1.6)   * sz * 0.9 },
+          { x: ox + Math.cos(a + 3.2)   * sz,       y: oy + Math.sin(a + 3.2)   * sz },
+          { x: ox + Math.cos(a + 4.7)   * sz * 0.8, y: oy + Math.sin(a + 4.7)   * sz * 0.8 },
+        ];
+      }
       g.fillStyle(t.wallInner, 0.8);
       g.fillPoints(pts, true);
       g.lineStyle(0.8, t.accent, 0.6);
       g.strokePoints(pts, true);
+      grads.push({ key: maskKeys.highlight, dx: pts[0].x, dy: pts[0].y, tint: t.accent, alpha: 0.42, scale: sz / 7 });
+      centers.push({ x: ox, y: oy });
     }
+    // Energy-crackle line between two neighboring shards, thin and low-alpha.
+    if (centers.length >= 2) {
+      const ci = Math.floor(hash(90) * centers.length);
+      const cj = (ci + 1) % centers.length;
+      const mx = (centers[ci].x + centers[cj].x) / 2 + (hash(91) - 0.5) * 4;
+      const my = (centers[ci].y + centers[cj].y) / 2 + (hash(92) - 0.5) * 4;
+      g.lineStyle(0.6, t.accent, 0.35);
+      g.strokePoints([centers[ci], { x: mx, y: my }, centers[cj]], false);
+    }
+    return grads;
   } else {
-    // Distortion ripple — concentric broken ellipses
+    // Distortion ripple — concentric broken ellipses stay flat stroke art (ripples read
+    // as line art); now also gets a few short angular glitch tick-marks radiating from
+    // the center, tying it to the same crack/shard fracture language as the other variants.
     for (let i = 0; i < 3; i++) {
       const r = 5 + i * 5;
       g.lineStyle(0.8, t.accent, 0.22 - i * 0.06);
@@ -1590,85 +1796,141 @@ function _gcChaos(g, t, v) {
     }
     g.fillStyle(t.accentDim, 0.2);
     g.fillEllipse(0, 0, 10, 5);
+    const tickN = 3 + Math.floor(hash(1) * 3);
+    for (let i = 0; i < tickN; i++) {
+      const a = (i / tickN) * Math.PI * 2 + (hash(40 + i) - 0.5) * 0.4;
+      const r0 = 9 + hash(45 + i) * 3, r1 = r0 + 2 + hash(50 + i) * 3;
+      g.lineStyle(0.8, 0xffffff, 0.4);
+      g.lineBetween(Math.cos(a) * r0, Math.sin(a) * r0 * 0.5, Math.cos(a) * r1, Math.sin(a) * r1 * 0.5);
+    }
+    return [{ key: maskKeys.blob, dx: 0, dy: 0, tint: t.accentDim, alpha: 0.26, scaleX: 0.8, scaleY: 0.4 }];
   }
 }
 
-// ── Mid-size prop drawing ──────────────────────────────────────────────────
+// ── Mid-size prop art (canvas-baked, real gradients) ────────────────────────
+// Same per-instance canvas-bake pattern already proven for obstacles
+// (obstacleArt.js): draw once with real createLinearGradient/createRadialGradient
+// calls, cache as a texture, display as a single Image — instead of a live
+// Graphics object replaying its draw commands every frame (CLAUDE.md rule 8).
+// A shared, generous fixed canvas covers every variant's extents (simpler than
+// per-variant sizing math for a 10-variant system); local (0,0) after the
+// translate below is the ground-contact point, matching the original
+// Graphics-local coordinate convention (negative y = up).
+const MP_PAD = 10, MP_ABOVE = 72, MP_BELOW = 30, MP_HALFW = 46;
+const MP_CW = Math.ceil((MP_HALFW + MP_PAD) * 2);
+const MP_CH = Math.ceil(MP_PAD + MP_ABOVE + MP_BELOW);
+const MP_OX = MP_CW / 2;
+const MP_OY = MP_PAD + MP_ABOVE;
 
-function _drawMidProp(g, themeIdx, t) {
-  const v = Math.floor(Math.random() * 2);
+function _mpFillCircle(ctx, x, y, r, color, alpha) {
+  ctx.fillStyle = hexToRgba(color, alpha);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+}
+function _mpFillEllipse(ctx, x, y, w, h, color, alpha) {
+  ctx.fillStyle = hexToRgba(color, alpha);
+  ctx.beginPath(); ctx.ellipse(x, y, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.fill();
+}
+function _mpLine(ctx, x1, y1, x2, y2, width, color, alpha) {
+  ctx.strokeStyle = hexToRgba(color, alpha); ctx.lineWidth = width;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+function _mpPolyPath(ctx, pts) {
+  ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath();
+}
+function _mpRoundRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x,     y + h, rr);
+  ctx.arcTo(x,     y + h, x,     y,     rr);
+  ctx.arcTo(x,     y,     x + w, y,     rr);
+  ctx.closePath();
+}
+// Radial clump dome, lit toward the upper-left — the "real gradient instead of
+// a flat same-tone circle" building block reused across the bush/foliage clumps.
+function _mpClumpDome(ctx, cx, cy, r, color, alpha) {
+  const lx = cx - r * 0.32, ly = cy - r * 0.32;
+  const grad = ctx.createRadialGradient(lx, ly, 0, cx, cy, r * 1.15);
+  grad.addColorStop(0,   hexToRgba(shade(color, 1.35), alpha));
+  grad.addColorStop(0.6, hexToRgba(color, alpha));
+  grad.addColorStop(1,   hexToRgba(shade(color, 0.65), alpha));
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+}
+
+function _bakeMidPropTexture(scene, key, themeIdx, t, hash) {
+  if (scene.textures.exists(key)) scene.textures.remove(key);
+  const tex = scene.textures.createCanvas(key, MP_CW, MP_CH);
+  const ctx = tex.getContext();
+  ctx.save();
+  ctx.translate(MP_OX, MP_OY);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const v = Math.floor(hash(0) * 2);
   switch (themeIdx) {
-    case 0: _mpGreenFields(g, t, v);   break;
-    case 1: _mpCrystalCaves(g, t, v); break;
-    case 2: _mpVolcanic(g, t, v);     break;
-    case 3: _mpCelestial(g, t, v);    break;
-    case 4: _mpChaos(g, t, v);        break;
+    case 0: _mpGreenFields(ctx, t, v, hash);  break;
+    case 1: _mpCrystalCaves(ctx, t, v, hash); break;
+    case 2: _mpVolcanic(ctx, t, v, hash);     break;
+    case 3: _mpCelestial(ctx, t, v, hash);    break;
+    case 4: _mpChaos(ctx, t, v, hash);        break;
   }
+  ctx.restore();
+  tex.refresh();
+  return { key, originX: MP_OX / MP_CW, originY: MP_OY / MP_CH };
 }
 
 // Theme 0 — Green Fields mid-size
-function _mpGreenFields(g, t, v) {
+function _mpGreenFields(ctx, t, v, hash) {
   if (v === 0) {
-    // Round layered bush
-    // Extended occluder shadow — faint, covers player foot zone (y+24)
-    g.fillStyle(0x000000, 0.13);
-    g.fillEllipse(3, 14, 56, 24);
-    // Visual shadow
-    g.fillStyle(0x000000, 0.26);
-    g.fillEllipse(4, 6, 48, 13);
-    // Dark base layer
-    g.fillStyle(0x1a4010, 1);
-    g.fillCircle(-6, -4, 16);  g.fillCircle(7, -6, 18);  g.fillCircle(0, -10, 14);
-    // Mid layer
-    g.fillStyle(0x2e6820, 1);
-    g.fillCircle(-5, -8, 12);  g.fillCircle(6, -10, 14);
-    // Accent layer
-    g.fillStyle(0x4a9030, 1);
-    g.fillCircle(-2, -13, 9);  g.fillCircle(8, -14, 7);
-    // Highlight layer
-    g.fillStyle(0x52aa3e, 0.74);
-    g.fillCircle(4, -13, 9);
-    g.fillStyle(0x7ec850, 0.44);
-    g.fillCircle(2, -16, 5);
-    // Berries
+    // Round layered bush — clump domes carry a real lit-upper-left radial
+    // gradient (via _mpClumpDome) instead of flat same-tone circles.
+    _mpFillEllipse(ctx, 3, 14, 56, 24, 0x000000, 0.13);   // extended occluder shadow
+    _mpFillEllipse(ctx, 4, 6,  48, 13, 0x000000, 0.26);   // visual shadow
+    _mpClumpDome(ctx, -6, -4, 16, 0x2e6820, 1);
+    _mpClumpDome(ctx, 7,  -6, 18, 0x2e6820, 1);
+    _mpClumpDome(ctx, 0,  -10, 14, 0x2e6820, 1);
+    _mpClumpDome(ctx, -5, -8, 12, 0x4a9030, 1);
+    _mpClumpDome(ctx, 6,  -10, 14, 0x4a9030, 1);
+    _mpClumpDome(ctx, -2, -13, 9,  0x52aa3e, 1);
+    _mpClumpDome(ctx, 8,  -14, 7,  0x52aa3e, 1);
+    _mpClumpDome(ctx, 4,  -13, 9,  0x7ec850, 0.9);
+    _mpClumpDome(ctx, 2,  -16, 5,  0x9de060, 0.7);
+    // Berries — small highlight-core radial each, instead of a flat dot + flat speck
     const berryC = [0xee3322, 0xff5544, 0xcc2211];
     for (let i = 0; i < 6; i++) {
-      const bx = (Math.random() - 0.5) * 24;
-      const by = -4 - Math.random() * 14;
-      g.fillStyle(berryC[i % 3], 0.80);
-      g.fillCircle(bx, by, 1.8 + Math.random() * 0.8);
-      g.fillStyle(0xffffff, 0.38);
-      g.fillCircle(bx - 0.7, by - 0.7, 0.65);
+      const s = 20 + i * 10;
+      const bx = (hash(s + 1) - 0.5) * 24;
+      const by = -4 - hash(s + 2) * 14;
+      const br = 1.8 + hash(s + 3) * 0.8;
+      const grad = ctx.createRadialGradient(bx - br * 0.3, by - br * 0.3, 0, bx, by, br);
+      grad.addColorStop(0,    hexToRgba(0xffffff, 0.85));
+      grad.addColorStop(0.35, hexToRgba(berryC[i % 3], 0.9));
+      grad.addColorStop(1,    hexToRgba(shade(berryC[i % 3], 0.7), 0.8));
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
     }
-    // Top leaf specular
-    g.fillStyle(0xa0e060, 0.28);
-    g.fillEllipse(-3, -17, 8, 4);
   } else {
-    // Tall fern — arcing fronds with shadow underlay
-    // Extended occluder shadow (reaches y+25)
-    g.fillStyle(0x000000, 0.11);
-    g.fillEllipse(2, 14, 44, 24);
-    g.fillStyle(0x000000, 0.20);
-    g.fillEllipse(3, 4, 36, 10);
-    const fronds = 6 + Math.floor(Math.random() * 3);
+    // Tall fern — arcing fronds stay linework (thin natural shapes read fine flat);
+    // leaflets get a subtle 2-tone gradient instead of one flat alternating colour.
+    _mpFillEllipse(ctx, 2, 14, 44, 24, 0x000000, 0.11);
+    _mpFillEllipse(ctx, 3, 4,  36, 10, 0x000000, 0.20);
+    const fronds = 6 + Math.floor(hash(20) * 3);
     for (let i = 0; i < fronds; i++) {
-      const t2  = i / (fronds - 1);
-      const ang = -Math.PI / 2 - Math.PI / 3 + t2 * (Math.PI * 2 / 3);
-      const len = 18 + Math.random() * 14;
-      const bend = 0.22 + Math.random() * 0.18;
+      const s = 30 + i * 20;
+      const tf  = fronds > 1 ? i / (fronds - 1) : 0.5;
+      const ang = -Math.PI / 2 - Math.PI / 3 + tf * (Math.PI * 2 / 3);
+      const len = 18 + hash(s + 1) * 14;
+      const bend = 0.22 + hash(s + 2) * 0.18;
       const ctrlX = Math.cos(ang + bend * 0.4) * len * 0.5;
       const ctrlY = Math.sin(ang + bend * 0.4) * len * 0.5;
       const tipX  = Math.cos(ang + bend) * len;
       const tipY  = Math.sin(ang + bend) * len;
-      // Shadow stroke
-      g.lineStyle(2.5, 0x1a3a08, 0.38);
-      g.lineBetween(1, 1, ctrlX + 1, ctrlY + 1);
-      g.lineBetween(ctrlX + 1, ctrlY + 1, tipX + 1, tipY + 1);
-      // Main frond
-      g.lineStyle(1.8, 0x2a6010, 0.92);
-      g.lineBetween(0, 0, ctrlX, ctrlY);
-      g.lineBetween(ctrlX, ctrlY, tipX, tipY);
-      // Leaflets with alternating colour
+      _mpLine(ctx, 1, 1, ctrlX + 1, ctrlY + 1, 2.5, 0x1a3a08, 0.38);
+      _mpLine(ctx, ctrlX + 1, ctrlY + 1, tipX + 1, tipY + 1, 2.5, 0x1a3a08, 0.38);
+      _mpLine(ctx, 0, 0, ctrlX, ctrlY, 1.8, 0x2a6010, 0.92);
+      _mpLine(ctx, ctrlX, ctrlY, tipX, tipY, 1.8, 0x2a6010, 0.92);
       const leafCount = 3 + Math.floor(len / 7);
       for (let j = 1; j < leafCount; j++) {
         const f  = j / leafCount;
@@ -1676,26 +1938,27 @@ function _mpGreenFields(g, t, v) {
         const ly = ctrlY * (1 - f) + tipY * f;
         const lr = (1 - f) * 5.5 + 1.5;
         const la = ang + Math.PI * 0.45 * (j % 2 === 0 ? 1 : -1);
-        g.fillStyle(j % 2 === 0 ? 0x3a8020 : 0x4a9428, 0.80);
-        g.fillEllipse(lx + Math.cos(la) * lr, ly + Math.sin(la) * lr, lr * 2.2, lr * 0.85);
+        const leafCol = j % 2 === 0 ? 0x3a8020 : 0x4a9428;
+        const elx = lx + Math.cos(la) * lr, ely = ly + Math.sin(la) * lr;
+        const grad = ctx.createLinearGradient(elx - lr, ely - lr * 0.4, elx + lr, ely + lr * 0.4);
+        grad.addColorStop(0, hexToRgba(shade(leafCol, 1.3), 0.85));
+        grad.addColorStop(1, hexToRgba(shade(leafCol, 0.75), 0.8));
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.ellipse(elx, ely, lr * 1.1, lr * 0.425, 0, 0, Math.PI * 2); ctx.fill();
       }
     }
   }
 }
 
 // Theme 1 — Crystal Caves mid-size
-function _mpCrystalCaves(g, t, v) {
+function _mpCrystalCaves(ctx, t, v, hash) {
   if (v === 0) {
-    // Crystal spire formation — dark base rock + multiple angled shards
-    // Extended occluder shadow (reaches y+25)
-    g.fillStyle(0x000000, 0.11);
-    g.fillEllipse(3, 15, 54, 24);
-    g.fillStyle(0x000000, 0.4);
-    g.fillEllipse(4, 6, 50, 15);
-    g.fillStyle(t.wallInner, 1);
-    g.fillEllipse(0, 2, 42, 18);
-    g.fillStyle(0x000000, 0.4);
-    g.fillEllipse(4, 3, 28, 12);
+    // Crystal spire formation — shards get a length-wise gradient (dark base ->
+    // bright tip) instead of a flat fill.
+    _mpFillEllipse(ctx, 3, 15, 54, 24, 0x000000, 0.11);
+    _mpFillEllipse(ctx, 4, 6,  50, 15, 0x000000, 0.4);
+    _mpFillEllipse(ctx, 0, 2,  42, 18, t.wallInner, 1);
+    _mpFillEllipse(ctx, 4, 3,  28, 12, 0x000000, 0.4);
     const shards = [
       { ox: 0,   h: 32, tilt: 0,     c: t.accent      },
       { ox: -9,  h: 22, tilt: -0.22, c: t.accentDim   },
@@ -1703,207 +1966,272 @@ function _mpCrystalCaves(g, t, v) {
       { ox: -18, h: 15, tilt: -0.4,  c: t.accentDim   },
       { ox: 17,  h: 18, tilt: 0.35,  c: t.wallHighlight},
     ];
-    shards.forEach(({ ox, h, tilt, c }) => {
-      const w   = 4 + Math.random() * 3;
+    shards.forEach(({ ox, h, tilt, c }, i) => {
+      const w   = 4 + hash(20 + i * 10) * 3;
       const tipX = ox + Math.sin(tilt) * h;
       const tipY = -(h - Math.abs(Math.sin(tilt)) * 4);
       const pts  = [{ x: ox - w, y: 0 }, { x: ox + w, y: 0 },
                     { x: tipX + w * 0.3, y: tipY }, { x: tipX - w * 0.3, y: tipY }];
-      g.fillStyle(c, 0.82);
-      g.fillPoints(pts, true);
-      g.lineStyle(1, t.wallHighlight, 0.38);
-      g.strokePoints(pts, true);
-      g.fillStyle(0xffffff, 0.5);
-      g.fillCircle(tipX, tipY, 1.8);
+      const grad = ctx.createLinearGradient(ox, 0, tipX, tipY);
+      grad.addColorStop(0,   hexToRgba(shade(c, 0.7), 0.85));
+      grad.addColorStop(0.6, hexToRgba(c, 0.85));
+      grad.addColorStop(1,   hexToRgba(shade(c, 1.4), 0.9));
+      _mpPolyPath(ctx, pts); ctx.fillStyle = grad; ctx.fill();
+      ctx.strokeStyle = hexToRgba(t.wallHighlight, 0.38); ctx.lineWidth = 1; ctx.stroke();
+      _mpFillCircle(ctx, tipX, tipY, 1.8, 0xffffff, 0.5);
     });
   } else {
-    // Bioluminescent mushroom — large glowing cap on tapered stem
-    // Extended occluder shadow (reaches y+25)
-    g.fillStyle(0x000000, 0.11);
-    g.fillEllipse(2, 14, 48, 24);
-    g.fillStyle(0x000000, 0.3);
-    g.fillEllipse(3, 5, 44, 13);
-    g.fillStyle(t.wallInner, 1);
-    g.fillRoundedRect(-5, -28, 10, 28, 5 * 0.5);
-    g.fillStyle(t.accentDim, 0.6);
+    // Bioluminescent mushroom — cap gets a real radial gradient instead of flat
+    // overlay ellipses.
+    _mpFillEllipse(ctx, 2, 14, 48, 24, 0x000000, 0.11);
+    _mpFillEllipse(ctx, 3, 5,  44, 13, 0x000000, 0.3);
+    ctx.fillStyle = hexToRgba(t.wallInner, 1);
+    _mpRoundRectPath(ctx, -5, -28, 10, 28, 2.5); ctx.fill();
     for (let i = 0; i < 4; i++) {
-      g.fillCircle((Math.random() - 0.5) * 6, -28 * (0.2 + Math.random() * 0.65), 1.5 + Math.random());
+      const s = 20 + i * 5;
+      _mpFillCircle(ctx, (hash(s + 1) - 0.5) * 6, -28 * (0.2 + hash(s + 2) * 0.65), 1.5 + hash(s + 3), t.accentDim, 0.6);
     }
-    g.fillStyle(t.accentDim, 1);
-    g.fillEllipse(0, -28, 36, 20);
-    g.fillStyle(t.accent, 0.6);
-    g.fillEllipse(-3, -31, 24, 14);
+    const capGrad = ctx.createRadialGradient(-8, -33, 2, 0, -28, 20);
+    capGrad.addColorStop(0,   hexToRgba(shade(t.accent, 1.5), 0.95));
+    capGrad.addColorStop(0.5, hexToRgba(t.accentDim, 0.95));
+    capGrad.addColorStop(1,   hexToRgba(shade(t.accentDim, 0.7), 0.9));
+    ctx.fillStyle = capGrad;
+    ctx.beginPath(); ctx.ellipse(0, -28, 18, 10, 0, 0, Math.PI * 2); ctx.fill();
     for (let i = 0; i < 5; i++) {
       const a = (i / 5) * Math.PI;
-      g.fillStyle(t.wallHighlight, 0.72);
-      g.fillCircle(Math.cos(a) * 11, -28 + Math.sin(a) * 4 + 3, 2);
+      _mpFillCircle(ctx, Math.cos(a) * 11, -28 + Math.sin(a) * 4 + 3, 2, t.wallHighlight, 0.72);
     }
-    g.lineStyle(1.5, t.wallInner, 0.65);
-    g.strokeEllipse(0, -28, 36, 20);
+    ctx.strokeStyle = hexToRgba(t.wallInner, 0.65); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(0, -28, 18, 10, 0, 0, Math.PI * 2); ctx.stroke();
   }
 }
 
 // Theme 2 — Volcanic mid-size
-function _mpVolcanic(g, t, v) {
+function _mpVolcanic(ctx, t, v, hash) {
   if (v === 0) {
-    // Charred dead tree — angular blackened limbs with ember tips
-    // Extended occluder shadow (reaches y+25)
-    g.fillStyle(0x000000, 0.11);
-    g.fillEllipse(3, 14, 46, 24);
-    g.fillStyle(0x000000, 0.3);
-    g.fillEllipse(4, 5, 42, 12);
-    g.lineStyle(6, 0x1a0800, 1);  g.lineBetween(0, 0, -2, -22);
-    g.lineStyle(4, 0x260e04, 1);  g.lineBetween(-2, -22, 12, -36);
-    g.lineStyle(4, 0x260e04, 1);  g.lineBetween(-2, -22, -14, -32);
-    g.lineStyle(3, 0x1a0800, 1);  g.lineBetween(12, -36, 18, -44);
-    g.lineStyle(2, 0x1a0800, 1);  g.lineBetween(12, -36, 22, -30);
-    g.lineStyle(0.8, 0x0f0400, 0.6);
-    g.lineBetween(-1, -5, 1, -18); g.lineBetween(-2, -10, -4, -20);
+    // Charred dead tree — bare branches stay flat linework; ember tips get a real
+    // radial glow instead of 3 stacked flat circles.
+    _mpFillEllipse(ctx, 3, 14, 46, 24, 0x000000, 0.11);
+    _mpFillEllipse(ctx, 4, 5,  42, 12, 0x000000, 0.3);
+    _mpLine(ctx, 0, 0, -2, -22, 6, 0x1a0800, 1);
+    _mpLine(ctx, -2, -22, 12, -36, 4, 0x260e04, 1);
+    _mpLine(ctx, -2, -22, -14, -32, 4, 0x260e04, 1);
+    _mpLine(ctx, 12, -36, 18, -44, 3, 0x1a0800, 1);
+    _mpLine(ctx, 12, -36, 22, -30, 2, 0x1a0800, 1);
+    _mpLine(ctx, -1, -5, 1, -18, 0.8, 0x0f0400, 0.6);
+    _mpLine(ctx, -2, -10, -4, -20, 0.8, 0x0f0400, 0.6);
     [[18, -44], [22, -30], [-14, -32]].forEach(([ex, ey]) => {
-      g.fillStyle(0xff4400, 0.28); g.fillCircle(ex, ey, 5);
-      g.fillStyle(0xff8800, 0.7);  g.fillCircle(ex, ey, 2.5);
-      g.fillStyle(0xffcc44, 0.9);  g.fillCircle(ex, ey, 1.2);
+      const grad = ctx.createRadialGradient(ex, ey, 0, ex, ey, 5.5);
+      grad.addColorStop(0,    hexToRgba(0xffeeaa, 0.95));
+      grad.addColorStop(0.35, hexToRgba(0xff8800, 0.75));
+      grad.addColorStop(1,    hexToRgba(0xff4400, 0));
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(ex, ey, 5.5, 0, Math.PI * 2); ctx.fill();
     });
   } else {
-    // Sulfur crystal formation — obsidian rock with angular yellow-orange shards
-    // Extended occluder shadow (reaches y+25)
-    g.fillStyle(0x000000, 0.11);
-    g.fillEllipse(3, 15, 50, 24);
-    g.fillStyle(0x000000, 0.35);
-    g.fillEllipse(4, 6, 46, 14);
+    // Sulfur crystal formation — shards get a length-wise gradient like Crystal Caves.
+    _mpFillEllipse(ctx, 3, 15, 50, 24, 0x000000, 0.11);
+    _mpFillEllipse(ctx, 4, 6,  46, 14, 0x000000, 0.35);
     const basePts = [];
     for (let i = 0; i < 7; i++) {
       const a = (i / 7) * Math.PI * 2;
       const r = 16 + (i % 2) * 4;
       basePts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r * 0.5 + 2 });
     }
-    g.fillStyle(0x0e0806, 1);
-    g.fillPoints(basePts, true);
-    g.lineStyle(1.5, 0x1a1008, 0.8);
-    g.strokePoints(basePts, true);
+    _mpPolyPath(ctx, basePts);
+    ctx.fillStyle = hexToRgba(0x0e0806, 1); ctx.fill();
+    ctx.strokeStyle = hexToRgba(0x1a1008, 0.8); ctx.lineWidth = 1.5; ctx.stroke();
     [{ ox: -5, h: 24, c: 0xcc8800 }, { ox: 8, h: 18, c: 0xffaa00 },
      { ox: 0,  h: 28, c: 0xdd9900 }, { ox: -14, h: 14, c: 0xbb7700 },
-     { ox: 14, h: 16, c: 0xffbb22 }].forEach(({ ox, h, c }) => {
-      const w = 4 + Math.random() * 3;
-      const tilt = (Math.random() - 0.5) * 0.3;
-      g.fillStyle(c, 0.85);
-      g.fillPoints([{ x: ox - w, y: 0 }, { x: ox + w, y: 0 },
-                    { x: ox + Math.sin(tilt) * h, y: -h }], true);
-      g.lineStyle(0.8, 0xffcc44, 0.28);
-      g.strokePoints([{ x: ox - w, y: 0 }, { x: ox + w, y: 0 },
-                      { x: ox + Math.sin(tilt) * h, y: -h }], true);
+     { ox: 14, h: 16, c: 0xffbb22 }].forEach(({ ox, h, c }, i) => {
+      const w = 4 + hash(20 + i * 10) * 3;
+      const tilt = (hash(25 + i * 10) - 0.5) * 0.3;
+      const tipX = ox + Math.sin(tilt) * h, tipY = -h;
+      const grad = ctx.createLinearGradient(ox, 0, tipX, tipY);
+      grad.addColorStop(0, hexToRgba(shade(c, 0.6), 0.9));
+      grad.addColorStop(1, hexToRgba(shade(c, 1.35), 0.95));
+      _mpPolyPath(ctx, [{ x: ox - w, y: 0 }, { x: ox + w, y: 0 }, { x: tipX, y: tipY }]);
+      ctx.fillStyle = grad; ctx.fill();
+      ctx.strokeStyle = hexToRgba(0xffcc44, 0.28); ctx.lineWidth = 0.8; ctx.stroke();
     });
   }
 }
 
 // Theme 3 — Celestial mid-size
-function _mpCelestial(g, t, v) {
+function _mpCelestial(ctx, t, v, hash) {
   if (v === 0) {
-    // Ancient obelisk fragment — tapered stone with gold inlay
-    const pw = 12, ph = 40;
-    // Extended occluder shadow (reaches y+25)
-    g.fillStyle(0x000000, 0.11);
-    g.fillEllipse(3, 14, 36, 24);
-    g.fillStyle(0x000000, 0.3);
-    g.fillEllipse(4, 6, 32, 10);
-    const body = [{ x: -pw / 2, y: 0 }, { x: pw / 2, y: 0 },
-                  { x: pw / 2 - 2, y: -ph }, { x: -pw / 2 + 2, y: -ph }];
-    g.fillStyle(t.wallInner, 1);
-    g.fillPoints(body, true);
-    g.fillStyle(0x000000, 0.55);
-    g.fillRect(pw * 0.1, -ph, pw * 0.4, ph);
-    // Gold bands + rune marks
-    g.lineStyle(1, t.accentDim, 0.55);
-    g.lineBetween(-pw / 2, -ph * 0.25, pw / 2 - 2, -ph * 0.25);
-    g.lineBetween(-pw / 2, -ph * 0.6,  pw / 2 - 2, -ph * 0.6);
-    g.lineStyle(0.8, t.accent, 0.4);
-    g.lineBetween(-pw * 0.25, -ph * 0.35, pw * 0.25, -ph * 0.35);
-    g.lineBetween(-pw * 0.1,  -ph * 0.45, pw * 0.1,  -ph * 0.45);
-    // Gold capstone
-    g.fillStyle(t.accentDim, 0.8);
-    g.fillTriangle(-pw / 2 + 2, -ph, pw / 2 - 2, -ph, 0, -ph - 10);
-    g.lineStyle(1.5, t.wallShadow, 0.7);
-    g.strokePoints(body, true);
+    // Starlight frond cluster — reads as actual foliage (a "bush"), not architecture.
+    // Same arcing-frond technique as the Green Fields fern (_mpGreenFields), recolored
+    // for Celestial: cool indigo-blue frond bodies (matching the spire/rock stone tone)
+    // with a small glowing gold star-sparkle at each tip instead of green leaflets — a
+    // celestial garden shrub rather than a miniature obelisk.
+    _mpFillEllipse(ctx, 3, 14, 46, 24, 0x000000, 0.11);
+    _mpFillEllipse(ctx, 4, 5,  40, 12, 0x000000, 0.28);
+    const fronds = 7 + Math.floor(hash(10) * 3);
+    for (let i = 0; i < fronds; i++) {
+      const s = 20 + i * 20;
+      const tf  = fronds > 1 ? i / (fronds - 1) : 0.5;
+      const ang = -Math.PI / 2 - Math.PI / 2.6 + tf * (Math.PI / 1.3);
+      const len = 15 + hash(s + 1) * 15;
+      const bend = 0.20 + hash(s + 2) * 0.22;
+      const ctrlX = Math.cos(ang + bend * 0.4) * len * 0.5;
+      const ctrlY = Math.sin(ang + bend * 0.4) * len * 0.5;
+      const tipX  = Math.cos(ang + bend) * len;
+      const tipY  = Math.sin(ang + bend) * len;
+      // Shadow stroke
+      ctx.strokeStyle = 'rgba(8,8,20,0.35)'; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.moveTo(1, 1); ctx.lineTo(ctrlX + 1, ctrlY + 1); ctx.lineTo(tipX + 1, tipY + 1); ctx.stroke();
+      // Main frond — gradient along its own body, dark base rising to a lit indigo tip
+      const frondG = ctx.createLinearGradient(0, 0, tipX, tipY);
+      frondG.addColorStop(0, hexToRgba(shade(t.wallInner, 0.70), 0.95));
+      frondG.addColorStop(1, hexToRgba(shade(t.wallInner, 1.70), 0.95));
+      ctx.strokeStyle = frondG; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(ctrlX, ctrlY); ctx.lineTo(tipX, tipY); ctx.stroke();
+      // Star-glow tip
+      const glow = ctx.createRadialGradient(tipX, tipY, 0, tipX, tipY, 4.5);
+      glow.addColorStop(0, hexToRgba(t.wallHighlight, 0.95));
+      glow.addColorStop(1, hexToRgba(t.accent, 0));
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(tipX, tipY, 4.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath(); ctx.arc(tipX, tipY, 1, 0, Math.PI * 2); ctx.fill();
+    }
   } else {
-    // Cosmic orb on a carved stone pedestal
-    // Extended occluder shadow (reaches y+25)
-    g.fillStyle(0x000000, 0.11);
-    g.fillEllipse(3, 14, 40, 24);
-    g.fillStyle(0x000000, 0.3);
-    g.fillEllipse(4, 6, 36, 11);
-    g.fillStyle(t.wallInner, 1);
-    g.fillRoundedRect(-12, -10, 24, 10, 3);
-    g.lineStyle(1, t.wallShadow, 0.65);
-    g.strokeRoundedRect(-12, -10, 24, 10, 3);
-    const or = 14;
-    g.fillStyle(t.floor, 0.95);
-    g.fillCircle(0, -10 - or, or);
-    g.fillStyle(t.accent, 0.1);
-    g.fillCircle(0, -10 - or, or);
-    g.lineStyle(1, t.accent, 0.22);
-    g.strokeCircle(0, -10 - or, or);
-    g.lineStyle(0.8, t.accentDim, 0.18);
-    g.strokeCircle(0, -10 - or, or * 0.7);
-    g.fillStyle(t.wallHighlight, 0.38);
-    g.fillCircle(-or * 0.3, -10 - or - or * 0.3, or * 0.22);
-    g.fillStyle(0xffffff, 0.22);
-    g.fillCircle(-or * 0.32, -10 - or - or * 0.32, or * 0.1);
+    // Cosmic orb on a carved stone pedestal — orb gets a real radial gradient plus
+    // a soft outer glow, instead of stacked flat circles.
+    _mpFillEllipse(ctx, 3, 14, 40, 24, 0x000000, 0.11);
+    _mpFillEllipse(ctx, 4, 6,  36, 11, 0x000000, 0.3);
+    ctx.fillStyle = hexToRgba(t.wallInner, 1);
+    _mpRoundRectPath(ctx, -12, -10, 24, 10, 3); ctx.fill();
+    ctx.strokeStyle = hexToRgba(t.wallShadow, 0.65); ctx.lineWidth = 1;
+    _mpRoundRectPath(ctx, -12, -10, 24, 10, 3); ctx.stroke();
+    const or = 14, ocy = -10 - or;
+    const glow = ctx.createRadialGradient(0, ocy, or * 0.6, 0, ocy, or * 1.8);
+    glow.addColorStop(0, hexToRgba(t.accent, 0.18));
+    glow.addColorStop(1, hexToRgba(t.accent, 0));
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0, ocy, or * 1.8, 0, Math.PI * 2); ctx.fill();
+    const orbGrad = ctx.createRadialGradient(-or * 0.32, ocy - or * 0.32, 1, 0, ocy, or);
+    orbGrad.addColorStop(0,   hexToRgba(0xffffff, 0.55));
+    orbGrad.addColorStop(0.3, hexToRgba(shade(t.accent, 1.3), 0.55));
+    orbGrad.addColorStop(1,   hexToRgba(t.floor, 0.95));
+    ctx.fillStyle = orbGrad;
+    ctx.beginPath(); ctx.arc(0, ocy, or, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = hexToRgba(t.accent, 0.22); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(0, ocy, or, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = hexToRgba(t.accentDim, 0.18); ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.arc(0, ocy, or * 0.7, 0, Math.PI * 2); ctx.stroke();
     for (let i = 0; i < 5; i++) {
-      const sa = Math.random() * Math.PI * 2;
-      const sd = Math.random() * or * 0.65;
-      g.fillStyle(t.wallHighlight, 0.7);
-      g.fillCircle(Math.cos(sa) * sd, -10 - or + Math.sin(sa) * sd, 0.9 + Math.random() * 0.8);
+      const s = 20 + i * 5;
+      const sa = hash(s + 1) * Math.PI * 2;
+      const sd = hash(s + 2) * or * 0.65;
+      _mpFillCircle(ctx, Math.cos(sa) * sd, ocy + Math.sin(sa) * sd, 0.9 + hash(s + 3) * 0.8, t.wallHighlight, 0.7);
     }
   }
 }
 
 // Theme 4 — Chaos mid-size
-function _mpChaos(g, t, v) {
+function _mpChaos(ctx, t, v, hash) {
   if (v === 0) {
-    // Chaos crystal — irregular fractured body with glowing internal cracks
-    // Extended occluder shadow (reaches y+25)
-    g.fillStyle(0x000000, 0.11);
-    g.fillEllipse(3, 14, 48, 24);
-    g.fillStyle(0x000000, 0.35);
-    g.fillEllipse(4, 6, 44, 13);
+    // Chaos crystal — body gets a directional gradient instead of a flat fill;
+    // crack veining stays flat linework.
+    _mpFillEllipse(ctx, 3, 14, 48, 24, 0x000000, 0.11);
+    _mpFillEllipse(ctx, 4, 6,  44, 13, 0x000000, 0.35);
     const body = [
       { x: 0, y: -36 }, { x: 14, y: -24 }, { x: 18, y: -10 },
       { x: 10, y: 2 },  { x: -8, y: 4 },   { x: -18, y: -8 },
       { x: -12, y: -26}, { x: -4, y: -34 },
     ];
-    g.fillStyle(t.wallInner, 1);
-    g.fillPoints(body, true);
-    g.lineStyle(1.5, t.accent, 0.65);
-    g.lineBetween(0, -36, 6, -18); g.lineBetween(6, -18, 12, -4);
-    g.lineBetween(-12, -26, -4, -12); g.lineBetween(-4, -12, 6, -18);
-    g.fillStyle(t.accent, 0.07);
-    g.fillPoints(body, true);
-    g.lineStyle(1.5, t.wallShadow, 0.8);
-    g.strokePoints(body, true);
-    g.lineStyle(0.8, 0xffffff, 0.32);
-    g.lineBetween(-4, -34, 14, -24); g.lineBetween(-12, -26, -18, -8);
+    const grad = ctx.createLinearGradient(-18, -36, 18, 4);
+    grad.addColorStop(0, hexToRgba(shade(t.wallInner, 1.3), 1));
+    grad.addColorStop(1, hexToRgba(shade(t.wallInner, 0.7), 1));
+    _mpPolyPath(ctx, body); ctx.fillStyle = grad; ctx.fill();
+    ctx.strokeStyle = hexToRgba(t.accent, 0.65); ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, -36); ctx.lineTo(6, -18); ctx.lineTo(12, -4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-12, -26); ctx.lineTo(-4, -12); ctx.lineTo(6, -18); ctx.stroke();
+    ctx.fillStyle = hexToRgba(t.accent, 0.07);
+    _mpPolyPath(ctx, body); ctx.fill();
+    ctx.strokeStyle = hexToRgba(t.wallShadow, 0.8); ctx.lineWidth = 1.5;
+    _mpPolyPath(ctx, body); ctx.stroke();
+    ctx.strokeStyle = hexToRgba(0xffffff, 0.32); ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(-4, -34); ctx.lineTo(14, -24); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-12, -26); ctx.lineTo(-18, -8); ctx.stroke();
+    // Small floating satellite shards near the base — reads as a crystal CLUSTER rather
+    // than one lone crystal (mirrors how the Crystal Caves mid-prop formation clusters
+    // multiple shards around a base rock).
+    const satN = 2 + Math.floor(hash(60) * 2);
+    for (let i = 0; i < satN; i++) {
+      const s = 62 + i * 6;
+      const sang = (i / satN) * Math.PI * 2 + hash(s) * 1.2;
+      const sdist = 20 + hash(s + 1) * 6;
+      const scx = Math.cos(sang) * sdist, scy = -6 + Math.sin(sang) * sdist * 0.35;
+      const ssz = 4 + hash(s + 2) * 3;
+      const stilt = (hash(s + 3) - 0.5) * 0.6;
+      const stipX = scx + Math.sin(stilt) * ssz, stipY = scy - ssz;
+      const spts = [{ x: scx - ssz * 0.4, y: scy }, { x: scx + ssz * 0.4, y: scy }, { x: stipX, y: stipY }];
+      const sgrad = ctx.createLinearGradient(scx, scy, stipX, stipY);
+      sgrad.addColorStop(0, hexToRgba(shade(t.wallInner, 0.8), 0.9));
+      sgrad.addColorStop(1, hexToRgba(shade(t.accent, 1.1), 0.9));
+      _mpPolyPath(ctx, spts); ctx.fillStyle = sgrad; ctx.fill();
+      ctx.strokeStyle = hexToRgba(t.accent, 0.5); ctx.lineWidth = 0.8;
+      _mpPolyPath(ctx, spts); ctx.stroke();
+    }
   } else {
-    // Reality fragment — flat angular slab with chaos veining
-    // Extended occluder shadow (reaches y+25)
-    g.fillStyle(0x000000, 0.11);
-    g.fillEllipse(3, 15, 44, 24);
-    g.fillStyle(0x000000, 0.3);
-    g.fillEllipse(4, 8, 40, 12);
+    // Reality fragment — flat angular slab gets the same directional-gradient
+    // treatment; chaos veining stays flat linework.
+    _mpFillEllipse(ctx, 3, 15, 44, 24, 0x000000, 0.11);
+    _mpFillEllipse(ctx, 4, 8,  40, 12, 0x000000, 0.3);
     const frag = [
       { x: -16, y: -6 }, { x: 12, y: -18 }, { x: 20, y: -4 },
       { x: 6, y: 8 },    { x: -14, y: 4 },
     ];
-    g.fillStyle(t.wallInner, 1);
-    g.fillPoints(frag, true);
-    g.fillStyle(t.accent, 0.06);
-    g.fillPoints(frag, true);
-    g.lineStyle(1.5, t.accent, 0.48);
-    g.strokePoints(frag, true);
-    g.lineStyle(0.8, t.accentDim, 0.32);
-    g.lineBetween(-10, -4, 14, -14);
-    g.lineBetween(-8,  2,  10, -8);
-    g.lineBetween(-4,  6,  18, 0);
-    g.fillStyle(t.wallHighlight, 0.52);
-    [frag[0], frag[1], frag[2]].forEach(({ x, y }) => g.fillCircle(x, y, 1.5));
+    const grad = ctx.createLinearGradient(-16, -18, 20, 8);
+    grad.addColorStop(0, hexToRgba(shade(t.wallInner, 1.25), 1));
+    grad.addColorStop(1, hexToRgba(shade(t.wallInner, 0.75), 1));
+    _mpPolyPath(ctx, frag); ctx.fillStyle = grad; ctx.fill();
+    ctx.fillStyle = hexToRgba(t.accent, 0.06);
+    _mpPolyPath(ctx, frag); ctx.fill();
+    ctx.strokeStyle = hexToRgba(t.accent, 0.48); ctx.lineWidth = 1.5;
+    _mpPolyPath(ctx, frag); ctx.stroke();
+    ctx.strokeStyle = hexToRgba(t.accentDim, 0.32); ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(-10, -4); ctx.lineTo(14, -14); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-8, 2);   ctx.lineTo(10, -8);  ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-4, 6);   ctx.lineTo(18, 0);   ctx.stroke();
+    ctx.fillStyle = hexToRgba(t.wallHighlight, 0.52);
+    [frag[0], frag[1], frag[2]].forEach(({ x, y }) => {
+      ctx.beginPath(); ctx.arc(x, y, 1.5, 0, Math.PI * 2); ctx.fill();
+    });
+    // Small debris shard nearby, linked to the main slab by a thin energy-crackle line —
+    // reads as "still coming apart" rather than one static static slab.
+    const debN = 1 + Math.floor(hash(60) * 2);
+    for (let i = 0; i < debN; i++) {
+      const s = 62 + i * 6;
+      const dang = hash(s) * Math.PI * 2;
+      const ddist = 22 + hash(s + 1) * 8;
+      const dcx = 2 + Math.cos(dang) * ddist, dcy = -2 + Math.sin(dang) * ddist * 0.5;
+      const dsz = 3.5 + hash(s + 2) * 2.5;
+      const dtilt = (hash(s + 3) - 0.5) * 0.6;
+      const dpts = [
+        { x: dcx - dsz * 0.4, y: dcy },
+        { x: dcx + dsz * 0.4, y: dcy },
+        { x: dcx + Math.sin(dtilt) * dsz, y: dcy - dsz },
+      ];
+      const dgrad = ctx.createLinearGradient(dcx, dcy, dpts[2].x, dpts[2].y);
+      dgrad.addColorStop(0, hexToRgba(shade(t.wallInner, 0.85), 0.9));
+      dgrad.addColorStop(1, hexToRgba(shade(t.accent, 1.1), 0.9));
+      _mpPolyPath(ctx, dpts); ctx.fillStyle = dgrad; ctx.fill();
+      ctx.strokeStyle = hexToRgba(t.accent, 0.5); ctx.lineWidth = 0.8;
+      _mpPolyPath(ctx, dpts); ctx.stroke();
+      // Crackle line from the nearest frag vertex to the debris shard.
+      let nearest = frag[0], best = Infinity;
+      for (const p of frag) {
+        const d = Math.hypot(p.x - dcx, p.y - dcy);
+        if (d < best) { best = d; nearest = p; }
+      }
+      const midX = (nearest.x + dcx) / 2 + (hash(s + 4) - 0.5) * 4;
+      const midY = (nearest.y + dcy) / 2 + (hash(s + 5) - 0.5) * 4;
+      ctx.strokeStyle = hexToRgba(t.accent, 0.3); ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(nearest.x, nearest.y); ctx.lineTo(midX, midY); ctx.lineTo(dcx, dcy); ctx.stroke();
+    }
   }
 }

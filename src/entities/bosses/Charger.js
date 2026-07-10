@@ -724,7 +724,8 @@ export default class Charger extends BossBase {
         if (this.scene.obstacles) {
           for (const obs of this.scene.obstacles) {
             if (obs.broken) continue;
-            if (Phaser.Math.Distance.Between(this.x, this.y, obs.x, obs.y)
+            const ocy = obs.y + (obs.colOffsetY || 0);
+            if (Phaser.Math.Distance.Between(this.x, this.y, obs.x, ocy)
                 < this.size * 0.6 + obs.baseRadius) {
               obs.break();
               obstaclesHit++;
@@ -863,7 +864,8 @@ export default class Charger extends BossBase {
         if (this.scene.obstacles) {
           for (const obs of this.scene.obstacles) {
             if (obs.broken) continue;
-            if (Phaser.Math.Distance.Between(this.x, this.y, obs.x, obs.y)
+            const ocy = obs.y + (obs.colOffsetY || 0);
+            if (Phaser.Math.Distance.Between(this.x, this.y, obs.x, ocy)
                 < this.size * 0.6 + obs.baseRadius) {
               obs.break();
               obstaclesHit++;
@@ -917,7 +919,8 @@ export default class Charger extends BossBase {
         if (this.scene.obstacles) {
           for (const obs of this.scene.obstacles) {
             if (obs.broken) continue;
-            if (Phaser.Math.Distance.Between(ghost.x, ghost.y, obs.x, obs.y)
+            const ocy = obs.y + (obs.colOffsetY || 0);
+            if (Phaser.Math.Distance.Between(ghost.x, ghost.y, obs.x, ocy)
                 < this.size * 0.6 + obs.baseRadius) {
               obs.break();
               obstaclesHit++;

@@ -5,6 +5,67 @@ rules specific to this project's architecture.
 
 ---
 
+## 2.5D perspective governs every orbit/rotation
+
+This game is viewed from a top-down angle with a squash factor (~0.4-0.55) applied to
+circles that should read as "flat" in world-space — shadows, rings, orbit paths, all of it.
+**Any element that moves in a circle/orbit around a fixed point must trace a horizontally
+squashed ELLIPSE, never a true circle.**
+
+The trap: using `scene.tweens.add({ targets: img, angle: 360, repeat: -1 })` to spin a baked
+image LOOKS like it's orbiting, but it's a flat 2D rotation in the screen plane — any point
+at distance `d` from the image's pivot traces a perfect circle as the image rotates,
+regardless of where that point started. If the point was originally placed on a squashed
+ellipse (to look "flat"), the rotation immediately breaks that illusion, since a rotating
+image doesn't preserve an ellipse's squash — it sweeps the point through a true circle.
+
+**Correct technique** (same one used for the celestial spire's orbiting stars, in
+`Obstacle.js`): drive position directly with per-frame math, not image rotation —
+```js
+// x = full radius, y = squashed radius — this is what actually reads as "flat"
+sprite.x = centerX + Math.cos(angle) * radiusX;
+sprite.y = centerY + Math.sin(angle) * radiusX * squashFactor; // squashFactor ~0.4-0.55
+```
+Compute `angle` from a real elapsed-time accumulator via `scene.events.on('update', (time,
+delta) => { elapsed += delta; ... })` — not a tween's `angle` property, and not a
+`repeat: -1` tween on a proxy value either (both are the wrong tool for open-ended
+orbital motion; see the celestial spire's implementation history for why).
+
+Apply this any time a new orbiting/rotating visual is requested — do not wait to be told
+"make it an oval, not a circle" a second time.
+
+---
+
+## Slow, small per-frame motion gets pixel-quantized — keep it above ~1px/frame
+
+A sprite animated via per-frame position math (the technique above) can look like it
+"moves, pauses for a split second, then jumps" instead of sliding smoothly — even at a
+locked 60fps with no dropped frames. Root cause: if the computed per-frame displacement is
+sub-pixel (e.g. an orbit radius of `~0.3r` completing one lap every 3000ms can work out to
+well under 0.2px of movement per frame), the render pipeline's pixel-rounding doesn't
+register any change for several consecutive frames, then snaps a whole pixel once the
+accumulated sub-pixel offset crosses a boundary. This reads as stutter, not smoothness,
+regardless of actual frame rate — confirmed by testing (see the Chaos spire's floating
+debris orbit in `Obstacle.js`, which stuttered at `radius=0.30r/0.13r, 3000ms/lap` and was
+buttery-smooth at `radius=1.2r/0.5r, 1200ms/lap`).
+
+**Rule of thumb: size and time any per-frame-animated orbit/drift so it moves at least
+~1px per frame at 60fps** (`circumference / lapDurationMs ≳ 0.06 px/ms`). If the desired
+visual calls for a slow, small motion, prefer a LARGER radius at the SAME slow angular
+speed over a small radius — angular speed alone doesn't determine smoothness, the actual
+pixel displacement per frame does.
+
+**This is a starting estimate, not a hard cutoff — verify by eye, not just by the math.**
+The celestial spire's orbiting stars (small radius, ~7s/lap) sit noticeably below the ~1px
+threshold on paper, yet read as smooth in practice; a much slower cycle (22-30s) at that
+same radius was visibly stuttery, and a much faster one (~1.5s) felt like "zooming" instead
+of floating. Use the formula to get in the right neighborhood quickly, then tune the actual
+speed/size by watching it run — how close to the floor is "close enough" varies by how
+small/bright/fast the element is, and pushing well past the floor for "safety" can just
+make something that was supposed to be slow and graceful look frantic instead.
+
+---
+
 ## Config file ownership
 - `src/config/gameConfig.js` — player stats, arena constants, obstacle config, scaling, themes
 - `src/config/bossConfig.js` — per-boss base stats (HP, damage, speed, size, colors)

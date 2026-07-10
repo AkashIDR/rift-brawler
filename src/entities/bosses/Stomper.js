@@ -813,8 +813,9 @@ export default class Stomper extends BossBase {
       this.scene.cameras.main.shake(250, 0.0042);
 
       this.scene.obstacles?.forEach(obs => {
+        const ocy = obs.y + (obs.colOffsetY || 0);
         if (!obs.broken &&
-            Phaser.Math.Distance.Between(this.x, this.y, obs.x, obs.y) < radius + obs.baseRadius)
+            Phaser.Math.Distance.Between(this.x, this.y, obs.x, ocy) < radius + obs.baseRadius)
           obs.break();
       });
 
@@ -933,10 +934,11 @@ export default class Stomper extends BossBase {
 
       this.scene.obstacles?.forEach(obs => {
         if (obs.broken) return;
+        const ocy = obs.y + (obs.colOffsetY || 0);
         const t2 = lenSq > 0
-          ? Math.max(0, Math.min(1, ((obs.x - sx) * dx + (obs.y - sy) * dy) / lenSq))
+          ? Math.max(0, Math.min(1, ((obs.x - sx) * dx + (ocy - sy) * dy) / lenSq))
           : 0;
-        if (Phaser.Math.Distance.Between(obs.x, obs.y, sx + t2 * dx, sy + t2 * dy) < obs.baseRadius + halfWidth)
+        if (Phaser.Math.Distance.Between(obs.x, ocy, sx + t2 * dx, sy + t2 * dy) < obs.baseRadius + halfWidth)
           obs.break();
       });
 
@@ -985,8 +987,9 @@ export default class Stomper extends BossBase {
       const p = this.scene.player;
       zones.forEach(z => {
         this.scene.obstacles?.forEach(obs => {
+          const ocy = obs.y + (obs.colOffsetY || 0);
           if (!obs.broken &&
-              Phaser.Math.Distance.Between(obs.x, obs.y, z.x, z.y) < z.r + obs.baseRadius)
+              Phaser.Math.Distance.Between(obs.x, ocy, z.x, z.y) < z.r + obs.baseRadius)
             obs.break();
         });
 
@@ -1069,8 +1072,9 @@ export default class Stomper extends BossBase {
           this._spawnCrater(this.x, this.y, slamRadius);
 
           this.scene.obstacles?.forEach(obs => {
+            const ocy = obs.y + (obs.colOffsetY || 0);
             if (!obs.broken &&
-                Phaser.Math.Distance.Between(this.x, this.y, obs.x, obs.y) < slamRadius + obs.baseRadius)
+                Phaser.Math.Distance.Between(this.x, this.y, obs.x, ocy) < slamRadius + obs.baseRadius)
               obs.break();
           });
 
